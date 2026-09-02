@@ -40,8 +40,8 @@ job finishes, so a beets cron firing mid-download never sees a partial album.
 ## Setup
 
 ```bash
-curl -O https://raw.githubusercontent.com/OWNER/download-center/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/OWNER/download-center/main/.env.example
+curl -O https://raw.githubusercontent.com/awdimartino/download_center/main/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/awdimartino/download_center/main/.env.example
 nano .env                            # set DC_IMAGE, paths, PUID/PGID
 docker compose up -d
 ```
@@ -53,7 +53,7 @@ Images are published to GitHub Container Registry for `linux/amd64` and
 `linux/arm64`, so the same tag works on a PC or a Raspberry Pi:
 
 ```bash
-docker pull ghcr.io/OWNER/download-center:latest
+docker pull ghcr.io/awdimartino/download_center:latest
 ```
 
 To build from source instead, clone the repo and swap `image:` for `build: .`

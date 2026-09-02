@@ -3,7 +3,7 @@ services:
     # Pulls the published multi-arch image (amd64 + arm64).
     # Set DC_IMAGE in .env to your own ghcr.io path.
     # To build from source instead, comment this out and uncomment `build`.
-    image: ${DC_IMAGE:-ghcr.io/OWNER/download-center:latest}
+    image: ${DC_IMAGE:-ghcr.io/awdimartino/download_center:latest}
     # build: .
 
     container_name: download-center
