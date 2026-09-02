@@ -166,9 +166,7 @@ def resolve_link(text: str) -> tuple[str, str, list[dict[str, Any]]]:
     return kind, title, tracks
 
 
-# --- reserved for the in-app browser --------------------------------------
-# Not called yet. Kept here so the browser becomes two endpoints and a view
-# rather than a restructuring of this module.
+# --- browsing -------------------------------------------------------------
 
 def search(query: str, kind: str = "album", limit: int = 20) -> list[dict[str, Any]]:
     results = client().search(q=query, type=kind, limit=limit)
@@ -177,6 +175,105 @@ def search(query: str, kind: str = "album", limit: int = 20) -> list[dict[str, A
 
 def get_album(album_id: str) -> dict[str, Any]:
     return client().album(album_id)
+
+
+def _year(release_date: str | None) -> str | None:
+    return release_date.split("-")[0] if release_date else None
+
+
+def album_card(album: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": album["id"],
+        "name": album["name"],
+        "artist": _artist_names(album.get("artists")),
+        "year": _year(album.get("release_date")),
+        "cover": _cover(album),
+        "total": album.get("total_tracks"),
+        "type": album.get("album_type"),
+        "url": (album.get("external_urls") or {}).get("spotify"),
+    }
+
+
+def track_card(track: dict[str, Any]) -> dict[str, Any]:
+    album = track.get("album") or {}
+    return {
+        "id": track["id"],
+        "name": track["name"],
+        "artist": _artist_names(track.get("artists")),
+        "album": album.get("name"),
+        "year": _year(album.get("release_date")),
+        "cover": _cover(album),
+        "duration_ms": track.get("duration_ms"),
+        "url": (track.get("external_urls") or {}).get("spotify"),
+    }
+
+
+def artist_card(artist: dict[str, Any]) -> dict[str, Any]:
+    images = artist.get("images") or []
+    return {
+        "id": artist["id"],
+        "name": artist["name"],
+        "cover": images[0]["url"] if images else None,
+        "followers": (artist.get("followers") or {}).get("total"),
+        "genres": (artist.get("genres") or [])[:2],
+    }
+
+
+def browse(query: str, kind: str, limit: int = 24) -> list[dict[str, Any]]:
+    """Search Spotify and return cards of the requested kind."""
+    if kind not in ("album", "track", "artist"):
+        raise ResolveError(f"Cannot search for {kind!r}.")
+    items = [i for i in search(query, kind, limit) if i]
+    shaper = {"album": album_card, "track": track_card, "artist": artist_card}[kind]
+    return [shaper(item) for item in items]
+
+
+def album_detail(album_id: str) -> dict[str, Any]:
+    """An album card plus its track listing."""
+    sp = client()
+    album = sp.album(album_id)
+    card = album_card(album)
+    card["tracks"] = [
+        {
+            "id": track["id"],
+            "name": track["name"],
+            "artist": _artist_names(track.get("artists")),
+            "track_no": track.get("track_number"),
+            "disc_no": track.get("disc_number") or 1,
+            "duration_ms": track.get("duration_ms"),
+            "url": (track.get("external_urls") or {}).get("spotify"),
+        }
+        for track in _paginate(album["tracks"], sp)
+        if track and track.get("id")
+    ]
+    return card
+
+
+def artist_albums(artist_id: str, limit: int = 50) -> dict[str, Any]:
+    """An artist's albums and singles, newest first, without duplicates.
+
+    Spotify lists the same release once per market and often several times
+    across reissues, so identical titles are collapsed and the earliest
+    release date kept.
+    """
+    sp = client()
+    artist = sp.artist(artist_id)
+    first = sp.artist_albums(artist_id, album_type="album,single", limit=50)
+
+    seen: dict[str, dict[str, Any]] = {}
+    for album in _paginate(first, sp):
+        if not album or not album.get("id"):
+            continue
+        key = album["name"].strip().lower()
+        card = album_card(album)
+        existing = seen.get(key)
+        if existing is None or (card["year"] or "9999") < (existing["year"] or "9999"):
+            seen[key] = card
+        if len(seen) >= limit:
+            break
+
+    albums = sorted(seen.values(), key=lambda a: a["year"] or "0000", reverse=True)
+    return {"artist": artist_card(artist), "albums": albums}
 
 
 def reset_client() -> None:

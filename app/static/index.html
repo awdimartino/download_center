@@ -9,18 +9,15 @@
 <body>
 <header>
   <h1>Download Center</h1>
+  <nav class="tabs">
+    <button class="tab active" data-view="queue" type="button">Queue</button>
+    <button class="tab" data-view="browse" type="button">Browse</button>
+  </nav>
   <span id="conn" class="conn offline">connecting</span>
   <button id="settings-toggle" class="ghost" type="button">Settings</button>
 </header>
 
 <main>
-  <form id="add-form" autocomplete="off">
-    <input id="url" type="text" placeholder="Paste a Spotify link, or a YouTube / SoundCloud / Bandcamp URL" spellcheck="false">
-    <button type="submit">Add</button>
-  </form>
-  <p id="error" class="error" hidden></p>
-  <p id="warn" class="warn" hidden></p>
-
   <form id="settings" hidden autocomplete="off">
     <label>Spotify client ID<input name="spotify_client_id" type="text" spellcheck="false"></label>
     <label>Spotify client secret<input name="spotify_client_secret" type="password" placeholder="unchanged"></label>
@@ -34,8 +31,32 @@
     </div>
   </form>
 
-  <section id="jobs"></section>
-  <p id="empty" class="empty">Nothing queued yet.</p>
+  <p id="error" class="error" hidden></p>
+  <p id="warn" class="warn" hidden></p>
+
+  <section id="view-queue">
+    <form id="add-form" autocomplete="off">
+      <input id="url" type="text" spellcheck="false"
+             placeholder="Paste a Spotify link, or a YouTube / SoundCloud / Bandcamp URL">
+      <button type="submit">Add</button>
+    </form>
+    <section id="jobs"></section>
+    <p id="empty" class="empty">Nothing queued yet.</p>
+  </section>
+
+  <section id="view-browse" hidden>
+    <form id="search-form" autocomplete="off">
+      <input id="query" type="text" spellcheck="false" placeholder="Search Spotify">
+      <div class="kinds">
+        <button class="kind active" data-kind="album" type="button">Albums</button>
+        <button class="kind" data-kind="track" type="button">Tracks</button>
+        <button class="kind" data-kind="artist" type="button">Artists</button>
+      </div>
+    </form>
+    <p id="crumb" class="crumb" hidden></p>
+    <div id="results" class="grid"></div>
+    <p id="browse-empty" class="empty">Search for an artist, album, or track.</p>
+  </section>
 </main>
 
 <script src="/static/app.js"></script>

@@ -29,6 +29,14 @@ it backwards on a title like "Game Over - Free Metal Instrumental". Direct
 links are always staged as singles, since there is no track count to prove a
 release is complete.
 
+## Browsing
+
+The Browse tab searches Spotify from inside the app, so you never need to go
+and copy a link. Search albums, tracks, or artists; open an album to see its
+track listing, or an artist to see their discography with duplicate reissues
+collapsed. Tracks already in the ledger are marked, so you can tell at a
+glance what you are missing from a record before queuing it.
+
 ## Staging layout
 
 Output is split by how beets should import it:

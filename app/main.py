@@ -304,6 +304,58 @@ async def put_settings(update: SettingsUpdate) -> dict[str, Any]:
     return await get_settings()
 
 
+# --- browsing -------------------------------------------------------------
+
+def _mark_held(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Flag tracks already in the ledger.
+
+    Only Spotify ids are checked, not ISRCs: search results do not reliably
+    carry one, and a per-card lookup would be the wrong place to pay for it.
+    The worker still does the full check before downloading anything.
+    """
+    for card in cards:
+        card["held"] = ledger.already_downloaded(card["id"], None)
+    return cards
+
+
+@app.get("/api/search")
+async def search(q: str, type: str = "album", limit: int = 24) -> dict[str, Any]:
+    query = q.strip()
+    if not query:
+        return {"type": type, "results": []}
+    try:
+        results = await asyncio.to_thread(spotify.browse, query, type, limit)
+    except spotify.ResolveError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Spotify error: {exc}") from exc
+
+    if type == "track":
+        await asyncio.to_thread(_mark_held, results)
+    return {"type": type, "results": results}
+
+
+@app.get("/api/albums/{album_id}")
+async def album(album_id: str) -> dict[str, Any]:
+    try:
+        detail = await asyncio.to_thread(spotify.album_detail, album_id)
+    except spotify.ResolveError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Album not found: {exc}") from exc
+    await asyncio.to_thread(_mark_held, detail["tracks"])
+    detail["held_count"] = sum(1 for t in detail["tracks"] if t["held"])
+    return detail
+
+
+@app.get("/api/artists/{artist_id}/albums")
+async def artist(artist_id: str) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(spotify.artist_albums, artist_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Artist not found: {exc}") from exc
+
+
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
     return {
