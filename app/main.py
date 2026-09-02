@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ledger, spotify, staging, worker
+from . import generic, ledger, spotify, staging, worker
 from . import config
 from .config import settings
 
@@ -65,6 +65,7 @@ def new_item(track: dict[str, Any]) -> dict[str, Any]:
         "id": uuid.uuid4().hex[:12],
         "status": "pending",
         "progress": 0,
+        "direct_url": track.get("direct_url"),
         "match_url": None,
         "match_score": None,
         "file_path": None,
@@ -133,15 +134,30 @@ class JobRequest(BaseModel):
     url: str
 
 
+def _resolve(url: str) -> tuple[str, str, list[dict[str, Any]]]:
+    """Dispatch a link to whichever resolver handles it."""
+    if generic.looks_like_url(url) and "spotify.com" not in url:
+        title, items = generic.resolve(url)
+        return "generic", title, items
+    return spotify.resolve_link(url)
+
+
+def validate(url: str) -> None:
+    """Reject obviously unusable input before a job row is created."""
+    if generic.looks_like_url(url) and "spotify.com" not in url:
+        return  # yt-dlp decides; there are too many sites to pre-check
+    spotify.parse_link(url)
+
+
 async def _resolve_job(job: dict[str, Any], url: str) -> None:
     """Resolve a link off the event loop, then announce the result."""
     try:
-        kind, title, tracks = await asyncio.to_thread(spotify.resolve_link, url)
-    except spotify.ResolveError as exc:
+        kind, title, tracks = await asyncio.to_thread(_resolve, url)
+    except (spotify.ResolveError, generic.ResolveError) as exc:
         job.update(status="failed", error=str(exc))
         log.warning("resolve failed for %s: %s", url, exc)
     except Exception as exc:
-        job.update(status="failed", error=f"Spotify error: {exc}")
+        job.update(status="failed", error=f"Resolve error: {exc}")
         log.exception("unexpected resolve failure for %s", url)
     else:
         job.update(
@@ -186,8 +202,8 @@ async def create_job(request: JobRequest) -> dict[str, str]:
         raise HTTPException(status_code=400, detail="No link provided.")
     # Validate before creating the job, so a typo does not litter the list.
     try:
-        spotify.parse_link(url)
-    except spotify.ResolveError as exc:
+        validate(url)
+    except (spotify.ResolveError, generic.ResolveError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     job = new_job(url)

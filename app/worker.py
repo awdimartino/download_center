@@ -64,20 +64,27 @@ async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
 async def _process(item: dict[str, Any], dest: dict[str, Any],
                    gate: asyncio.Semaphore) -> None:
     async with gate:
-        _mark(item, "matching")
-        try:
-            url, score, _parts = await asyncio.to_thread(matcher.find, item)
-        except matcher.MatchError as exc:
-            # Not retried: an identical search returns identical results, so
-            # trying again only burns time.
-            _mark(item, "failed", error=str(exc))
-            return
-        except Exception as exc:
-            _mark(item, "failed", error=f"Search error: {exc}"[:200])
-            return
+        # Items from a direct link already name their audio, so there is
+        # nothing to search for and no confidence to score.
+        direct = item.get("direct_url")
+        if direct:
+            url = direct
+            item["match_url"] = direct
+        else:
+            _mark(item, "matching")
+            try:
+                url, score, _parts = await asyncio.to_thread(matcher.find, item)
+            except matcher.MatchError as exc:
+                # Not retried: an identical search returns identical results,
+                # so trying again only burns time.
+                _mark(item, "failed", error=str(exc))
+                return
+            except Exception as exc:
+                _mark(item, "failed", error=f"Search error: {exc}"[:200])
+                return
 
-        item["match_url"] = url
-        item["match_score"] = round(score, 3)
+            item["match_url"] = url
+            item["match_score"] = round(score, 3)
 
         try:
             path = await _download_with_retries(item, url, dest["temp"])

@@ -12,8 +12,22 @@ Download Center -> untagged folder -> beets -> music library -> Navidrome
 
 ## What it handles
 
-Spotify **track**, **album**, and **playlist** links. Artist links are
-rejected deliberately, since a discography is rarely what you meant to queue.
+**Spotify** track, album, and playlist links. Metadata comes from the Spotify
+API and the audio is located on YouTube Music by matching on runtime, title
+and artist. Artist links are rejected deliberately, since a discography is
+rarely what you meant to queue.
+
+**Direct links** to anything yt-dlp supports - YouTube, YouTube Music,
+SoundCloud, Bandcamp and hundreds of others - including playlists. These skip
+the matching stage entirely, because the URL already names the audio.
+
+Tag quality on direct links depends on what the site publishes. YouTube Music,
+Bandcamp and `- Topic` channels expose real track, artist and album fields and
+tag cleanly. A plain upload offers only a video title, so artist and title are
+guessed by splitting on " - ", which follows the usual convention but will get
+it backwards on a title like "Game Over - Free Metal Instrumental". Direct
+links are always staged as singles, since there is no track count to prove a
+release is complete.
 
 ## Staging layout
 

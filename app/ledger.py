@@ -20,7 +20,7 @@ _conn: sqlite3.Connection | None = None
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ledger (
-    spotify_id   TEXT PRIMARY KEY,
+    source_id    TEXT PRIMARY KEY,
     isrc         TEXT,
     title        TEXT NOT NULL,
     artist       TEXT NOT NULL,
@@ -32,24 +32,39 @@ CREATE INDEX IF NOT EXISTS idx_ledger_isrc ON ledger(isrc);
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Rename the original spotify_id column now that ids are namespaced.
+
+    Existing ledgers were written before non-Spotify sources existed, so the
+    key column was named for the only source there was. Renaming preserves
+    every row; a fresh database is created with the new name and skips this.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(ledger)")}
+    if "spotify_id" in columns and "source_id" not in columns:
+        conn.execute("ALTER TABLE ledger RENAME COLUMN spotify_id TO source_id")
+
+
 def connect(path: Path) -> None:
     global _conn
     path.parent.mkdir(parents=True, exist_ok=True)
     _conn = sqlite3.connect(path, check_same_thread=False)
     _conn.executescript(SCHEMA)
+    _migrate(_conn)
     _conn.commit()
 
 
-def already_downloaded(spotify_id: str, isrc: str | None) -> bool:
-    """True if this track was fetched before, by Spotify id or by ISRC.
+def already_downloaded(source_id: str, isrc: str | None) -> bool:
+    """True if this track was fetched before, by source id or by ISRC.
 
+    Source ids are namespaced per extractor ("youtube:dQw4w9WgXcQ"); bare
+    values are Spotify ids, kept unprefixed so existing ledgers still match.
     ISRC is checked as well because the same recording is issued under many
     Spotify ids across regional releases and reissues.
     """
     assert _conn is not None, "ledger not connected"
     with _lock:
         if _conn.execute(
-            "SELECT 1 FROM ledger WHERE spotify_id = ?", (spotify_id,)
+            "SELECT 1 FROM ledger WHERE source_id = ?", (source_id,)
         ).fetchone():
             return True
         if isrc and _conn.execute(
@@ -65,7 +80,7 @@ def record(item: dict[str, Any], file_path: str | None) -> None:
     with _lock:
         _conn.execute(
             "INSERT OR REPLACE INTO ledger"
-            " (spotify_id, isrc, title, artist, album, file_path, completed_at)"
+            " (source_id, isrc, title, artist, album, file_path, completed_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (item["spotify_id"], item.get("isrc"), item["title"],
              item["artist"], item["album"], file_path, stamp),
