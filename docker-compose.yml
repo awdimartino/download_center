@@ -1,0 +1,33 @@
+services:
+  download-center:
+    # Pulls the published multi-arch image (amd64 + arm64).
+    # Set DC_IMAGE in .env to your own ghcr.io path.
+    # To build from source instead, comment this out and uncomment `build`.
+    image: ${DC_IMAGE:-ghcr.io/OWNER/download-center:latest}
+    # build: .
+
+    container_name: download-center
+    restart: unless-stopped
+
+    ports:
+      - "${PORT:-8000}:8000"
+
+    environment:
+      # Must match the user that owns MUSIC_DIR, or the files written here
+      # will not be readable by whatever serves your library.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+
+      # Optional: keeps credentials out of the config volume entirely.
+      DC_SPOTIFY_CLIENT_ID: ${DC_SPOTIFY_CLIENT_ID:-}
+      DC_SPOTIFY_CLIENT_SECRET: ${DC_SPOTIFY_CLIENT_SECRET:-}
+
+    volumes:
+      # config.toml, the download ledger, and an optional cookies.txt.
+      # state.db lives here: back it up.
+      - ${CONFIG_DIR:-./config}:/config
+
+      # Where finished audio is written. albums/ and singles/ are created
+      # inside it.
+      - ${MUSIC_DIR:-./untagged}:/downloads

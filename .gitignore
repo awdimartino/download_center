@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+config/config.toml
+config/cookies.txt
+config/state.db*
+untagged/
+config/.spotipy-cache
+.env

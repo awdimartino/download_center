@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download Center</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Download Center</h1>
+  <span id="conn" class="conn offline">connecting</span>
+  <button id="settings-toggle" class="ghost" type="button">Settings</button>
+</header>
+
+<main>
+  <form id="add-form" autocomplete="off">
+    <input id="url" type="text" placeholder="Paste a Spotify track, album, or playlist link" spellcheck="false">
+    <button type="submit">Add</button>
+  </form>
+  <p id="error" class="error" hidden></p>
+  <p id="warn" class="warn" hidden></p>
+
+  <form id="settings" hidden autocomplete="off">
+    <label>Spotify client ID<input name="spotify_client_id" type="text" spellcheck="false"></label>
+    <label>Spotify client secret<input name="spotify_client_secret" type="password" placeholder="unchanged"></label>
+    <label>Concurrent downloads<input name="concurrency" type="number" min="1" max="10"></label>
+    <label>MP3 bitrate<input name="audio_bitrate" type="text"></label>
+    <label>Attempts per track<input name="max_attempts" type="number" min="1" max="10"></label>
+    <label>Pause between downloads (s)<input name="rate_limit_sleep" type="number" min="0" step="0.5"></label>
+    <div class="settings-actions">
+      <button type="submit">Save</button>
+      <span id="settings-note"></span>
+    </div>
+  </form>
+
+  <section id="jobs"></section>
+  <p id="empty" class="empty">Nothing queued yet.</p>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

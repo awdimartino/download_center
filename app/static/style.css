@@ -1,0 +1,238 @@
+:root {
+  --bg: #14161a;
+  --panel: #1c1f26;
+  --panel-2: #22262f;
+  --line: #2e333d;
+  --text: #e6e8ec;
+  --muted: #949aa6;
+  --accent: #4ea1ff;
+  --ok: #45c47a;
+  --warn: #e0a33e;
+  --bad: #e0574a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+h1 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+
+.conn {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.conn.online { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.conn.offline { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+
+main { max-width: 900px; margin: 0 auto; padding: 24px; }
+
+#add-form { display: flex; gap: 10px; }
+
+#url {
+  flex: 1;
+  padding: 11px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+#url:focus { outline: none; border-color: var(--accent); }
+
+button {
+  padding: 11px 20px;
+  background: var(--accent);
+  color: #06101c;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+button:disabled { opacity: .5; cursor: default; }
+
+.error, .warn {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.error { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+.warn  { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+
+.empty { color: var(--muted); text-align: center; padding: 40px 0; font-size: 14px; }
+
+.job {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.job-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+.job-head:hover { background: var(--panel-2); }
+
+.job-title { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-meta { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+.badge {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.badge.resolving { color: var(--accent); }
+.badge.queued    { color: var(--muted); }
+.badge.failed    { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.badge.complete  { color: var(--ok); }
+
+.remove {
+  background: none;
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+.remove:hover { color: var(--bad); }
+
+.tracks { border-top: 1px solid var(--line); }
+.tracks[hidden] { display: none; }
+
+.track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+}
+.track:last-child { border-bottom: 0; }
+.track-no { color: var(--muted); width: 26px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.track-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track-artist { color: var(--muted); }
+.track-dur { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.track-status { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; width: 74px; text-align: right; flex-shrink: 0; }
+
+.job-error { padding: 12px 16px; color: var(--bad); font-size: 13px; border-top: 1px solid var(--line); }
+
+/* --- per-track state ---------------------------------------------------- */
+
+.track { position: relative; }
+.track.active { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.track.complete .track-no,
+.track.complete .track-name { color: var(--text); }
+.track.skipped { opacity: .55; }
+.track.failed  { background: color-mix(in srgb, var(--bad) 9%, transparent); }
+.track.failed .track-name { cursor: help; }
+
+.track-status.complete   { color: var(--ok); }
+.track-status.failed     { color: var(--bad); }
+.track-status.skipped    { color: var(--muted); }
+.track-status.downloading,
+.track-status.matching,
+.track-status.tagging    { color: var(--accent); }
+.track-status.retrying   { color: var(--warn); }
+
+/* Progress sits along the bottom edge of its row so a long queue does not
+   change height as tracks move in and out of the downloading state. */
+.bar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width .3s ease;
+}
+
+.badge.running { color: var(--accent); }
+.badge.partial { color: var(--warn); }
+
+/* --- ghost buttons and settings ----------------------------------------- */
+
+.ghost {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ghost:hover { color: var(--text); border-color: var(--muted); }
+.ghost.cancel:hover { color: var(--bad); border-color: var(--bad); }
+.ghost.retry:hover  { color: var(--accent); border-color: var(--accent); }
+
+header .ghost { margin-left: auto; }
+
+#settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+#settings[hidden] { display: none; }
+
+#settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#settings input {
+  padding: 8px 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+#settings input:focus { outline: none; border-color: var(--accent); }
+
+.settings-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+#settings-note { font-size: 12px; color: var(--muted); }
+
+.badge.cancelled { color: var(--warn); }
+.track.cancelled { opacity: .5; }
+.track-status.cancelled { color: var(--warn); }

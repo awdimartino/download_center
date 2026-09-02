@@ -1,0 +1,7 @@
+# Everything here runs inside a Linux container. Checking any of it out with
+# CRLF endings breaks the entrypoint with "bad interpreter: /bin/sh^M", so
+# line endings are pinned to LF regardless of the platform cloning the repo.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary

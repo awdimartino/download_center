@@ -1,0 +1,14 @@
+# Copy to config.toml and fill in. Every key can also be set with an
+# environment variable, e.g. DC_SPOTIFY_CLIENT_ID, which takes precedence.
+
+spotify_client_id = ""
+spotify_client_secret = ""
+
+# Staging root that beets imports from. Complete albums are written to
+# <output_dir>/albums, loose tracks to <output_dir>/singles.
+# output_dir = "untagged"
+
+concurrency = 3
+audio_bitrate = "320"
+max_attempts = 3
+rate_limit_sleep = 2.0

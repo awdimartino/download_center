@@ -1,0 +1,7 @@
+fastapi==0.121.2
+uvicorn[standard]==0.40.0
+spotipy==2.25.1
+yt-dlp==2026.8.19
+ytmusicapi==1.11.5
+mutagen==1.47.0
+rapidfuzz==3.14.6
