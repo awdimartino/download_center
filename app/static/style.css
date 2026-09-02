@@ -345,3 +345,93 @@ header .ghost { margin-left: 0; }
 }
 .tracklist .track { gap: 12px; }
 .tracklist .track .ghost { padding: 3px 10px; font-size: 11px; }
+
+/* --- library and inbox --------------------------------------------------- */
+
+.stats { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+.stat {
+  flex: 1;
+  min-width: 110px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.stat-value { font-size: 21px; font-weight: 600; }
+.stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+
+.section-head {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 28px 0 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.section-note { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+.inbox-item {
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.inbox-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; flex-wrap: wrap; }
+.inbox-name { font-weight: 600; font-size: 13px; flex: 1; min-width: 160px; }
+.inbox-actions { display: flex; gap: 6px; }
+.inbox-actions .ghost { padding: 5px 11px; font-size: 12px; }
+.inbox-body { border-top: 1px solid var(--line); padding: 12px 14px; }
+
+.candidates { display: flex; flex-direction: column; gap: 8px; }
+.candidate {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.candidate-info { flex: 1; min-width: 0; }
+
+.score {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 8px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+.score.good { color: var(--ok);   background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.score.ok   { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.score.poor { color: var(--bad);  background: color-mix(in srgb, var(--bad) 16%, transparent); }
+
+#library-form { display: flex; gap: 10px; margin-bottom: 14px; }
+#library-query {
+  flex: 1;
+  padding: 10px 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+#library-query:focus { outline: none; border-color: var(--accent); }
+
+.lib-row { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.lib-album {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.lib-album:hover { background: var(--panel); }
+.lib-artist { width: 30%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.lib-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.lib-year, .lib-count { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.lib-count { width: 28px; text-align: right; }
+.lib-mb { font-size: 10px; letter-spacing: .06em; color: var(--ok); width: 22px; text-align: right; flex-shrink: 0; }
+.lib-mb.dim { color: color-mix(in srgb, var(--muted) 60%, transparent); }

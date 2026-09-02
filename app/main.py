@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import generic, ledger, spotify, staging, worker
+from . import beets_library, generic, ledger, spotify, staging, worker
 from . import config
 from .config import settings
 
@@ -355,6 +355,73 @@ async def artist(artist_id: str) -> dict[str, Any]:
         return await asyncio.to_thread(spotify.artist_albums, artist_id)
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Artist not found: {exc}") from exc
+
+
+# --- beets library --------------------------------------------------------
+
+class ApplyRequest(BaseModel):
+    path: str
+    album_id: str | None = None
+    as_is: bool = False
+
+
+class PathRequest(BaseModel):
+    path: str
+
+
+@app.get("/api/library/stats")
+async def library_stats() -> dict[str, Any]:
+    return await asyncio.to_thread(beets_library.stats)
+
+
+@app.get("/api/library/albums")
+async def library_albums(q: str = "") -> list[dict[str, Any]]:
+    try:
+        return await asyncio.to_thread(beets_library.albums, q)
+    except Exception as exc:
+        # An invalid beets query raises rather than returning nothing.
+        raise HTTPException(status_code=400, detail=f"{exc}"[:200]) from exc
+
+
+@app.get("/api/library/albums/{album_id}")
+async def library_album(album_id: int) -> dict[str, Any]:
+    detail = await asyncio.to_thread(beets_library.album_detail, album_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="No such album.")
+    return detail
+
+
+@app.get("/api/inbox")
+async def inbox() -> list[dict[str, Any]]:
+    return await asyncio.to_thread(beets_library.inbox)
+
+
+@app.get("/api/inbox/candidates")
+async def inbox_candidates(path: str) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(beets_library.candidates, path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"{exc}"[:200]) from exc
+
+
+@app.post("/api/inbox/apply")
+async def inbox_apply(request: ApplyRequest) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(
+            beets_library.apply, request.path, request.album_id, request.as_is
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/inbox/discard")
+async def inbox_discard(request: PathRequest) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(beets_library.discard, request.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/status")

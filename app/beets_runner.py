@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -83,7 +84,10 @@ def ensure_config() -> Path:
 
 
 def _run(path: Path, singleton: bool) -> tuple[bool, str]:
-    command = ["beet", "import", "-qs" if singleton else "-q", str(path)]
+    # Invoked through the interpreter rather than the `beet` script, which
+    # is only on PATH when beets is installed system-wide.
+    command = [sys.executable, "-m", "beets", "import",
+               "-qs" if singleton else "-q", str(path)]
     environment = {**os.environ, "BEETSDIR": str(BEETS_DIR)}
     try:
         result = subprocess.run(
@@ -91,7 +95,7 @@ def _run(path: Path, singleton: bool) -> tuple[bool, str]:
             timeout=TIMEOUT, check=False,
         )
     except FileNotFoundError:
-        return False, "beets is not installed in this image"
+        return False, "beets is not available in this environment"
     except subprocess.TimeoutExpired:
         return False, f"timed out after {TIMEOUT}s"
 

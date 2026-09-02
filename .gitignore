@@ -7,3 +7,6 @@ config/state.db*
 untagged/
 config/.spotipy-cache
 .env
+config/beets/
+library/
+testlib/

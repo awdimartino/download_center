@@ -60,6 +60,30 @@ rather than by tags.
 Set `beets_enabled = false` to turn all of this off and keep the staging
 output as the final result.
 
+## Library panel
+
+The Library tab reads the beets database directly and shows what is actually
+in the library, searchable with beets' own query syntax:
+
+```
+radiohead              artist or album text
+year:1997              a field
+albumartist:burial     a specific field
+year:1990..1999        a range
+```
+
+Above it sits **Needs attention**: everything still in the staging folder,
+which by definition is what beets declined to identify. Pressing *Identify*
+asks beets' matcher for candidate releases and lists them with a confidence
+score, country, label, media and track count, so the different pressings of a
+record are distinguishable. Choosing one imports under that release; *Import
+as-is* keeps the existing tags and files it without matching; *Discard*
+deletes it.
+
+Picking a release deliberately raises beets' strong-match threshold for that
+one import. Without that, a 94% match is still refused in quiet mode, and
+naming the release would appear to do nothing.
+
 ## Browsing
 
 The Browse tab searches Spotify from inside the app, so you never need to go
