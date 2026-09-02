@@ -4,11 +4,19 @@ Takes a Spotify link, finds the matching recording on YouTube Music, downloads
 it as a 320 kbps MP3, writes Spotify's metadata onto it, and stages it for
 beets to import.
 
-It is built to slot into an existing pipeline:
+beets is bundled and runs automatically when a job finishes, so the pipeline
+is self-contained:
 
 ```
-Download Center -> untagged folder -> beets -> music library -> Navidrome
+paste a link -> download -> seed tags -> beets -> tagged library -> Navidrome
 ```
+
+The tags this writes are deliberately provisional. They exist so beets has
+something accurate to match against; beets then decides the canonical release,
+writes the MusicBrainz identifiers, fetches cover art, and files the result
+into the tree defined in its own config. Matching a whole album at once, on
+track count, ordering, durations and artist together, is far more reliable
+than any per-track identifier lookup.
 
 ## What it handles
 
@@ -28,6 +36,29 @@ guessed by splitting on " - ", which follows the usual convention but will get
 it backwards on a title like "Game Over - Free Metal Instrumental". Direct
 links are always staged as singles, since there is no track count to prove a
 release is complete.
+
+## Tagging and filing
+
+On first run a beets config is written to `config/beets/config.yaml` and never
+overwritten afterwards. Edit it to change where files land:
+
+```yaml
+directory: /music
+paths:
+  default: $albumartist/$album%aunique{} ($original_year)/$track $title
+  singleton: Singles/$artist - $title
+```
+
+Imports run unattended with `quiet_fallback: skip`, so anything beets cannot
+confidently match is **left in the staging folder** rather than guessed at.
+A staging directory that is not empty is the list of things needing a look.
+
+`fpcalc` is in the image, so acoustic fingerprinting can be enabled by adding
+`chroma` to the plugins line - useful if you want identification by audio
+rather than by tags.
+
+Set `beets_enabled = false` to turn all of this off and keep the staging
+output as the final result.
 
 ## Browsing
 

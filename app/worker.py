@@ -13,7 +13,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable
 
-from . import downloader, ledger, matcher, staging, tagger
+from . import beets_runner, downloader, ledger, matcher, staging, tagger
 from .config import settings
 
 log = logging.getLogger("download_center.worker")
@@ -156,6 +156,7 @@ async def run_job(job: dict[str, Any], push: Push) -> None:
         log.info("%s: %d track(s) demoted to singles (album incomplete)",
                  job["title"], demoted)
 
+    published: list = []
     try:
         published = await asyncio.to_thread(staging.publish, job["id"])
         log.info("%s: published %d path(s)", job["title"], len(published))
@@ -175,3 +176,17 @@ async def run_job(job: dict[str, Any], push: Push) -> None:
     job["status"] = "complete" if not failed else ("failed" if not done else "partial")
     log.info("%s: %d done, %d failed", job["title"], done, failed)
     await push(job)
+
+    # Tagging is a separate phase with its own status, because it can take a
+    # while and its outcome is independent of whether the downloads worked.
+    if published:
+        job["status"] = "tagging"
+        await push(job)
+        try:
+            job["beets"] = await asyncio.to_thread(beets_runner.import_paths, published)
+        except Exception as exc:
+            log.exception("beets import raised for %s", job["title"])
+            job["beets"] = {"ran": True, "imported": 0, "skipped": 0,
+                            "failed": [str(exc)[:200]]}
+        job["status"] = "complete" if not failed else ("failed" if not done else "partial")
+        await push(job)

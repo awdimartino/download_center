@@ -21,6 +21,7 @@ _ENV_OVERRIDES = {
     "audio_bitrate": "DC_AUDIO_BITRATE",
     "max_attempts": "DC_MAX_ATTEMPTS",
     "rate_limit_sleep": "DC_RATE_LIMIT_SLEEP",
+    "beets_enabled": "DC_BEETS_ENABLED",
 }
 
 
@@ -37,6 +38,10 @@ class Settings(BaseModel):
     max_attempts: int = Field(default=3, ge=1, le=10)
     # Seconds to pause between downloads, to stay under YouTube's radar.
     rate_limit_sleep: float = Field(default=2.0, ge=0)
+
+    # Hand finished downloads to beets, which tags them against MusicBrainz
+    # and files them into the library tree defined in its own config.
+    beets_enabled: bool = True
 
     @property
     def albums_dir(self) -> Path:
@@ -65,7 +70,7 @@ class Settings(BaseModel):
 # leave the staging tree inconsistent.
 EDITABLE = (
     "spotify_client_id", "spotify_client_secret", "concurrency",
-    "audio_bitrate", "max_attempts", "rate_limit_sleep",
+    "audio_bitrate", "max_attempts", "rate_limit_sleep", "beets_enabled",
 )
 
 

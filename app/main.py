@@ -53,6 +53,7 @@ def new_job(url: str) -> dict[str, Any]:
         "status": "resolving",
         "error": None,
         "created_at": _now(),
+        "beets": None,
         "items": [],
     }
     JOBS[job["id"]] = job

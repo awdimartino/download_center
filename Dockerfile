@@ -3,12 +3,15 @@ FROM python:3.13-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DC_CONFIG_DIR=/config \
-    DC_OUTPUT_DIR=/downloads
+    DC_OUTPUT_DIR=/downloads \
+    BEETSDIR=/config/beets
 
-# ffmpeg does the MP3 encoding; gosu drops from root to the mapped user once
-# the volumes have been prepared.
+# ffmpeg encodes the MP3s and gosu drops from root to the mapped user once the
+# volumes are prepared. libchromaprint-tools provides fpcalc, which beets'
+# optional chroma plugin uses to identify audio by acoustic fingerprint rather
+# than by tags; it is installed, but the plugin is left off by default.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg gosu \
+ && apt-get install -y --no-install-recommends ffmpeg gosu libchromaprint-tools \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

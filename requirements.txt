@@ -5,3 +5,5 @@ yt-dlp==2026.8.19
 ytmusicapi==1.11.5
 mutagen==1.47.0
 rapidfuzz==3.14.6
+beets==2.13.1
+requests==2.34.2

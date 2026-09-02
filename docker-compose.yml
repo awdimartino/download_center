@@ -28,6 +28,10 @@ services:
       # state.db lives here: back it up.
       - ${CONFIG_DIR:-./config}:/config
 
-      # Where finished audio is written. albums/ and singles/ are created
-      # inside it.
-      - ${MUSIC_DIR:-./untagged}:/downloads
+      # Staging. Downloads land here, and beets moves them out. albums/ and
+      # singles/ are created inside it.
+      - ${STAGING_DIR:-./untagged}:/downloads
+
+      # The tagged library beets files into, using the paths in its own
+      # config at /config/beets/config.yaml. Point a music server at this.
+      - ${LIBRARY_DIR:-./library}:/music
