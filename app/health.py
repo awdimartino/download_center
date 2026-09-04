@@ -16,6 +16,7 @@ state goes through Navidrome's HTTP API instead.
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import sqlite3
 import time
@@ -23,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import diskaudit
 from .config import settings
 
 # The tag whose value Navidrome is configured to use as its persistent track
@@ -282,6 +284,74 @@ def _staging_section() -> Section:
     return section
 
 
+def _disk_section(audit) -> Section:
+    """What the files themselves say, as opposed to what Navidrome believes."""
+    section = Section("On disk")
+
+    if audit is None:
+        section.add(Check(
+            "disk_pending", "Audit", "not run yet", INFO,
+            "walks the library reading tags; runs in the background",
+        ))
+        return section
+
+    age = (time.time() - audit.taken_at) / 3600
+    section.add(Check(
+        "disk_files", "Audio files", audit.files, INFO,
+        f"read {age:.0f}h ago in {audit.seconds:.0f}s"
+        + (f", {audit.untaggable} untaggable" if audit.untaggable else ""),
+    ))
+    section.add(Check(
+        "disk_unstamped", "Files with no UUID", len(audit.missing_track_uuid),
+        OK if not audit.missing_track_uuid else FAIL,
+        "; ".join(audit.missing_track_uuid[:3]),
+        "Run the stamper over the library, then a full scan.",
+    ))
+    section.add(Check(
+        "disk_split_albums", "Directories with two album UUIDs",
+        len(audit.split_albums),
+        OK if not audit.split_albums else FAIL,
+        "; ".join(audit.split_albums[:3]),
+        "One directory is one album. Two UUIDs means Navidrome shows it "
+        "twice, however tidy the folder is.",
+    ))
+    section.add(Check(
+        "disk_duplicate_uuids", "UUIDs on more than one file",
+        len(audit.duplicate_uuids),
+        OK if not audit.duplicate_uuids else FAIL,
+        hint="A copied tag rather than a generated one. Both files collapse "
+             "into a single track.",
+    ))
+    section.add(Check(
+        "disk_unreadable", "Unreadable files", len(audit.unreadable),
+        OK if not audit.unreadable else WARN,
+        "; ".join(audit.unreadable[:2]),
+    ))
+    return section
+
+
+def _stale_index_check(connection_stamped: int | None, audit) -> Check | None:
+    """Whether Navidrome has caught up with the tags on disk.
+
+    Stamping preserves mtime deliberately, so an incremental scan does not
+    re-read the files and Navidrome keeps using the fallback identity. The
+    database alone cannot distinguish that from files that were never
+    stamped, and the two need opposite responses.
+    """
+    if audit is None or connection_stamped is None:
+        return None
+    behind = audit.stamped - connection_stamped
+    if behind <= 0:
+        return None
+    return Check(
+        "stale_index", "Stamped but not yet scanned", behind,
+        WARN,
+        "on disk but not in Navidrome's index",
+        "Stamping preserves mtime, so incremental scans skip these. "
+        "Run a full scan.",
+    )
+
+
 def _system_section(started_at: float) -> Section:
     section = Section("System")
 
@@ -315,6 +385,8 @@ def report(started_at: float) -> dict[str, Any]:
     """Everything the dashboard shows, in one pass."""
     sections: list[Section] = []
     error = None
+    audit = diskaudit.cached()
+    indexed_stamped: int | None = None
 
     try:
         connection = _connect()
@@ -335,6 +407,16 @@ def report(started_at: float) -> dict[str, Any]:
                         build.__name__.strip("_").split("_")[0].title(),
                         [Check("unavailable", "Checks unavailable", "—",
                                INFO, str(exc)[:120])]))
+            with contextlib.suppress(sqlite3.Error):
+                indexed_stamped = _scalar(connection, f"""
+                    select count(*) from media_file
+                     where {live}
+                       and json_extract(tags, '{UUID_TAG}') is not null""")
+
+    sections.append(_disk_section(audit))
+    stale = _stale_index_check(indexed_stamped, audit)
+    if stale and sections:
+        sections[0].add(stale)
 
     sections.append(_staging_section())
     sections.append(_system_section(started_at))

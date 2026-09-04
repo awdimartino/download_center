@@ -790,3 +790,21 @@ async function loadHealth() {
 // having opened the panel.
 loadHealth();
 setInterval(loadHealth, 5 * 60 * 1000);
+
+// Reading tags from every file takes long enough that it runs on a timer in
+// the background; this is for when you have just fixed something and want the
+// answer now rather than in six hours.
+document.getElementById("health-audit").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Reading…";
+  try {
+    await fetch("/api/health/audit", { method: "POST" });
+    await loadHealth();
+  } catch (err) {
+    showError(`Audit failed: ${err.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Re-read files";
+  }
+});

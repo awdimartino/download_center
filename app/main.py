@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import beets_library, generic, ledger, spotify, staging, worker
+from . import beets_library, diskaudit, generic, ledger, spotify, staging, worker
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -130,7 +130,31 @@ async def lifespan(app: FastAPI):
     log.info("ledger holds %d previously downloaded track(s)", ledger.count())
     if not settings.spotify_configured:
         log.warning("Spotify credentials missing - add them to config/config.toml")
-    yield
+
+    auditor = asyncio.create_task(_audit_loop())
+    try:
+        yield
+    finally:
+        auditor.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await auditor
+
+
+async def _audit_loop() -> None:
+    """Keep the on-disk identity audit reasonably fresh.
+
+    It reads tags from every file in the library, so it cannot run inside a
+    request. Refreshing on a slow timer means the health panel always has an
+    answer, even if it is a few hours old - and a stale answer is only old,
+    never wrong, because nothing here writes anything.
+    """
+    while True:
+        if diskaudit.stale():
+            try:
+                await asyncio.to_thread(diskaudit.refresh)
+            except Exception:
+                log.exception("disk audit failed")
+        await asyncio.sleep(600)
 
 
 app = FastAPI(title="Download Center", lifespan=lifespan)
@@ -436,6 +460,13 @@ async def health() -> dict[str, Any]:
     # Reads Navidrome's database and stats a few directories, so it is quick
     # but blocking; a thread keeps it off the event loop.
     return await asyncio.to_thread(health_checks.report, STARTED_AT)
+
+
+@app.post("/api/health/audit")
+async def health_audit() -> dict[str, Any]:
+    """Re-read identity tags from every file. Slow, hence explicit."""
+    audit = await asyncio.to_thread(diskaudit.refresh)
+    return audit.as_dict()
 
 
 @app.get("/api/status")
