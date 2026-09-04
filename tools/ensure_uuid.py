@@ -253,8 +253,14 @@ def main() -> int:
                 record["at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 handle.write(json.dumps(record) + "\n")
             if index % 250 == 0 or index == len(files):
+                # flush explicitly: stdout is block-buffered when redirected to
+                # a file, so progress on a long run would otherwise be invisible
+                # until the buffer filled or the process ended.
                 print(f"  {index}/{len(files)}  "
-                      + "  ".join(f"{k}={v}" for k, v in counts.items() if v))
+                      + "  ".join(f"{k}={v}" for k, v in counts.items() if v),
+                      flush=True)
+                if handle:
+                    handle.flush()
     finally:
         if handle:
             handle.close()
