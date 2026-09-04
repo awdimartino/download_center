@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 
 from . import beets_library, generic, ledger, spotify, staging, worker
 from . import config
+from . import health as health_checks
 from .config import settings
 
 logging.basicConfig(
@@ -27,6 +29,9 @@ logging.basicConfig(
 log = logging.getLogger("download_center")
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# Process start, for the uptime the health panel reports.
+STARTED_AT = time.time()
 
 
 # --- job state ------------------------------------------------------------
@@ -422,6 +427,15 @@ async def inbox_discard(request: PathRequest) -> dict[str, Any]:
         return await asyncio.to_thread(beets_library.discard, request.path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# --- health ---------------------------------------------------------------
+
+@app.get("/api/health")
+async def health() -> dict[str, Any]:
+    # Reads Navidrome's database and stats a few directories, so it is quick
+    # but blocking; a thread keeps it off the event loop.
+    return await asyncio.to_thread(health_checks.report, STARTED_AT)
 
 
 @app.get("/api/status")

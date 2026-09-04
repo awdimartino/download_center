@@ -35,3 +35,10 @@ services:
       # The tagged library beets files into, using the paths in its own
       # config at /config/beets/config.yaml. Point a music server at this.
       - ${LIBRARY_DIR:-./library}:/music
+
+      # Navidrome's database, for the health panel. Uncomment and point at
+      # your navidrome.db to enable it. Read-only on purpose: Navidrome owns
+      # this file and caches from it, so nothing here ever writes to it.
+      # Without it the panel still reports staging and disk, just not the
+      # library checks.
+      # - /path/to/navidrome/navidrome.db:/navidrome/navidrome.db:ro

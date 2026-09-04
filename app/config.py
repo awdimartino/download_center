@@ -22,6 +22,8 @@ _ENV_OVERRIDES = {
     "max_attempts": "DC_MAX_ATTEMPTS",
     "rate_limit_sleep": "DC_RATE_LIMIT_SLEEP",
     "beets_enabled": "DC_BEETS_ENABLED",
+    "music_dir": "DC_MUSIC_DIR",
+    "navidrome_db": "DC_NAVIDROME_DB",
 }
 
 
@@ -42,6 +44,14 @@ class Settings(BaseModel):
     # Hand finished downloads to beets, which tags them against MusicBrainz
     # and files them into the library tree defined in its own config.
     beets_enabled: bool = True
+
+    # The tagged library beets files into, and which Navidrome serves.
+    music_dir: Path = Path("/music")
+
+    # Navidrome's database, mounted read-only. Health reporting reads it;
+    # nothing here ever writes to it, because Navidrome owns that file and
+    # caches from it. State changes go through Navidrome's HTTP API.
+    navidrome_db: Path = Path("/navidrome/navidrome.db")
 
     @property
     def albums_dir(self) -> Path:

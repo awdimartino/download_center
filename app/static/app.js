@@ -275,11 +275,12 @@ document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
     const view = tab.dataset.view;
-    ["queue", "browse", "library"].forEach((name) => {
+    ["queue", "browse", "library", "health"].forEach((name) => {
       document.getElementById(`view-${name}`).hidden = view !== name;
     });
     if (view === "browse") queryInput.focus();
     if (view === "library") openLibraryView();
+    if (view === "health") loadHealth();
   });
 });
 
@@ -730,3 +731,62 @@ function openLibraryView() {
 }
 
 connect();
+
+// --- health ---------------------------------------------------------------
+// A list of numbers that should be zero. The badge on the tab is the whole
+// point: problems should be visible without anyone going looking, because
+// everything this catches is the kind of thing that stays quiet for months.
+
+const healthEl = document.getElementById("health");
+const healthEmpty = document.getElementById("health-empty");
+const healthError = document.getElementById("health-error");
+const healthBadge = document.getElementById("health-badge");
+
+function renderCheck(check) {
+  const row = el("div", `check ${check.status}`);
+  const label = el("span", "check-label", check.label);
+  if (check.hint) label.title = check.hint;
+
+  row.append(
+    label,
+    el("span", "check-value", String(check.value)),
+    el("span", "check-detail", check.detail || "")
+  );
+  return row;
+}
+
+function renderHealth(report) {
+  healthError.textContent = report.navidrome_error
+    ? `Navidrome database unreadable: ${report.navidrome_error}`
+    : "";
+  healthError.hidden = !report.navidrome_error;
+
+  healthEl.replaceChildren(
+    ...report.sections.map((section) => {
+      const block = el("section", "check-group");
+      block.append(el("h2", "section-head", section.title));
+      block.append(...section.checks.map(renderCheck));
+      return block;
+    })
+  );
+  healthEmpty.hidden = report.sections.length > 0;
+
+  healthBadge.textContent = report.problems || "";
+  healthBadge.hidden = !report.problems;
+}
+
+async function loadHealth() {
+  try {
+    const response = await fetch("/api/health");
+    if (!response.ok) throw new Error(await response.text());
+    renderHealth(await response.json());
+  } catch (err) {
+    healthEmpty.textContent = `Could not run health checks: ${err.message}`;
+    healthEmpty.hidden = false;
+  }
+}
+
+// Poll quietly in the background so the tab badge is current without anyone
+// having opened the panel.
+loadHealth();
+setInterval(loadHealth, 5 * 60 * 1000);

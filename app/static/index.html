@@ -13,6 +13,7 @@
     <button class="tab active" data-view="queue" type="button">Queue</button>
     <button class="tab" data-view="browse" type="button">Browse</button>
     <button class="tab" data-view="library" type="button">Library</button>
+    <button class="tab" data-view="health" type="button">Health<span id="health-badge" class="badge" hidden></span></button>
   </nav>
   <span id="conn" class="conn offline">connecting</span>
   <button id="settings-toggle" class="ghost" type="button">Settings</button>
@@ -78,6 +79,15 @@
     </form>
     <div id="library-results"></div>
     <p id="library-empty" class="empty">Loading library…</p>
+  </section>
+
+  <section id="view-health" hidden>
+    <p class="section-note">
+      Every number here should be zero. Anything else is worth a look.
+    </p>
+    <p id="health-error" class="warn" hidden></p>
+    <div id="health"></div>
+    <p id="health-empty" class="empty">Checking…</p>
   </section>
 </main>
 
