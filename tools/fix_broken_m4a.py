@@ -11,9 +11,14 @@ Two ways out:
                     A stream copy: the audio is bit-identical, nothing is
                     re-encoded, and the result is taggable. Preferred.
 
-  --mode mp3        transcode to MP3. Convenient if you want one format
-                    everywhere, at the cost of a second generation of lossy
-                    encoding on audio that has already been through one.
+  --mode mp3        transcode to MP3 320.
+  --mode flac       transcode to FLAC. Note this cannot recover anything the
+                    original lossy encode discarded; it stores the same audio
+                    in roughly three times the space.
+
+Both transcode modes cost a second generation of lossy encoding on audio that
+has already been through one. Add --all to convert every .m4a rather than only
+the unreadable ones, for a library that should not hold the format at all.
 
 Originals are never deleted. They are moved to a quarantine directory only
 after the replacement has been verified as decodable, tag-capable, and the
@@ -71,16 +76,24 @@ def audio_codec(info: dict | None) -> str | None:
     return None
 
 
-def find_broken(roots: list[Path]) -> list[Path]:
-    """Every .m4a that mutagen cannot open as an MP4 container."""
-    broken = []
+def find_targets(roots: list[Path], every: bool) -> list[Path]:
+    """The .m4a files to act on.
+
+    By default only the ones that are not real MP4 containers, since those are
+    the ones that cannot hold tags. With `every`, all of them - for a library
+    that should not contain the format at all.
+    """
+    targets = []
     for root in roots:
         for path in sorted(root.rglob("*.m4a")):
+            if every:
+                targets.append(path)
+                continue
             try:
                 MP4(path)
             except Exception:
-                broken.append(path)
-    return broken
+                targets.append(path)
+    return targets
 
 
 def convert(source: Path, mode: str) -> tuple[Path | None, str]:
@@ -91,6 +104,11 @@ def convert(source: Path, mode: str) -> tuple[Path | None, str]:
                    "-map", "0:a", "-c:a", "copy",
                    "-map_metadata", "0", "-movflags", "+faststart", str(target)]
         note = "stream copy, no re-encode"
+    elif mode == "flac":
+        target = source.with_suffix(".fixed.flac")
+        command = ["ffmpeg", "-v", "error", "-y", "-i", str(source),
+                   "-map", "0:a", "-c:a", "flac", "-map_metadata", "0", str(target)]
+        note = "transcoded to flac"
     else:
         target = source.with_suffix(".fixed.mp3")
         command = ["ffmpeg", "-v", "error", "-y", "-i", str(source),
@@ -136,16 +154,23 @@ def verify(original: Path, repaired: Path, source_duration: float | None) -> str
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("roots", nargs="+", type=Path)
-    parser.add_argument("--mode", choices=("remux", "mp3"), default="remux")
+    parser.add_argument("--mode", choices=("remux", "mp3", "flac"), default="remux")
+    parser.add_argument("--all", action="store_true", dest="every",
+                        help="convert every .m4a, not only the unreadable ones")
     parser.add_argument("--apply", action="store_true",
                         help="actually convert (default is a dry run)")
     parser.add_argument("--quarantine", type=Path, default=Path.home() / "m4a-originals",
                         help="where originals are moved after a verified repair")
     args = parser.parse_args()
 
-    broken = find_broken([r for r in args.roots if r.exists()])
+    if args.every and args.mode == "remux":
+        sys.exit("--all with --mode remux would rewrite .m4a as .m4a; "
+                 "use --mode mp3 or --mode flac")
+
+    broken = find_targets([r for r in args.roots if r.exists()], args.every)
+    scope = "all" if args.every else "broken"
     mode_text = "APPLYING" if args.apply else "DRY RUN (nothing will change)"
-    print(f"{mode_text} - {len(broken)} broken .m4a files, mode={args.mode}\n")
+    print(f"{mode_text} - {len(broken)} {scope} .m4a files, mode={args.mode}\n")
     if not broken:
         return 0
 
@@ -188,7 +213,8 @@ def main() -> int:
                 break
             keep = args.quarantine / f"{path.stem} ({n}){path.suffix}"
 
-        final = path.with_suffix(".m4a" if args.mode == "remux" else ".mp3")
+        final = path.with_suffix({"remux": ".m4a", "mp3": ".mp3",
+                                  "flac": ".flac"}[args.mode])
         shutil.move(str(path), str(keep))
         shutil.move(str(repaired), str(final))
         print(f"  fixed      {label:<14} {final.name[:58]}")
