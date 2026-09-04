@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import sys
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
+from . import stamp
 from .config import CONFIG_DIR, settings
 
 log = logging.getLogger("download_center.beets")
@@ -40,6 +43,12 @@ DEFAULT_CONFIG = """\
 directory: /music
 library: /config/beets/library.db
 
+ui:
+  # Beets colourises --pretend output even when it is redirected to a file,
+  # embedding escape codes inside the paths it prints. Anything parsing that
+  # output then matches nothing, silently.
+  color: no
+
 import:
   # Files are moved out of the staging area into `directory` above.
   move: yes
@@ -51,10 +60,24 @@ import:
   duplicate_action: skip
   log: /config/beets/import.log
 
+# Left at the defaults deliberately. Loosening strong_rec_thresh, or telling
+# beets to ignore the missing_tracks penalty, lets a single downloaded song
+# match a whole release confidently - and it is then filed as a one-track
+# album under that release's name. Do that twice for the same record against
+# two different releases and the album exists twice, permanently.
+
 paths:
-  default: $albumartist/$album%aunique{} ($original_year)/$track $title
-  singleton: Singles/$artist - $title
-  comp: Various Artists/$album%aunique{} ($original_year)/$track $title
+  # No year in the album directory, and no %aunique{}: both would file two
+  # releases of one record into separate folders. One directory is one album
+  # is what lets a later arrival inherit the album UUID its siblings already
+  # share instead of founding a second copy. Navidrome sorts on the year tag,
+  # not the folder name, so nothing is lost by leaving it out.
+  # The %if{} fallbacks matter - an empty field collapses the path component
+  # and drops the file loose into the artist folder. They must be quoted:
+  # YAML forbids a plain scalar starting with '%'.
+  default: '%if{$albumartist,$albumartist,%if{$artist,$artist,Unknown Artist}}/%if{$album,$album,Unknown Album}/$track - $title'
+  singleton: 'Non-Album/$artist/$title'
+  comp: 'Compilations/%if{$album,$album,Unknown Album}/$track - $title'
 
 # musicbrainz must be listed explicitly: since beets 2.x it is a plugin, and
 # naming any plugins here replaces the default list rather than adding to it.
@@ -105,6 +128,30 @@ def _run(path: Path, singleton: bool) -> tuple[bool, str]:
     return True, output[-400:]
 
 
+def filed_since(moment: float) -> list[Path]:
+    """Paths beets added to the library after `moment`.
+
+    Beets records where every file ended up, so asking it beats guessing from
+    import output or re-walking the library. Its own database is the only
+    place that knows, and this process owns it.
+    """
+    library_db = BEETS_DIR / "library.db"
+    if not library_db.exists():
+        return []
+    try:
+        connection = sqlite3.connect(f"file:{library_db}?mode=ro", uri=True,
+                                     timeout=10)
+    except sqlite3.Error as exc:
+        log.warning("could not read the beets library: %s", exc)
+        return []
+    with connection:
+        rows = connection.execute(
+            "select path from items where added >= ?", (moment,)).fetchall()
+    # beets stores paths as bytes, since a filesystem path is not necessarily
+    # valid text in any encoding.
+    return [Path(os.fsdecode(row[0])) for row in rows]
+
+
 def import_paths(published: list[Path]) -> dict[str, Any]:
     """Import freshly published paths, returning a summary for the UI.
 
@@ -116,6 +163,9 @@ def import_paths(published: list[Path]) -> dict[str, Any]:
 
     ensure_config()
     imported, skipped, failed = 0, 0, []
+    # Recorded before the first import so nothing filed during the run is
+    # missed, at the cost of occasionally re-checking a file already stamped.
+    started = time.time()
 
     for path in published:
         if not path.exists():
@@ -135,11 +185,21 @@ def import_paths(published: list[Path]) -> dict[str, Any]:
 
     _prune_empty()
 
+    # Identity is assigned here rather than at download time, because the
+    # album UUID cannot be chosen until the file is in its final directory
+    # and its siblings are visible. See app/stamp.py.
+    stamped = stamp.stamp(filed_since(started)) if imported else stamp.Result()
+    if stamped.changed:
+        log.info("stamped %d new track UUID(s), %d album UUID(s)",
+                 stamped.tracks_written, stamped.albums_written)
+
     return {
         "ran": True,
         "imported": imported,
         "skipped": skipped,
         "failed": failed,
+        "stamped": stamped.tracks_written,
+        "stamp_failures": stamped.failures,
     }
 
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mutagen import File as MutagenFile
-from mutagen.id3 import ID3, ID3NoHeaderError
+from mutagen.id3 import ID3, ID3NoHeaderError, TXXX
 from mutagen.mp4 import MP4
 
 TRACK_KEY = "NAVIDROME_UUID"
@@ -99,6 +99,70 @@ def read(path: Path) -> tuple[str | None, str | None]:
         return str(values[0]) if values else None
 
     return comment(TRACK_KEY), comment(ALBUM_KEY)
+
+
+def album_name(path: Path) -> str:
+    """The album tag, used to decide what counts as one album on disk."""
+    try:
+        audio = MutagenFile(path, easy=True)
+    except Exception:
+        return ""
+    if audio is None or not audio.tags:
+        return ""
+    values = audio.tags.get("album")
+    return str(values[0]).strip() if values else ""
+
+
+def write(path: Path, track_uuid: str | None, album_uuid: str | None) -> None:
+    """Set either tag, leaving the rest of the file's tags alone.
+
+    The caller is responsible for mtime: restoring it keeps a scanner from
+    treating the whole library as changed, but also means an incremental scan
+    will not notice the new tags.
+    """
+    suffix = path.suffix.lower()
+    pairs = [(TRACK_KEY, track_uuid), (ALBUM_KEY, album_uuid)]
+
+    if suffix == ".mp3":
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            tags = ID3()
+        for key, value in pairs:
+            if value is None:
+                continue
+            # Remove only our own frames; TXXX descriptions are free text and
+            # anything else in there belongs to some other tool.
+            for frame in list(tags.getall("TXXX")):
+                if frame.desc.upper() == key:
+                    tags.delall(f"TXXX:{frame.desc}")
+            tags.add(TXXX(encoding=3, desc=key, text=value))
+        # Keep whatever ID3 version the file already uses. Saving without
+        # this silently promotes v2.3 to v2.4, which changes how date frames
+        # are written - a library-wide format change nobody asked for.
+        version = getattr(tags, "version", (2, 4, 0))
+        tags.save(path, v2_version=3 if version[1] == 3 else 4)
+        return
+
+    if suffix in (".m4a", ".mp4"):
+        audio = MP4(path)
+        if audio.tags is None:
+            audio.add_tags()
+        for atom, value in ((MP4_TRACK, track_uuid), (MP4_ALBUM, album_uuid)):
+            if value is not None:
+                audio.tags[atom] = [value.encode("utf-8")]
+        audio.save()
+        return
+
+    audio = MutagenFile(path)
+    if audio is None:
+        raise UnreadableFile("unrecognised format")
+    if audio.tags is None:
+        audio.add_tags()
+    for key, value in pairs:
+        if value is not None:
+            audio.tags[key] = value
+    audio.save()
 
 
 def is_audio(path: Path) -> bool:
