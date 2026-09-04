@@ -111,7 +111,11 @@ def _write(path: Path, track_uuid: str, album_uuid: str) -> None:
                     tags.delall(f"TXXX:{frame.desc}")
         tags.add(TXXX(encoding=3, desc=TRACK_KEY, text=track_uuid))
         tags.add(TXXX(encoding=3, desc=ALBUM_KEY, text=album_uuid))
-        tags.save(path, v2_version=4)
+        # Keep whatever ID3 version the file already uses. Saving without this
+        # silently upgrades v2.3 to v2.4, which changes how date frames are
+        # represented - a library-wide format change nobody asked for.
+        existing_version = getattr(tags, "version", (2, 4, 0))
+        tags.save(path, v2_version=3 if existing_version[1] == 3 else 4)
         return
 
     if suffix in (".flac", ".ogg", ".oga", ".opus"):
@@ -183,7 +187,13 @@ def process(path: Path, cache: dict[Path, str], apply: bool) -> dict:
         if not apply:
             return result
 
+        # Restoring mtime keeps a scanner from treating every file in the
+        # library as changed. Nothing here alters audio, so the file genuinely
+        # is the same recording it was a moment ago.
+        stat = path.stat()
         _write(path, new_track, needed_album)
+        import os
+        os.utime(path, (stat.st_atime, stat.st_mtime))
 
         # Mandatory checkpoint: a write that did not survive the round trip is
         # a failure, not a success, however plausible it looked.
