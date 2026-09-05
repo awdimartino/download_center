@@ -755,7 +755,12 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
      overflow-wrap rule at the end of this block - so the safety net was
      only ever costing us the two things it was meant to protect. */
   html, body { max-width: 100%; }
-  main { padding: var(--s-3) var(--s-3) 5.5rem; }   /* room for the bottom bar */
+  /* Room for the bottom bar, including whatever the device reserves
+     below it, so the last row of a panel is never parked under it. */
+  main {
+    padding: var(--s-3) var(--s-3)
+             calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
 
   header {
     flex-wrap: wrap;
@@ -775,8 +780,16 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
     grid-auto-columns: 1fr;
     gap: 0;
     margin: 0;
-    padding: 0 0 env(safe-area-inset-bottom);
+    /* The bar is fixed to the bottom of the layout viewport, which on a
+       phone is not the bottom of the screen: iOS leaves the home-indicator
+       inset below it, and exposes a sliver more while the address bar
+       animates. Content scrolling past showed through both. So the bar
+       carries the inset as padding - it grows to cover it rather than
+       floating above it - and the shadow paints the same colour for 4rem
+       underneath, which costs no layout and covers whatever is left. */
+    padding: 0 0 max(0.4rem, env(safe-area-inset-bottom, 0px));
     background: var(--panel);
+    box-shadow: 0 7rem 0 var(--panel);
     border: 0;
     border-top: 1px solid var(--line);
     border-radius: 0;
@@ -813,11 +826,15 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
   /* Out of the flow: in it, a badge on one tab lifted that label above the
      other four and the row stopped reading as a row. */
+  /* Anchored to the tab's own right edge, not offset from its centre. A
+     three-digit count measured from the middle of the last tab ran off the
+     side of the screen and was cut in half. */
   .tab .badge {
     position: absolute;
-    top: 9px;
-    left: 50%;
-    margin-left: 14px;
+    top: 7px;
+    right: 5px;
+    left: auto;
+    margin: 0;
     min-width: 15px;
     padding: 0 4px;
     font-size: 9.5px;
