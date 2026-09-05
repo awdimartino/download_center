@@ -36,19 +36,26 @@ def _prepare() -> None:
     Loading plugins is not optional. Since beets 2.x the MusicBrainz backend
     is itself a plugin, so calling the matcher without this returns zero
     candidates for everything - the same trap as omitting it from the config.
+
+    Setting up happens exactly once. Plugins register their own defaults into
+    the config when they load, so clearing and re-reading it afterwards throws
+    those defaults away while the plugins stay loaded - and the next match
+    dies with "musicbrainz.extra_tags not found". The first call worked, every
+    one after it failed.
     """
     global _plugins_loaded
     os.environ["BEETSDIR"] = str(BEETS_DIR)
     ensure_config()
+    if _plugins_loaded:
+        return
 
     from beets import config as beets_config, plugins
 
     beets_config.clear()
     beets_config.read()
-    if not _plugins_loaded:
-        plugins.load_plugins()
-        plugins.find_plugins()
-        _plugins_loaded = True
+    plugins.load_plugins()
+    plugins.find_plugins()
+    _plugins_loaded = True
 
 
 def _library():
