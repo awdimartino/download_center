@@ -355,6 +355,15 @@ def _disk_section(audit) -> Section:
         "twice, however tidy the folder is.",
     ))
     section.add(Check(
+        "disk_spanning_albums", "Album UUIDs spread across directories",
+        len(audit.spanning_albums),
+        OK if not audit.spanning_albums else FAIL,
+        "; ".join(audit.spanning_albums[:2]),
+        "The reverse of a split album: unrelated tracks fused into one "
+        "record. Happens when files are stamped together and filed apart "
+        "afterwards. `stamp.resplit` gives each directory its own again.",
+    ))
+    section.add(Check(
         "disk_duplicate_uuids", "UUIDs on more than one file",
         len(audit.duplicate_uuids),
         OK if not audit.duplicate_uuids else FAIL,

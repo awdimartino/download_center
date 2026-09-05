@@ -143,6 +143,77 @@ def stamp(paths: list[Path]) -> Result:
     return result
 
 
+def spanning_albums(root: Path) -> dict[str, list[Path]]:
+    """Album UUIDs that turn up in more than one directory.
+
+    One directory is one album, so a UUID in two of them means Navidrome will
+    present unrelated tracks as a single record. This happens when files are
+    stamped together and filed apart afterwards - which is what the original
+    backfill did, stamping in place before reorganising. The pipeline now
+    stamps after beets files a track, so it should not recur, but anything
+    that moves files without re-stamping would do it again.
+    """
+    directories: dict[str, set[Path]] = collections.defaultdict(set)
+    for path in root.rglob("*"):
+        if not _stampable(path):
+            continue
+        try:
+            _, album_uuid = uuidtags.read(path)
+        except uuidtags.UnreadableFile:
+            continue
+        if album_uuid:
+            directories[album_uuid].add(path.parent)
+    return {uuid_: sorted(dirs) for uuid_, dirs in directories.items()
+            if len(dirs) > 1}
+
+
+def resplit(root: Path, apply: bool = False) -> Result:
+    """Give each directory its own album UUID where one has spread.
+
+    The mirror of the merge the stamper does. One directory keeps the shared
+    value - the one holding the most files, so the fewest are rewritten - and
+    every other gets a fresh UUID. Track UUIDs are never touched, so nothing
+    a star is attached to changes.
+    """
+    result = Result()
+
+    for album_uuid, directories in spanning_albums(root).items():
+        members = {
+            directory: [p for p in directory.iterdir() if _stampable(p)]
+            for directory in directories
+        }
+        # The largest directory keeps the existing value; ties go to the one
+        # whose files are oldest, so an established album outranks an arrival.
+        keeper = max(
+            members,
+            key=lambda d: (len(members[d]),
+                           -min((p.stat().st_mtime for p in members[d]),
+                                default=0)),
+        )
+        for directory, files in members.items():
+            if directory == keeper:
+                continue
+            fresh = str(uuid.uuid4())
+            for path in files:
+                try:
+                    _, current = uuidtags.read(path)
+                except uuidtags.UnreadableFile as exc:
+                    result.failures.append(f"{path.name}: {exc}")
+                    continue
+                if current != album_uuid:
+                    continue          # already belongs to a different album
+                if not apply:
+                    result.albums_written += 1
+                    continue
+                try:
+                    _write(path, None, fresh)
+                    result.albums_written += 1
+                except Exception as exc:
+                    result.failures.append(
+                        f"{path.name}: {type(exc).__name__}: {exc}")
+    return result
+
+
 def _write(path: Path, track_uuid: str | None, album_uuid: str | None) -> None:
     """Write and verify, preserving mtime.
 

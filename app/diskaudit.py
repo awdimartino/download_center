@@ -42,6 +42,7 @@ class Audit:
     missing_album_uuid: list[str] = field(default_factory=list)
     unreadable: list[str] = field(default_factory=list)
     split_albums: list[str] = field(default_factory=list)
+    spanning_albums: list[str] = field(default_factory=list)
     duplicate_uuids: list[str] = field(default_factory=list)
     untaggable: int = 0
     seconds: float = 0.0
@@ -58,11 +59,13 @@ class Audit:
             "missing_album_uuid": len(self.missing_album_uuid),
             "unreadable": len(self.unreadable),
             "split_albums": len(self.split_albums),
+            "spanning_albums": len(self.spanning_albums),
             "duplicate_uuids": len(self.duplicate_uuids),
             "examples": {
                 "missing_track_uuid": self.missing_track_uuid[:10],
                 "unreadable": self.unreadable[:10],
                 "split_albums": self.split_albums[:10],
+                "spanning_albums": self.spanning_albums[:10],
                 "duplicate_uuids": self.duplicate_uuids[:10],
             },
             "seconds": round(self.seconds, 1),
@@ -82,6 +85,7 @@ def run(root: Path | None = None) -> Audit:
 
     by_uuid: dict[str, int] = collections.Counter()
     by_directory: dict[Path, set[str]] = collections.defaultdict(set)
+    album_directories: dict[str, set[Path]] = collections.defaultdict(set)
 
     if not root.exists():
         audit.taken_at = started
@@ -113,6 +117,7 @@ def run(root: Path | None = None) -> Audit:
 
         if album_uuid:
             by_directory[path.parent].add(album_uuid)
+            album_directories[album_uuid].add(path.parent)
         else:
             audit.missing_album_uuid.append(relative)
 
@@ -123,15 +128,22 @@ def run(root: Path | None = None) -> Audit:
         str(directory.relative_to(root))
         for directory, uuids in sorted(by_directory.items()) if len(uuids) > 1
     ]
+    # The inverse of a split album: one album UUID appearing in several
+    # directories, which fuses unrelated tracks into a single record. Happens
+    # when files are stamped together and filed apart afterwards.
+    audit.spanning_albums = [
+        f"{u} in {len(dirs)} directories"
+        for u, dirs in sorted(album_directories.items()) if len(dirs) > 1
+    ]
     # A UUID on two files means the tag was copied rather than generated -
     # both would collapse into one track.
     audit.duplicate_uuids = [u for u, n in by_uuid.items() if n > 1]
 
     audit.seconds = time.time() - started
     audit.taken_at = time.time()
-    log.info("disk audit: %d files in %.1fs, %d unstamped, %d split albums",
+    log.info("disk audit: %d files in %.1fs, %d unstamped, %d split, %d spanning",
              audit.files, audit.seconds, len(audit.missing_track_uuid),
-             len(audit.split_albums))
+             len(audit.split_albums), len(audit.spanning_albums))
     return audit
 
 
