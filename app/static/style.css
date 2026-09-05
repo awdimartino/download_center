@@ -773,23 +773,30 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
   nav.tabs {
     position: fixed;
-    left: 0; right: 0; bottom: 0;
+    left: 0; right: 0;
+    /* Not bottom: 0. See the padding below. */
+    bottom: -6rem;
     z-index: 40;
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: 1fr;
     gap: 0;
     margin: 0;
-    /* The bar is fixed to the bottom of the layout viewport, which on a
-       phone is not the bottom of the screen: iOS leaves the home-indicator
-       inset below it, and exposes a sliver more while the address bar
-       animates. Content scrolling past showed through both. So the bar
-       carries the inset as padding - it grows to cover it rather than
-       floating above it - and the shadow paints the same colour for 4rem
-       underneath, which costs no layout and covers whatever is left. */
-    padding: 0 0 max(0.4rem, env(safe-area-inset-bottom, 0px));
+    /* The bar is fixed to the bottom of the layout viewport, and on a phone
+       that is not the bottom of the screen: iOS leaves the home-indicator
+       inset below it and exposes more while the address bar animates, and
+       the page kept showing through the gap.
+
+       A same-coloured box-shadow was the first attempt and does not paint
+       there - Safari rasterises a fixed layer to the viewport it is
+       anchored to, and the shadow falls outside it. So the bar's own box
+       goes there instead: the element hangs 6rem below its anchor and
+       carries that 6rem back as bottom padding, which leaves the labels
+       exactly where they were and puts real background over the strip.
+       The inset is added on top, so the row also clears the home
+       indicator rather than sitting under it. */
+    padding: 0 0 calc(6rem + max(0.4rem, env(safe-area-inset-bottom, 0px)));
     background: var(--panel);
-    box-shadow: 0 7rem 0 var(--panel);
     border: 0;
     border-top: 1px solid var(--line);
     border-radius: 0;
