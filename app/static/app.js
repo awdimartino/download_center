@@ -179,6 +179,8 @@ function connect() {
       started = false;
       if (healthTimer) clearInterval(healthTimer);
       healthTimer = null;
+      warnEl.hidden = true;
+      showError("");
       showSignin(true);
       return;
     }
@@ -271,16 +273,25 @@ settingsForm.addEventListener("submit", async (event) => {
   }
 });
 
-fetch("/api/status")
-  .then((response) => response.json())
-  .then((status) => {
+// Only once there is a session, and only on an answer we actually got. Run
+// at load it fired while signed out, read `spotify_configured` off a 401
+// body, found it undefined and announced that credentials were missing -
+// which reads as the sign-in having failed rather than as a note about
+// Spotify.
+async function checkSpotify() {
+  try {
+    const response = await fetch("/api/status");
+    if (!response.ok) return;
+    const status = await response.json();
+    warnEl.hidden = Boolean(status.spotify_configured);
     if (!status.spotify_configured) {
       warnEl.textContent =
-        "Spotify credentials are not configured. Add them to config/config.toml and restart.";
-      warnEl.hidden = false;
+        "Spotify credentials are not configured. Add them in Settings.";
     }
-  })
-  .catch(() => {});
+  } catch {
+    /* the queue will report its own errors; a missing banner is not one */
+  }
+}
 
 
 /* --- browse ------------------------------------------------------------- */
@@ -859,6 +870,7 @@ function start() {
   connect();
   loadHealth();
   loadStaging();
+  checkSpotify();
   healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
 }
 
