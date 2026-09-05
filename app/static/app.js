@@ -316,7 +316,15 @@ document.querySelectorAll(".tab").forEach((tab) => {
       const section = document.getElementById(`view-${other.dataset.view}`);
       if (section) section.hidden = other.dataset.view !== view;
     });
-    if (view === "browse") queryInput.focus();
+    // Focus the search box only where a keyboard is already there. On a
+    // phone this summoned the on-screen one the instant the tab was
+    // tapped, covering half the screen and scrolling the page out from
+    // under the thumb that tapped it. Asked of the pointer rather than
+    // the width: a tablet in a wide window is still a touch device, and
+    // a laptop in a narrow one still has a real keyboard.
+    if (view === "browse" && matchMedia("(hover: hover) and (pointer: fine)").matches) {
+      queryInput.focus();
+    }
     if (view === "staging") loadStaging();
     if (view === "health") loadHealth();
     if (view === "dupes") loadDupes();
