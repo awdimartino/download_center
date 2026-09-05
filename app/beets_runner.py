@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import navidrome, stamp
+from . import navidrome, stamp, workspace
 from .config import CONFIG_DIR, settings
 
 log = logging.getLogger("download_center.beets")
@@ -34,8 +34,9 @@ log = logging.getLogger("download_center.beets")
 # and moving files into the same tree is how things get lost.
 _import_lock = threading.Lock()
 
-BEETS_DIR = CONFIG_DIR / "beets"
-CONFIG_PATH = BEETS_DIR / "config.yaml"
+# Kept for the one-off migration of the single-user layout; every other
+# reference goes through a workspace.
+LEGACY_BEETS_DIR = CONFIG_DIR / "beets"
 
 # Long enough for art fetching and MusicBrainz lookups on a slow connection,
 # short enough that a wedged import cannot block the queue forever.
@@ -45,8 +46,8 @@ DEFAULT_CONFIG = """\
 # Written by Download Center on first run. Edit freely - it is never
 # overwritten, and the container reads it on every import.
 
-directory: /music
-library: /config/beets/library.db
+directory: __DIRECTORY__
+library: __LIBRARY__
 
 ui:
   # Beets colourises --pretend output even when it is redirected to a file,
@@ -67,7 +68,7 @@ import:
   # human; `merge` files it alongside its siblings, where it also inherits
   # the album UUID they already share instead of founding a second copy.
   duplicate_action: merge
-  log: /config/beets/import.log
+  log: __LOG__
 
 # Left at the defaults deliberately. Loosening strong_rec_thresh, or telling
 # beets to ignore the missing_tracks penalty, lets a single downloaded song
@@ -106,21 +107,37 @@ embedart:
 """
 
 
-def ensure_config() -> Path:
-    """Create the beets config on first run; never overwrite an edited one."""
-    BEETS_DIR.mkdir(parents=True, exist_ok=True)
-    if not CONFIG_PATH.exists():
-        CONFIG_PATH.write_text(DEFAULT_CONFIG, encoding="utf-8")
-        log.info("wrote a default beets config to %s", CONFIG_PATH)
-    return CONFIG_PATH
+def ensure_config(space: workspace.Workspace) -> Path:
+    """Create this person's beets config on first use; never overwrite it.
+
+    The destination is filled in from their Navidrome library, so adding a
+    user is nothing more than them signing in once.
+    """
+    space.prepare()
+    if not space.beets_config.exists():
+        # Substituted rather than formatted: the template is full of beets
+        # path syntax like %if{$albumartist,...}, which str.format reads as
+        # replacement fields and rejects.
+        filled = DEFAULT_CONFIG
+        for placeholder, value in (
+            ("__DIRECTORY__", space.library_path),
+            ("__LIBRARY__", space.beets_library),
+            ("__LOG__", space.beets_dir / "import.log"),
+        ):
+            filled = filled.replace(placeholder, str(value))
+        space.beets_config.write_text(filled, encoding="utf-8")
+        log.info("wrote a beets config for %s at %s",
+                 space.username, space.beets_config)
+    return space.beets_config
 
 
-def _run(path: Path, singleton: bool) -> tuple[bool, str]:
+def _run(space: workspace.Workspace, path: Path,
+         singleton: bool) -> tuple[bool, str]:
     # Invoked through the interpreter rather than the `beet` script, which
     # is only on PATH when beets is installed system-wide.
     command = [sys.executable, "-m", "beets", "import",
                "-qs" if singleton else "-q", str(path)]
-    environment = {**os.environ, "BEETSDIR": str(BEETS_DIR)}
+    environment = {**os.environ, "BEETSDIR": str(space.beets_dir)}
     try:
         result = subprocess.run(
             command, env=environment, capture_output=True, text=True,
@@ -137,25 +154,19 @@ def _run(path: Path, singleton: bool) -> tuple[bool, str]:
     return True, output[-400:]
 
 
-def library_root() -> Path:
-    """The `directory` beets files into, from its own config."""
-    try:
-        import yaml
-        raw = yaml.safe_load(ensure_config().read_text(encoding="utf-8")) or {}
-        configured = raw.get("directory")
-    except Exception:
-        configured = None
-    return Path(configured) if configured else settings.music_dir
+def library_root(space: workspace.Workspace) -> Path:
+    """Where beets files this person's music."""
+    return space.library_path
 
 
-def filed_since(moment: float) -> list[Path]:
+def filed_since(space: workspace.Workspace, moment: float) -> list[Path]:
     """Paths beets added to the library after `moment`.
 
     Beets records where every file ended up, so asking it beats guessing from
     import output or re-walking the library. Its own database is the only
     place that knows, and this process owns it.
     """
-    library_db = BEETS_DIR / "library.db"
+    library_db = space.beets_library
     if not library_db.exists():
         return []
     try:
@@ -173,7 +184,7 @@ def filed_since(moment: float) -> list[Path]:
     # library directory. Resolving them is not optional: a relative path
     # silently resolves against the working directory instead, matches
     # nothing, and stamping quietly does nothing at all.
-    root = library_root()
+    root = space.library_path
     paths = []
     for row in rows:
         path = Path(os.fsdecode(row[0]))
@@ -181,7 +192,8 @@ def filed_since(moment: float) -> list[Path]:
     return paths
 
 
-def import_paths(published: list[Path]) -> dict[str, Any]:
+def import_paths(space: workspace.Workspace,
+                 published: list[Path]) -> dict[str, Any]:
     """Import freshly published paths, returning a summary for the UI.
 
     Only what this job produced is imported, never the whole staging tree, so
@@ -190,15 +202,17 @@ def import_paths(published: list[Path]) -> dict[str, Any]:
     if not settings.beets_enabled:
         return {"ran": False, "reason": "disabled"}
 
-    # Two beets processes against one library.db, both moving files into the
-    # same tree, is a way to lose things. The sweep and a finishing job can
-    # both land here, so they queue instead.
+    # Two beets processes moving files into one tree is a way to lose things.
+    # Held across every workspace rather than per user: they have separate
+    # databases but the machine has one disk, and a sweep plus a finishing
+    # job is the collision worth avoiding.
     with _import_lock:
-        return _import_paths(published)
+        return _import_paths(space, published)
 
 
-def _import_paths(published: list[Path]) -> dict[str, Any]:
-    ensure_config()
+def _import_paths(space: workspace.Workspace,
+                  published: list[Path]) -> dict[str, Any]:
+    ensure_config(space)
     imported, skipped, failed = 0, 0, []
     # Recorded before the first import so nothing filed during the run is
     # missed, at the cost of occasionally re-checking a file already stamped.
@@ -209,7 +223,7 @@ def _import_paths(published: list[Path]) -> dict[str, Any]:
             continue
         # Singles are files; album imports are whole directories.
         singleton = path.is_file()
-        ok, output = _run(path, singleton)
+        ok, output = _run(space, path, singleton)
         if not ok:
             failed.append(f"{path.name}: {output.splitlines()[-1] if output else 'failed'}")
             log.warning("beets import failed for %s: %s", path.name, output)
@@ -220,12 +234,13 @@ def _import_paths(published: list[Path]) -> dict[str, Any]:
             imported += 1
             log.info("beets imported %s", path.name)
 
-    _prune_empty()
+    _prune_empty(space)
 
     # Identity is assigned here rather than at download time, because the
     # album UUID cannot be chosen until the file is in its final directory
     # and its siblings are visible. See app/stamp.py.
-    stamped = stamp.stamp(filed_since(started)) if imported else stamp.Result()
+    stamped = (stamp.stamp(filed_since(space, started))
+               if imported else stamp.Result())
     if stamped.changed:
         log.info("stamped %d new track UUID(s), %d album UUID(s)",
                  stamped.tracks_written, stamped.albums_written)
@@ -263,20 +278,11 @@ def settled(path: Path, quiet_seconds: int | None = None) -> bool:
     return newest <= cutoff
 
 
-def sweep_staging() -> dict[str, Any]:
-    """Import anything sitting in staging that no download job put there.
-
-    Files arrive by other routes - a manual drop, a job that finished while
-    beets was busy, something copied in from elsewhere - and without this they
-    would sit in staging indefinitely. Beets moves out what it can match, so
-    whatever remains afterwards is by definition something that needs a human.
-    """
-    if not settings.beets_enabled:
-        return {"ran": False, "reason": "disabled"}
-
+def waiting_in(space: workspace.Workspace) -> list[Path]:
+    """What is sitting in one person's staging area, ready to import."""
     candidates: list[Path] = []
-    for parent, want_dirs in ((settings.albums_dir, True),
-                              (settings.singles_dir, False)):
+    for parent, want_dirs in ((space.albums_dir, True),
+                              (space.singles_dir, False)):
         if not parent.is_dir():
             continue
         for entry in parent.iterdir():
@@ -288,21 +294,45 @@ def sweep_staging() -> dict[str, Any]:
                 log.debug("%s is still changing, leaving it", entry.name)
                 continue
             candidates.append(entry)
+    return candidates
 
-    if not candidates:
+
+def sweep_staging() -> dict[str, Any]:
+    """Import anything sitting in staging that no download job put there.
+
+    Files arrive by other routes - a manual drop, a job that finished while
+    beets was busy, something copied in from elsewhere - and without this they
+    would sit in staging indefinitely. Beets moves out what it can match, so
+    whatever remains afterwards is by definition something that needs a human.
+
+    Runs on a timer with nobody signed in, which is exactly why staging is
+    split by person: the folder is the only remaining record of whose files
+    these are and where they should end up.
+    """
+    if not settings.beets_enabled:
+        return {"ran": False, "reason": "disabled"}
+
+    results: dict[str, Any] = {}
+    for space in workspace.existing():
+        candidates = waiting_in(space)
+        if not candidates:
+            continue
+        log.info("sweeping %d item(s) from %s's staging",
+                 len(candidates), space.username)
+        results[space.username] = import_paths(space, candidates)
+
+    if not results:
         return {"ran": False, "reason": "nothing waiting"}
-
-    log.info("sweeping %d item(s) from staging", len(candidates))
-    return import_paths(candidates)
+    return {"ran": True, "by_user": results}
 
 
-def _prune_empty() -> None:
+def _prune_empty(space: workspace.Workspace) -> None:
     """Remove album directories beets emptied when it moved the files out.
 
     Anything still holding files was skipped rather than imported, and is
     left alone so it stays visible.
     """
-    for parent in (settings.albums_dir, settings.singles_dir):
+    for parent in (space.albums_dir, space.singles_dir):
         if not parent.is_dir():
             continue
         for entry in parent.iterdir():

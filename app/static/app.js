@@ -283,7 +283,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
       document.getElementById(`view-${name}`).hidden = view !== name;
     });
     if (view === "browse") queryInput.focus();
-    if (view === "library") openLibraryView();
+    if (view === "staging") loadStaging();
     if (view === "health") loadHealth();
     if (view === "dupes") loadDupes();
   });
@@ -482,259 +482,62 @@ searchForm.addEventListener("submit", (event) => {
   runSearch();
 });
 
-/* --- library and inbox --------------------------------------------------- */
+/* --- staging -------------------------------------------------------------
+   What beets has not been able to file. There is no separate to-do list: the
+   folder is the queue, so it cannot disagree with what is actually there. */
 
-const statsEl = document.getElementById("stats");
-const inboxEl = document.getElementById("inbox");
-const inboxSection = document.getElementById("inbox-section");
-const libraryResults = document.getElementById("library-results");
-const libraryEmpty = document.getElementById("library-empty");
-const libraryForm = document.getElementById("library-form");
-const libraryQuery = document.getElementById("library-query");
+const stagingEl = document.getElementById("staging");
+const stagingEmpty = document.getElementById("staging-empty");
+const stagingBadge = document.getElementById("staging-badge");
 
-let libraryLoaded = false;
-
-function hhmm(seconds) {
-  if (!seconds) return "0h";
-  const hours = Math.floor(seconds / 3600);
-  return hours >= 1 ? `${hours}h` : `${Math.round(seconds / 60)}m`;
-}
-
-async function loadStats() {
-  try {
-    const s = await fetch("/api/library/stats").then((r) => r.json());
-    statsEl.replaceChildren(
-      stat(s.albums, "albums"),
-      stat(s.tracks, "tracks"),
-      stat(s.artists, "artists"),
-      stat(hhmm(s.seconds), "runtime")
-    );
-  } catch {
-    statsEl.replaceChildren();
-  }
-}
-
-function stat(value, label) {
-  const box = el("div", "stat");
-  box.append(el("div", "stat-value", String(value)), el("div", "stat-label", label));
-  return box;
-}
-
-/* --- inbox --------------------------------------------------------------- */
-
-async function loadInbox() {
-  let entries = [];
-  try {
-    entries = await fetch("/api/inbox").then((r) => r.json());
-  } catch {
-    entries = [];
-  }
-  inboxSection.hidden = entries.length === 0;
-  inboxEl.replaceChildren(...entries.map(inboxRow));
-}
-
-function inboxRow(entry) {
-  const row = el("div", "inbox-item");
-
-  const head = el("div", "inbox-head");
-  head.append(
-    el("span", "inbox-name", entry.name),
-    el("span", "badge", entry.kind),
-    el("span", "card-sub dim", `${entry.tracks} track${entry.tracks === 1 ? "" : "s"}`)
+function stagingRow(entry) {
+  const row = el("div", `staging-item${entry.settled ? "" : " unsettled"}`);
+  row.append(
+    el("span", "staging-kind", entry.kind),
+    el("span", "staging-name", entry.name),
+    el("span", "staging-meta",
+       `${entry.tracks} file${entry.tracks === 1 ? "" : "s"} · ` +
+       `${(entry.bytes / 1e6).toFixed(0)} MB · ${entry.age_days}d`)
   );
-
-  const actions = el("div", "inbox-actions");
-  const body = el("div", "inbox-body");
-  body.hidden = true;
-
-  const identify = el("button", "ghost", "Identify");
-  identify.addEventListener("click", async () => {
-    body.hidden = false;
-    body.replaceChildren(el("p", "card-sub", "Asking MusicBrainz…"));
-    identify.disabled = true;
-    try {
-      const data = await fetch(
-        `/api/inbox/candidates?path=${encodeURIComponent(entry.path)}`
-      ).then((r) => r.json());
-      body.replaceChildren(candidateList(entry, data));
-    } catch {
-      body.replaceChildren(el("p", "card-sub", "Lookup failed."));
-    }
-    identify.disabled = false;
-  });
-
-  const asIs = el("button", "ghost", "Import as-is");
-  asIs.title = "Keep the existing tags and file it without matching";
-  asIs.addEventListener("click", () => applyChoice(entry, { as_is: true }, asIs));
-
-  const drop = el("button", "ghost cancel", "Discard");
-  drop.addEventListener("click", async () => {
-    if (!confirm(`Delete "${entry.name}" without importing it?`)) return;
-    await fetch("/api/inbox/discard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: entry.path }),
-    });
-    loadInbox();
-  });
-
-  actions.append(identify, asIs, drop);
-  head.append(actions);
-  row.append(head, body);
+  if (!entry.settled) {
+    // Still being written to. Importing now would file a partial album.
+    row.append(el("span", "staging-note", "still arriving"));
+  }
   return row;
 }
 
-function candidateList(entry, data) {
-  const wrap = el("div", "candidates");
-  wrap.append(
-    el("div", "card-sub dim",
-      `tagged as "${data.current_artist || "?"} — ${data.current_album || "?"}", ` +
-      `${data.file_count} files · beets says: ${data.recommendation}`)
-  );
-
-  if (!data.candidates || !data.candidates.length) {
-    wrap.append(el("p", "card-sub", "No candidates found."));
-    return wrap;
+async function loadStaging() {
+  try {
+    const data = await fetch("/api/staging").then((r) => r.json());
+    const entries = data.entries || [];
+    stagingEl.replaceChildren(...entries.map(stagingRow));
+    stagingEmpty.textContent = entries.length
+      ? "" : `Nothing waiting in ${data.staging || "staging"}.`;
+    stagingEmpty.hidden = entries.length > 0;
+    stagingBadge.textContent = entries.length || "";
+    stagingBadge.hidden = !entries.length;
+  } catch (err) {
+    stagingEmpty.textContent = `Could not read staging: ${err.message}`;
+    stagingEmpty.hidden = false;
   }
-
-  data.candidates.forEach((c) => {
-    const row = el("div", "candidate");
-    // beets' distance is a disagreement score; invert it for readability.
-    const confidence = Math.round((1 - c.distance) * 100);
-    const bits = [c.year, c.country, c.label, c.media].filter(Boolean).join(" · ");
-    const gaps = [];
-    if (c.missing) gaps.push(`${c.missing} missing`);
-    if (c.unmatched) gaps.push(`${c.unmatched} unmatched`);
-
-    const info = el("div", "candidate-info");
-    info.append(
-      el("div", "card-title", `${c.artist} — ${c.album}`),
-      el("div", "card-sub dim", `${bits}${bits ? " · " : ""}${c.track_count} tracks` +
-        (gaps.length ? ` · ${gaps.join(", ")}` : ""))
-    );
-
-    const score = el("span", `score ${confidence >= 90 ? "good" : confidence >= 70 ? "ok" : "poor"}`,
-      `${confidence}%`);
-
-    const pick = el("button", "ghost", "Use this");
-    pick.addEventListener("click", () => applyChoice(entry, { album_id: c.album_id }, pick));
-
-    row.append(score, info, pick);
-    wrap.append(row);
-  });
-  return wrap;
 }
 
-async function applyChoice(entry, payload, button) {
-  const original = button.textContent;
+document.getElementById("staging-import").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
   button.disabled = true;
   button.textContent = "Importing…";
   try {
-    const result = await fetch("/api/inbox/apply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: entry.path, ...payload }),
-    }).then((r) => r.json());
-
-    if (result.ok) {
-      await loadInbox();
-      await loadStats();
-      await loadLibrary(libraryQuery.value.trim());
-    } else {
-      showError(result.detail || result.output || "Import failed.");
-      button.disabled = false;
-      button.textContent = original;
-    }
-  } catch {
-    showError("Could not reach the server.");
+    const result = await fetch("/api/staging/import", { method: "POST" })
+      .then((r) => r.json());
+    if (!result.ran) showError(`Nothing to import: ${result.reason}`);
+    await loadStaging();
+  } catch (err) {
+    showError(`Import failed: ${err.message}`);
+  } finally {
     button.disabled = false;
-    button.textContent = original;
+    button.textContent = "Try importing now";
   }
-}
-
-/* --- library browsing ---------------------------------------------------- */
-
-async function loadLibrary(query) {
-  libraryEmpty.textContent = "Loading…";
-  libraryEmpty.hidden = false;
-  libraryResults.replaceChildren();
-  try {
-    const response = await fetch(
-      `/api/library/albums?q=${encodeURIComponent(query || "")}`
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      libraryEmpty.textContent = data.detail || "Query failed.";
-      return;
-    }
-    libraryResults.replaceChildren(...data.map(libraryAlbum));
-    libraryEmpty.textContent = data.length ? "" : "Nothing matches that query.";
-    libraryEmpty.hidden = data.length > 0;
-  } catch {
-    libraryEmpty.textContent = "Could not read the library.";
-  }
-}
-
-function libraryAlbum(album) {
-  const row = el("div", "lib-album");
-  const year = album.original_year || album.year;
-  row.append(
-    el("span", "lib-artist", album.albumartist || "Unknown"),
-    el("span", "lib-title", album.album || "Unknown"),
-    el("span", "lib-year", year ? String(year) : ""),
-    el("span", "lib-count", `${album.tracks}`)
-  );
-  if (album.mb_albumid) {
-    const tick = el("span", "lib-mb", "MB");
-    tick.title = `MusicBrainz release ${album.mb_albumid}`;
-    row.append(tick);
-  } else {
-    row.append(el("span", "lib-mb dim", "—"));
-  }
-
-  const tracks = el("div", "tracklist");
-  tracks.hidden = true;
-  let loaded = false;
-
-  row.addEventListener("click", async () => {
-    tracks.hidden = !tracks.hidden;
-    if (loaded || tracks.hidden) return;
-    loaded = true;
-    const detail = await fetch(`/api/library/albums/${album.id}`).then((r) => r.json());
-    tracks.replaceChildren(
-      ...detail.tracks.map((t) => {
-        const line = el("div", "track");
-        line.append(
-          el("span", "track-no", t.track ?? ""),
-          el("span", "track-name", t.title),
-          el("span", "track-artist", t.artist),
-          el("span", "track-dur", duration((t.length || 0) * 1000)),
-          el("span", "track-status", `${Math.round((t.bitrate || 0) / 1000)}k`)
-        );
-        return line;
-      })
-    );
-  });
-
-  const wrap = el("div", "lib-row");
-  wrap.append(row, tracks);
-  return wrap;
-}
-
-libraryForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  loadLibrary(libraryQuery.value.trim());
 });
-
-function openLibraryView() {
-  loadStats();
-  loadInbox();
-  if (!libraryLoaded) {
-    libraryLoaded = true;
-    loadLibrary("");
-  }
-}
-
 
 // --- health ---------------------------------------------------------------
 // A list of numbers that should be zero. The badge on the tab is the whole
@@ -1032,6 +835,7 @@ function start() {
   started = true;
   connect();
   loadHealth();
+  loadStaging();
   healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
 }
 

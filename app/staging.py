@@ -19,6 +19,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from . import workspace
 from .config import settings
 
 # Characters Windows forbids in a filename, plus control characters.
@@ -45,14 +46,14 @@ def sanitize(name: str) -> str:
     return cleaned or "unknown"
 
 
-def incomplete_root(job_id: str) -> Path:
-    """Scratch space for a job, on the same filesystem as the output tree.
+def incomplete_root(space: workspace.Workspace, job_id: str) -> Path:
+    """Scratch space for a job, on the same filesystem as its destination.
 
-    It has to live under output_dir rather than in the config directory: those
-    are separate volumes under Docker, and os.replace cannot move a directory
-    across filesystems atomically.
+    It has to live under the staging tree rather than in the config
+    directory: those are separate volumes under Docker, and os.replace cannot
+    move a directory across filesystems atomically.
     """
-    return settings.output_dir / ".incomplete" / job_id
+    return space.incomplete_dir / job_id
 
 
 def album_folder(item: dict[str, Any]) -> str:
@@ -69,7 +70,8 @@ def single_filename(item: dict[str, Any]) -> str:
     return f"{sanitize(f'{item['artist']} - {item['title']}')}.mp3"
 
 
-def plan(job_id: str, items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def plan(space: workspace.Workspace, job_id: str,
+         items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Work out, for every item, where it is built and where it ends up.
 
     Returns item id -> {"temp", "final", "complete_album"}.
@@ -82,7 +84,7 @@ def plan(job_id: str, items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
                 discs[item["album_id"]], item.get("disc_no") or 1
             )
 
-    root = incomplete_root(job_id)
+    root = incomplete_root(space, job_id)
     layout: dict[str, dict[str, Any]] = {}
 
     for item in items:
@@ -94,18 +96,19 @@ def plan(job_id: str, items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             folder = album_folder(item)
             name = track_filename(item, multi_disc=discs[album_id] > 1)
             temp = root / "albums" / folder / name
-            final = settings.albums_dir / folder / name
+            final = space.albums_dir / folder / name
         else:
             name = single_filename(item)
             temp = root / "singles" / name
-            final = settings.singles_dir / name
+            final = space.singles_dir / name
 
         layout[item["id"]] = {"temp": temp, "final": final, "complete_album": complete}
 
     return layout
 
 
-def demote_partial_albums(job_id: str, items: list[dict[str, Any]],
+def demote_partial_albums(space: workspace.Workspace, job_id: str,
+                          items: list[dict[str, Any]],
                           layout: dict[str, dict[str, Any]]) -> int:
     """Reclassify tracks whose album did not download in full.
 
@@ -122,7 +125,7 @@ def demote_partial_albums(job_id: str, items: list[dict[str, Any]],
             groups.setdefault(item["album_id"], []).append(item)
 
     moved = 0
-    singles_root = incomplete_root(job_id) / "singles"
+    singles_root = incomplete_root(space, job_id) / "singles"
 
     for group in groups.values():
         if all(item["status"] == "complete" for item in group):
@@ -135,12 +138,12 @@ def demote_partial_albums(job_id: str, items: list[dict[str, Any]],
             target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(planned["temp"], target)
             planned["temp"] = target
-            planned["final"] = settings.singles_dir / target.name
+            planned["final"] = space.singles_dir / target.name
             planned["complete_album"] = False
             item["file_path"] = str(planned["final"])
             moved += 1
 
-    albums = incomplete_root(job_id) / "albums"
+    albums = incomplete_root(space, job_id) / "albums"
     if albums.is_dir():
         for folder in albums.iterdir():
             if folder.is_dir() and not any(folder.iterdir()):
@@ -163,13 +166,13 @@ def _move_into_place(source: Path, target: Path) -> Path:
     return target
 
 
-def publish(job_id: str) -> list[Path]:
+def publish(space: workspace.Workspace, job_id: str) -> list[Path]:
     """Move a finished job's output into the beets staging tree.
 
     Album directories move as a unit so beets only ever sees complete
     releases; singles move file by file.
     """
-    root = incomplete_root(job_id)
+    root = incomplete_root(space, job_id)
     if not root.exists():
         return []
 
@@ -179,17 +182,17 @@ def publish(job_id: str) -> list[Path]:
     if albums.is_dir():
         for folder in sorted(albums.iterdir()):
             if folder.is_dir() and any(folder.iterdir()):
-                published.append(_move_into_place(folder, settings.albums_dir / folder.name))
+                published.append(_move_into_place(folder, space.albums_dir / folder.name))
 
     singles = root / "singles"
     if singles.is_dir():
         for track in sorted(singles.iterdir()):
             if track.is_file():
-                published.append(_move_into_place(track, settings.singles_dir / track.name))
+                published.append(_move_into_place(track, space.singles_dir / track.name))
 
     shutil.rmtree(root, ignore_errors=True)
     return published
 
 
-def discard(job_id: str) -> None:
-    shutil.rmtree(incomplete_root(job_id), ignore_errors=True)
+def discard(space: workspace.Workspace, job_id: str) -> None:
+    shutil.rmtree(incomplete_root(space, job_id), ignore_errors=True)

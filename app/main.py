@@ -17,9 +17,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, beets_library, beets_runner, diskaudit, duplicates
+from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, ledger, navidrome
-from . import spotify, staging, worker
+from . import spotify, staging, worker, workspace
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -52,10 +52,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def new_job(url: str) -> dict[str, Any]:
+def new_job(url: str, space: workspace.Workspace) -> dict[str, Any]:
     job = {
         "id": uuid.uuid4().hex[:12],
         "source_url": url,
+        # Whose download this is, and where it will end up. Recorded on the
+        # job so every later phase - staging, tagging, filing - agrees.
+        "owner": space.username,
+        "library": space.library_name,
         "kind": "spotify",
         "title": "",
         "status": "resolving",
@@ -90,29 +94,35 @@ def sorted_jobs() -> list[dict[str, Any]]:
 # --- websocket fan-out ----------------------------------------------------
 
 class Broker:
-    """Pushes state changes to every connected browser.
+    """Pushes state changes to the browsers entitled to see them.
 
     Clients are receive-only: all mutations go through the REST API, so a
-    dropped socket costs nothing beyond a fresh snapshot on reconnect.
+    dropped socket costs nothing beyond a fresh snapshot on reconnect. Each
+    is remembered with whose session opened it, because a job belongs to the
+    person who queued it and broadcasting every job to every browser would
+    hand one account a live feed of another's downloads.
     """
 
     def __init__(self) -> None:
-        self._clients: set[WebSocket] = set()
+        self._clients: dict[WebSocket, str] = {}
         self._lock = asyncio.Lock()
 
-    async def register(self, ws: WebSocket) -> None:
+    async def register(self, ws: WebSocket, username: str) -> None:
         await ws.accept()
         async with self._lock:
-            self._clients.add(ws)
+            self._clients[ws] = username
 
     async def unregister(self, ws: WebSocket) -> None:
         async with self._lock:
-            self._clients.discard(ws)
+            self._clients.pop(ws, None)
 
-    async def publish(self, message: dict[str, Any]) -> None:
+    async def publish(self, message: dict[str, Any],
+                      owner: str | None = None) -> None:
         async with self._lock:
-            targets = list(self._clients)
-        for ws in targets:
+            targets = [(ws, who) for ws, who in self._clients.items()]
+        for ws, who in targets:
+            if owner is not None and who != owner:
+                continue
             try:
                 await ws.send_json(message)
             except Exception:
@@ -123,7 +133,7 @@ broker = Broker()
 
 
 async def push_job(job: dict[str, Any]) -> None:
-    await broker.publish({"type": "job", "job": job})
+    await broker.publish({"type": "job", "job": job}, owner=job.get("owner"))
 
 
 @contextlib.asynccontextmanager
@@ -295,6 +305,9 @@ async def whoami(request: Request) -> dict[str, Any]:
 
 class JobRequest(BaseModel):
     url: str
+    # Only meaningful for an account with more than one library; everybody
+    # else never sees the choice.
+    library_id: int | None = None
 
 
 def _resolve(url: str) -> tuple[str, str, list[dict[str, Any]]]:
@@ -312,7 +325,8 @@ def validate(url: str) -> None:
     spotify.parse_link(url)
 
 
-async def _resolve_job(job: dict[str, Any], url: str) -> None:
+async def _resolve_job(job: dict[str, Any], url: str,
+                       space: workspace.Workspace) -> None:
     """Resolve a link off the event loop, then announce the result."""
     try:
         kind, title, tracks = await asyncio.to_thread(_resolve, url)
@@ -331,23 +345,23 @@ async def _resolve_job(job: dict[str, Any], url: str) -> None:
         )
         log.info("resolved %s -> %d track(s)", title, len(tracks))
         await push_job(job)
-        await _run(job)
+        await _run(job, space)
         return
     await push_job(job)
 
 
-async def _run(job: dict[str, Any]) -> None:
+async def _run(job: dict[str, Any], space: workspace.Workspace) -> None:
     """Drive a job to completion, tracking the task so it can be cancelled."""
     job_id = job["id"]
     RUNNING[job_id] = asyncio.current_task()
     try:
-        await worker.run_job(job, push_job)
+        await worker.run_job(job, push_job, space)
     except asyncio.CancelledError:
         job["status"] = "cancelled"
         for item in job["items"]:
             if item["status"] not in ("complete", "skipped", "failed"):
                 item["status"] = "cancelled"
-        await asyncio.to_thread(staging.discard, job_id)
+        await asyncio.to_thread(staging.discard, space, job_id)
         log.info("job %s cancelled", job_id)
         await push_job(job)
     except Exception as exc:
@@ -359,7 +373,10 @@ async def _run(job: dict[str, Any]) -> None:
 
 
 @app.post("/api/jobs")
-async def create_job(request: JobRequest) -> dict[str, str]:
+async def create_job(
+    request: JobRequest,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, str]:
     url = request.url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="No link provided.")
@@ -369,35 +386,82 @@ async def create_job(request: JobRequest) -> dict[str, str]:
     except (spotify.ResolveError, generic.ResolveError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    job = new_job(url)
+    try:
+        space = workspace.for_session(session.identity, request.library_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def prepare() -> None:
+        # A single-user installation predates accounts; the first person to
+        # queue something inherits it rather than starting an empty index
+        # beside a full one.
+        workspace.adopt_legacy(space)
+        workspace.adopt_legacy_staging(space)
+        beets_runner.ensure_config(space)
+
+    await asyncio.to_thread(prepare)
+
+    job = new_job(url, space)
     await push_job(job)
-    asyncio.create_task(_resolve_job(job, url))
+    asyncio.create_task(_resolve_job(job, url, space))
     return {"id": job["id"]}
 
 
-@app.get("/api/jobs")
-async def list_jobs() -> list[dict[str, Any]]:
-    return sorted_jobs()
+def _visible_jobs(session: auth.Session) -> list[dict[str, Any]]:
+    """Only this person's downloads.
+
+    The queue is shared state in one process, but a download belongs to
+    whoever asked for it - and somebody else's is not theirs to watch,
+    cancel or delete.
+    """
+    return [job for job in sorted_jobs()
+            if job.get("owner") == session.identity.username]
 
 
-@app.get("/api/jobs/{job_id}")
-async def get_job(job_id: str) -> dict[str, Any]:
+def _owned_job(job_id: str, session: auth.Session) -> dict[str, Any]:
+    """A job, if it belongs to whoever is asking.
+
+    Reported as absent rather than forbidden: whose downloads exist is not
+    something one account should learn about another.
+    """
     job = JOBS.get(job_id)
-    if job is None:
+    if job is None or job.get("owner") != session.identity.username:
         raise HTTPException(status_code=404, detail="No such job.")
     return job
 
 
+@app.get("/api/jobs")
+async def list_jobs(
+    session: auth.Session = Depends(current_session),
+) -> list[dict[str, Any]]:
+    return _visible_jobs(session)
+
+
+@app.get("/api/jobs/{job_id}")
+async def get_job(
+    job_id: str, session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    return _owned_job(job_id, session)
+
+
 @app.delete("/api/jobs/{job_id}")
-async def delete_job(job_id: str) -> dict[str, bool]:
+async def delete_job(
+    job_id: str, session: auth.Session = Depends(current_session),
+) -> dict[str, bool]:
+    _owned_job(job_id, session)
     JOBS.pop(job_id, None)
-    await asyncio.to_thread(staging.discard, job_id)
-    await broker.publish({"type": "job_deleted", "id": job_id})
+    space = workspace.for_session(session.identity)
+    await asyncio.to_thread(staging.discard, space, job_id)
+    await broker.publish({"type": "job_deleted", "id": job_id},
+                         owner=session.identity.username)
     return {"ok": True}
 
 
 @app.post("/api/jobs/{job_id}/cancel")
-async def cancel_job(job_id: str) -> dict[str, bool]:
+async def cancel_job(
+    job_id: str, session: auth.Session = Depends(current_session),
+) -> dict[str, bool]:
+    _owned_job(job_id, session)
     task = RUNNING.get(job_id)
     if task is None:
         raise HTTPException(status_code=409, detail="That job is not running.")
@@ -406,10 +470,10 @@ async def cancel_job(job_id: str) -> dict[str, bool]:
 
 
 @app.post("/api/jobs/{job_id}/retry")
-async def retry_job(job_id: str) -> dict[str, int]:
-    job = JOBS.get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="No such job.")
+async def retry_job(
+    job_id: str, session: auth.Session = Depends(current_session),
+) -> dict[str, int]:
+    job = _owned_job(job_id, session)
     if job_id in RUNNING:
         raise HTTPException(status_code=409, detail="That job is still running.")
 
@@ -423,7 +487,7 @@ async def retry_job(job_id: str) -> dict[str, int]:
 
     job.update(status="queued", error=None)
     await push_job(job)
-    asyncio.create_task(_run(job))
+    asyncio.create_task(_run(job, workspace.for_session(session.identity)))
     return {"retrying": len(retryable)}
 
 
@@ -529,73 +593,6 @@ async def artist(artist_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Artist not found: {exc}") from exc
 
 
-# --- beets library --------------------------------------------------------
-
-class ApplyRequest(BaseModel):
-    path: str
-    album_id: str | None = None
-    as_is: bool = False
-
-
-class PathRequest(BaseModel):
-    path: str
-
-
-@app.get("/api/library/stats")
-async def library_stats() -> dict[str, Any]:
-    return await asyncio.to_thread(beets_library.stats)
-
-
-@app.get("/api/library/albums")
-async def library_albums(q: str = "") -> list[dict[str, Any]]:
-    try:
-        return await asyncio.to_thread(beets_library.albums, q)
-    except Exception as exc:
-        # An invalid beets query raises rather than returning nothing.
-        raise HTTPException(status_code=400, detail=f"{exc}"[:200]) from exc
-
-
-@app.get("/api/library/albums/{album_id}")
-async def library_album(album_id: int) -> dict[str, Any]:
-    detail = await asyncio.to_thread(beets_library.album_detail, album_id)
-    if detail is None:
-        raise HTTPException(status_code=404, detail="No such album.")
-    return detail
-
-
-@app.get("/api/inbox")
-async def inbox() -> list[dict[str, Any]]:
-    return await asyncio.to_thread(beets_library.inbox)
-
-
-@app.get("/api/inbox/candidates")
-async def inbox_candidates(path: str) -> dict[str, Any]:
-    try:
-        return await asyncio.to_thread(beets_library.candidates, path)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"{exc}"[:200]) from exc
-
-
-@app.post("/api/inbox/apply")
-async def inbox_apply(request: ApplyRequest) -> dict[str, Any]:
-    try:
-        return await asyncio.to_thread(
-            beets_library.apply, request.path, request.album_id, request.as_is
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/inbox/discard")
-async def inbox_discard(request: PathRequest) -> dict[str, Any]:
-    try:
-        return await asyncio.to_thread(beets_library.discard, request.path)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
 # --- health ---------------------------------------------------------------
 
 @app.get("/api/health")
@@ -605,7 +602,20 @@ async def health(
     # Reads Navidrome's database and stats a few directories, so it is quick
     # but blocking; a thread keeps it off the event loop.
     return await asyncio.to_thread(
-        health_checks.report, STARTED_AT, session.identity.libraries)
+        health_checks.report, STARTED_AT, session.identity.libraries,
+        session.identity)
+
+
+@app.post("/api/health/audit")
+async def health_audit(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Re-read identity tags from every file. Slow, hence explicit."""
+    def run() -> dict[str, Any]:
+        return {library["name"]: diskaudit.refresh(Path(library["path"])).as_dict()
+                for library in session.identity.libraries}
+
+    return await asyncio.to_thread(run)
 
 
 # --- duplicates -----------------------------------------------------------
@@ -682,14 +692,61 @@ async def auto_resolve_duplicates(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/api/health/audit")
-async def health_audit(
+# --- staging -------------------------------------------------------------
+
+@app.get("/api/staging")
+async def staging_contents(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """Re-read identity tags from every file. Slow, hence explicit."""
+    """What is sitting in this person's staging area.
+
+    There is no separate list of work to do. Beets moves out everything it
+    can match, so whatever remains here is by definition something it
+    refused - a queue that cannot fall out of step with reality, because it
+    is the reality.
+    """
+    def collect() -> dict[str, Any]:
+        space = workspace.for_session(session.identity)
+        space.prepare()
+        entries = []
+        for kind, parent in (("album", space.albums_dir),
+                             ("single", space.singles_dir)):
+            if not parent.is_dir():
+                continue
+            for entry in sorted(parent.iterdir()):
+                if entry.name.startswith("."):
+                    continue
+                files = ([f for f in entry.rglob("*") if f.is_file()]
+                         if entry.is_dir() else [entry])
+                entries.append({
+                    "kind": kind,
+                    "name": entry.name,
+                    "tracks": len(files),
+                    "bytes": sum(f.stat().st_size for f in files),
+                    "age_days": round(
+                        (time.time() - entry.stat().st_mtime) / 86400, 1),
+                    "settled": beets_runner.settled(entry),
+                })
+        return {"library": space.library_name,
+                "staging": str(space.staging), "entries": entries}
+
+    try:
+        return await asyncio.to_thread(collect)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/staging/import")
+async def staging_import(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Try to import everything waiting, now rather than on the timer."""
     def run() -> dict[str, Any]:
-        return {library["name"]: diskaudit.refresh(Path(library["path"])).as_dict()
-                for library in session.identity.libraries}
+        space = workspace.for_session(session.identity)
+        waiting = beets_runner.waiting_in(space)
+        if not waiting:
+            return {"ran": False, "reason": "nothing waiting"}
+        return beets_runner.import_paths(space, waiting)
 
     return await asyncio.to_thread(run)
 
@@ -706,12 +763,13 @@ async def status() -> dict[str, Any]:
 
 @app.websocket("/ws")
 async def websocket(ws: WebSocket) -> None:
-    if auth.get(ws.cookies.get(auth.COOKIE)) is None:
+    session = auth.get(ws.cookies.get(auth.COOKIE))
+    if session is None:
         await ws.close(code=4401)
         return
-    await broker.register(ws)
+    await broker.register(ws, session.identity.username)
     try:
-        await ws.send_json({"type": "snapshot", "jobs": sorted_jobs()})
+        await ws.send_json({"type": "snapshot", "jobs": _visible_jobs(session)})
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:

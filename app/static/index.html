@@ -23,7 +23,7 @@
   <nav class="tabs">
     <button class="tab active" data-view="queue" type="button">Queue</button>
     <button class="tab" data-view="browse" type="button">Browse</button>
-    <button class="tab" data-view="library" type="button">Library</button>
+    <button class="tab" data-view="staging" type="button">Staging<span id="staging-badge" class="badge" hidden></span></button>
     <button class="tab" data-view="health" type="button">Health<span id="health-badge" class="badge" hidden></span></button>
     <button class="tab" data-view="dupes" type="button">Duplicates<span id="dupe-badge" class="badge" hidden></span></button>
   </nav>
@@ -78,25 +78,14 @@
     <p id="browse-empty" class="empty">Search for an artist, album, or track.</p>
   </section>
 
-  <section id="view-library" hidden>
-    <div id="stats" class="stats"></div>
-
-    <section id="inbox-section" hidden>
-      <h2 class="section-head">
-        Needs attention
-        <span class="section-note">beets could not confidently match these</span>
-      </h2>
-      <div id="inbox"></div>
-    </section>
-
-    <h2 class="section-head">Library</h2>
-    <form id="library-form" autocomplete="off">
-      <input id="library-query" type="text" spellcheck="false"
-             placeholder="beets query, e.g.  radiohead   or   year:1997   or   albumartist:burial">
-      <button type="submit">Search</button>
-    </form>
-    <div id="library-results"></div>
-    <p id="library-empty" class="empty">Loading library…</p>
+  <section id="view-staging" hidden>
+    <p class="section-note">
+      Waiting to be filed. Beets moves out everything it can match, so what
+      is left here is what it would not guess at.
+      <button id="staging-import" class="ghost" type="button">Try importing now</button>
+    </p>
+    <div id="staging"></div>
+    <p id="staging-empty" class="empty">Nothing waiting.</p>
   </section>
 
   <section id="view-health" hidden>

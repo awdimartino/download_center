@@ -14,6 +14,7 @@ import logging
 from typing import Any, Awaitable, Callable
 
 from . import beets_runner, downloader, ledger, matcher, staging, tagger
+from . import workspace
 from .config import settings
 
 log = logging.getLogger("download_center.worker")
@@ -116,7 +117,14 @@ async def _pusher(job: dict[str, Any], push: Push) -> None:
         pass
 
 
-async def run_job(job: dict[str, Any], push: Push) -> None:
+async def run_job(job: dict[str, Any], push: Push,
+                  space: workspace.Workspace) -> None:
+    """Drive one job to completion, into one person's library.
+
+    The workspace comes from whoever queued the job rather than from
+    configuration: their staging area, their beets database, their
+    destination. Nothing downstream has to know whose download this was.
+    """
     items = job["items"]
     job["status"] = "running"
     await push(job)
@@ -138,7 +146,7 @@ async def run_job(job: dict[str, Any], push: Push) -> None:
         await push(job)
         return
 
-    layout = staging.plan(job["id"], pending)
+    layout = staging.plan(space, job["id"], pending)
     gate = asyncio.Semaphore(settings.concurrency)
     ticker = asyncio.create_task(_pusher(job, push))
 
@@ -150,7 +158,7 @@ async def run_job(job: dict[str, Any], push: Push) -> None:
         ticker.cancel()
 
     demoted = await asyncio.to_thread(
-        staging.demote_partial_albums, job["id"], pending, layout
+        staging.demote_partial_albums, space, job["id"], pending, layout
     )
     if demoted:
         log.info("%s: %d track(s) demoted to singles (album incomplete)",
@@ -158,7 +166,7 @@ async def run_job(job: dict[str, Any], push: Push) -> None:
 
     published: list = []
     try:
-        published = await asyncio.to_thread(staging.publish, job["id"])
+        published = await asyncio.to_thread(staging.publish, space, job["id"])
         log.info("%s: published %d path(s)", job["title"], len(published))
     except Exception as exc:
         log.exception("publishing failed for %s", job["title"])
@@ -183,7 +191,8 @@ async def run_job(job: dict[str, Any], push: Push) -> None:
         job["status"] = "tagging"
         await push(job)
         try:
-            job["beets"] = await asyncio.to_thread(beets_runner.import_paths, published)
+            job["beets"] = await asyncio.to_thread(
+                beets_runner.import_paths, space, published)
         except Exception as exc:
             log.exception("beets import raised for %s", job["title"])
             job["beets"] = {"ran": True, "imported": 0, "skipped": 0,

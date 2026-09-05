@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import diskaudit, navidrome, uuidtags
+from . import diskaudit, navidrome, uuidtags, workspace
 from .config import settings
 
 # The tag whose value Navidrome is configured to use as its persistent track
@@ -278,7 +278,7 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
     return section
 
 
-def _staging_section() -> Section:
+def _staging_section(space=None) -> Section:
     """What is waiting for a human.
 
     The staging tree is the queue: beets moves out everything it can match, so
@@ -294,8 +294,12 @@ def _staging_section() -> Section:
         oldest = min((p.stat().st_mtime for p in entries), default=None)
         return len(entries), oldest
 
-    albums, albums_oldest = survey(settings.albums_dir)
-    singles, singles_oldest = survey(settings.singles_dir)
+    if space is None:
+        return Section("Staging", [Check(
+            "staging_unknown", "Staging", "—", INFO,
+            "sign in to see what is waiting")])
+    albums, albums_oldest = survey(space.albums_dir)
+    singles, singles_oldest = survey(space.singles_dir)
 
     section.add(Check(
         "staging_albums", "Albums awaiting attention", albums,
@@ -449,7 +453,8 @@ def _duration(seconds: float) -> str:
 
 
 def report(started_at: float,
-           libraries: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+           libraries: list[dict[str, Any]] | None = None,
+           identity=None) -> dict[str, Any]:
     """Everything the dashboard shows, for one person, in one pass.
 
     Scoped to the libraries they may see. An aggregate over somebody else's
@@ -459,6 +464,10 @@ def report(started_at: float,
     sections: list[Section] = []
     error = None
     libraries = libraries or []
+    space = None
+    if identity is not None:
+        with contextlib.suppress(ValueError):
+            space = workspace.for_session(identity)
     roots = [Path(lib["path"]) for lib in libraries]
     audits = [a for a in (diskaudit.cached(r) for r in roots) if a]
     audit = _merge_audits(audits)
@@ -498,7 +507,7 @@ def report(started_at: float,
     if stale and sections:
         sections[0].add(stale)
 
-    sections.append(_staging_section())
+    sections.append(_staging_section(space))
     sections.append(_system_section(started_at))
 
     problems = sum(
