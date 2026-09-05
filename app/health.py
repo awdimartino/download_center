@@ -98,6 +98,25 @@ def _scalar(connection: sqlite3.Connection, sql: str, *args) -> int:
     return (row[0] or 0) if row else 0
 
 
+def _live_clause(connection: sqlite3.Connection) -> str:
+    """What counts as a track that actually exists.
+
+    `media_file.missing` alone is not enough. When a whole directory
+    disappears Navidrome marks the *folder* missing and leaves the rows
+    beneath it untouched, so filtering on the file flag alone counts tracks
+    that vanished months ago - and reports them as unstamped, which sends you
+    looking for files that are not there.
+    """
+    columns = _columns(connection, "media_file")
+    if "missing" not in columns:
+        return "1=1"
+    clause = "mf.missing = 0"
+    if "folder_id" in columns and _columns(connection, "folder"):
+        clause += (" and mf.folder_id in "
+                   "(select id from folder where missing = 0)")
+    return clause
+
+
 # --- the checks -----------------------------------------------------------
 
 def _identity_section(connection: sqlite3.Connection, live: str) -> Section:
@@ -109,10 +128,10 @@ def _identity_section(connection: sqlite3.Connection, live: str) -> Section:
     """
     section = Section("Identity")
 
-    total = _scalar(connection, f"select count(*) from media_file where {live}")
+    total = _scalar(connection, f"select count(*) from media_file mf where {live}")
     stamped = _scalar(connection, f"""
-        select count(*) from media_file
-         where {live} and json_extract(tags, '{UUID_TAG}') is not null""")
+        select count(*) from media_file mf
+         where {live} and json_extract(mf.tags, '{UUID_TAG}') is not null""")
     unstamped = total - stamped
     section.add(Check(
         "unstamped", "Tracks with no UUID", unstamped,
@@ -138,9 +157,9 @@ def _identity_section(connection: sqlite3.Connection, live: str) -> Section:
     # generated - they would collapse into a single track in Navidrome.
     collisions = _scalar(connection, f"""
         select count(*) from (
-            select json_extract(tags, '{UUID_TAG}') as u
-              from media_file where {live}
-               and json_extract(tags, '{UUID_TAG}') is not null
+            select json_extract(mf.tags, '{UUID_TAG}') as u
+              from media_file mf where {live}
+               and json_extract(mf.tags, '{UUID_TAG}') is not null
              group by u having count(*) > 1)""")
     section.add(Check(
         "uuid_collisions", "Duplicate UUIDs", collisions,
@@ -164,12 +183,12 @@ def _library_section(connection: sqlite3.Connection, live: str) -> Section:
     for row in connection.execute("select id, name from library"):
         total = _scalar(
             connection,
-            f"select count(*) from media_file where {live} and library_id = ?",
+            f"select count(*) from media_file mf where {live} and library_id = ?",
             row["id"])
         stamped = _scalar(connection, f"""
-            select count(*) from media_file
+            select count(*) from media_file mf
              where {live} and library_id = ?
-               and json_extract(tags, '{UUID_TAG}') is not null""", row["id"])
+               and json_extract(mf.tags, '{UUID_TAG}') is not null""", row["id"])
         percent = round(100 * stamped / total) if total else 100
         section.add(Check(
             f"library_{row['id']}", row["name"], total,
@@ -178,8 +197,11 @@ def _library_section(connection: sqlite3.Connection, live: str) -> Section:
         ))
 
     if "missing" in _columns(connection, "media_file"):
-        missing = _scalar(connection,
-                          "select count(*) from media_file where missing = 1")
+        # Counted as the inverse of "live" rather than by the file's own flag,
+        # because a vanished directory is recorded on the folder and leaves
+        # the rows beneath it looking present.
+        missing = _scalar(
+            connection, f"select count(*) from media_file mf where not ({live})")
         section.add(Check(
             "missing_files", "Files Navidrome can no longer find", missing,
             OK if missing == 0 else INFO,
@@ -200,7 +222,7 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
     columns = _columns(connection, "media_file")
 
     unknown_album = _scalar(connection, f"""
-        select count(*) from media_file
+        select count(*) from media_file mf
          where {live} and (album is null or album = ''
                            or album like '%Unknown Album%')""")
     section.add(Check(
@@ -210,7 +232,7 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
     ))
 
     no_track = _scalar(connection, f"""
-        select count(*) from media_file
+        select count(*) from media_file mf
          where {live} and (track_number is null or track_number = 0)""")
     section.add(Check(
         "no_track_number", "Tracks numbered zero", no_track,
@@ -220,9 +242,9 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
 
     if "rg_track_gain" in columns:
         total = _scalar(connection,
-                        f"select count(*) from media_file where {live}")
+                        f"select count(*) from media_file mf where {live}")
         gained = _scalar(connection, f"""
-            select count(*) from media_file
+            select count(*) from media_file mf
              where {live} and rg_track_gain is not null and rg_track_gain != 0""")
         section.add(Check(
             "no_replaygain", "Tracks with no ReplayGain", total - gained,
@@ -234,7 +256,7 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
 
     if "mbz_recording_id" in columns:
         without = _scalar(connection, f"""
-            select count(*) from media_file
+            select count(*) from media_file mf
              where {live} and (mbz_recording_id is null or mbz_recording_id = '')""")
         section.add(Check(
             "no_mbid", "Tracks with no MusicBrainz id", without, INFO,
@@ -394,8 +416,7 @@ def report(started_at: float) -> dict[str, Any]:
         error = str(exc)
     else:
         with connection:
-            live = ("missing = 0"
-                    if "missing" in _columns(connection, "media_file") else "1=1")
+            live = _live_clause(connection)
             # Navidrome's schema moves between releases, and json_extract
             # needs a SQLite built with JSON1. One section failing should
             # cost that section, not the whole panel.
@@ -411,7 +432,7 @@ def report(started_at: float) -> dict[str, Any]:
                 indexed_stamped = _scalar(connection, f"""
                     select count(*) from media_file
                      where {live}
-                       and json_extract(tags, '{UUID_TAG}') is not null""")
+                       and json_extract(mf.tags, '{UUID_TAG}') is not null""")
 
     sections.append(_disk_section(audit))
     stale = _stale_index_check(indexed_stamped, audit)
