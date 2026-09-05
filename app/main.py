@@ -60,6 +60,9 @@ def new_job(url: str, space: workspace.Workspace) -> dict[str, Any]:
         # job so every later phase - staging, tagging, filing - agrees.
         "owner": space.username,
         "library": space.library_name,
+        # The id, not just the name: retrying or discarding has to rebuild
+        # the same workspace, and a name cannot be resolved back to one.
+        "library_id": space.library_id,
         "kind": "spotify",
         "title": "",
         "status": "resolving",
@@ -463,9 +466,9 @@ async def get_job(
 async def delete_job(
     job_id: str, session: auth.Session = Depends(current_session),
 ) -> dict[str, bool]:
-    _owned_job(job_id, session)
+    job = _owned_job(job_id, session)
     JOBS.pop(job_id, None)
-    space = workspace.for_session(session.identity)
+    space = workspace.for_session(session.identity, job.get("library_id"))
     await asyncio.to_thread(staging.discard, space, job_id)
     await broker.publish({"type": "job_deleted", "id": job_id},
                          owner=session.identity.username)
@@ -502,7 +505,8 @@ async def retry_job(
 
     job.update(status="queued", error=None)
     await push_job(job)
-    asyncio.create_task(_run(job, workspace.for_session(session.identity)))
+    asyncio.create_task(_run(
+        job, workspace.for_session(session.identity, job.get("library_id"))))
     return {"retrying": len(retryable)}
 
 

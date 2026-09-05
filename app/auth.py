@@ -87,6 +87,18 @@ def get(session_id: str | None) -> Session | None:
             del _sessions[session.id]
             return None
         session.last_seen = time.time()
+
+    # Libraries are read at sign-in, and a database that was briefly
+    # unreadable then would otherwise leave this session with none for its
+    # whole fortnight - reporting that the account has no library at all.
+    # Retried here because the cost is one small query and the alternative
+    # is a session that is quietly useless.
+    if not session.identity.libraries:
+        try:
+            session.identity.libraries = navidrome.libraries_for(session.identity)
+        except Exception as exc:
+            log.debug("could not refresh libraries for %s: %s",
+                      session.identity.username, exc)
     return session
 
 

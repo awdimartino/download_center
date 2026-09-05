@@ -48,22 +48,26 @@ class Workspace:
     library_id: int
     library_name: str
     library_path: Path
-    # Whether this is its owner's only library, which decides whether the
-    # workspace needs the library in its name to stay distinct.
-    only_library: bool = True
 
     @property
     def key(self) -> str:
         """The directory name for this workspace.
 
         A workspace is a person *and* a library, because the beets config it
-        owns hard-codes one destination. Someone with a single library keeps
-        the plain name; anyone with more gets one workspace per library,
-        rather than a second silently reusing the first's configuration and
-        filing their music into the wrong place.
+        owns hard-codes one destination - so the name carries the library id.
+        The id and not the name: a library can be renamed, and a workspace
+        that renames itself abandons its index and everything staged in it.
+
+        A directory already claiming this exact pair keeps its name, which is
+        what stops an installation from before libraries were part of the key
+        being orphaned the moment a second library appears.
         """
-        base = slug(self.username)
-        return base if self.only_library else f"{base}-{slug(self.library_name)}"
+        canonical = f"{slug(self.username)}-{self.library_id}"
+        plain = slug(self.username)
+        if plain != canonical and _claimed_by(
+                settings.output_dir / plain, self.username, self.library_path):
+            return plain
+        return canonical
 
     @property
     def staging(self) -> Path:
@@ -103,7 +107,16 @@ class Workspace:
         # Enough for the sweep - which runs with nobody signed in - to
         # rebuild this workspace exactly, including where the music goes.
         marker = self.staging / ".owner"
-        wanted = f"{self.username}\n{self.library_name}\n{self.library_path}\n"
+        owner = _owner_of(marker)
+        if owner and owner[0] != self.username:
+            # Two usernames can reduce to one directory name. Sharing a
+            # staging area would file one person's downloads into the other's
+            # library, so this stops rather than guessing.
+            raise ValueError(
+                f"{self.staging} already belongs to {owner[0]!r}, so "
+                f"{self.username!r} cannot use it.")
+        wanted = (f"{self.username}\n{self.library_name}\n"
+                  f"{self.library_path}\n{self.library_id}\n")
         current = marker.read_text(encoding="utf-8") if marker.exists() else None
         if current != wanted:
             marker.write_text(wanted, encoding="utf-8")
@@ -130,7 +143,7 @@ def for_session(identity, library_id: int | None = None) -> Workspace:
             raise ValueError("That library does not belong to this account.")
 
     return Workspace(identity.username, library["id"], library["name"],
-                     Path(library["path"]), only_library=len(libraries) == 1)
+                     Path(library["path"]))
 
 
 def existing() -> list[Workspace]:
@@ -158,11 +171,12 @@ def existing() -> list[Workspace]:
         # version may not, so the beets config is the fallback - it is the
         # other place the answer was written down.
         recorded = lines[2].strip() if len(lines) > 2 else ""
+        library_id = (int(lines[3]) if len(lines) > 3
+                      and lines[3].strip().isdigit() else 0)
         beets_config = CONFIG_DIR / "beets" / directory.name / "config.yaml"
         found.append(Workspace(
-            username, 0, library_name,
-            Path(recorded) if recorded else _library_path_from(beets_config),
-            only_library=directory.name == slug(username)))
+            username, library_id, library_name,
+            Path(recorded) if recorded else _library_path_from(beets_config)))
     return found
 
 
@@ -205,6 +219,12 @@ def adopt_legacy(space: Workspace) -> bool:
                          (legacy / "import.log", space.beets_dir / "import.log")):
             text = text.replace(str(old), str(new))
             text = text.replace(old.as_posix(), new.as_posix())
+        # `directory` too. An adopted config naming a destination other than
+        # this workspace's would have beets file music somewhere the stamper
+        # then fails to find, because it resolves relative paths against the
+        # workspace's own root.
+        text = re.sub(r"(?m)^directory:.*$",
+                      f"directory: {space.library_path}", text)
         space.beets_config.write_text(text, encoding="utf-8")
 
     log.info("adopted the previous beets installation for %s: %s",
@@ -256,3 +276,19 @@ def _library_path_from(beets_config: Path) -> Path:
     except Exception as exc:
         log.warning("could not read %s: %s", beets_config, exc)
     return settings.music_dir
+
+
+def _owner_of(marker: Path) -> tuple[str, Path] | None:
+    """Who a staging directory says it belongs to, and where its music goes."""
+    if not marker.is_file():
+        return None
+    lines = marker.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        return None
+    recorded = lines[2].strip() if len(lines) > 2 else ""
+    return lines[0].strip(), Path(recorded) if recorded else Path()
+
+
+def _claimed_by(staging: Path, username: str, library_path: Path) -> bool:
+    owner = _owner_of(staging / ".owner")
+    return owner is not None and owner[0] == username and owner[1] == library_path

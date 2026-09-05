@@ -81,6 +81,9 @@ class Copy:
     duration: float
     size: int
     mbid: str
+    # The track's own artist, kept beside the album artist: grouping on the
+    # album artist buckets every track of a compilation together.
+    track_artist: str
     # This person's own annotations, and a note of anyone else holding one.
     # Kept apart deliberately: conflating them made "starred" mean "starred
     # by somebody", so a star could be quarantined away with its file.
@@ -199,7 +202,8 @@ def _load(connection: sqlite3.Connection,
         Copy(id=r[0], path=r[1], title=r[2] or "", album=r[3] or "",
              artist=(r[5] or r[4] or ""), suffix=r[6] or "",
              bit_rate=r[7] or 0, duration=r[8] or 0.0, size=r[9] or 0,
-             mbid=r[10], library_id=r[11] or 0, library=r[12] or "",
+             mbid=r[10], track_artist=(r[4] or r[5] or ""),
+             library_id=r[11] or 0, library=r[12] or "",
              starred=bool(r[13]), rating=r[14] or 0,
              starred_by_others=r[15] or "")
         for r in rows
@@ -219,10 +223,14 @@ def find(connection: sqlite3.Connection,
     emitted: list[frozenset[str]] = []
 
     def build(key: str, reason: str, members: list[Copy]) -> None:
-        if key in dismissed:
-            return
         members_key = frozenset(c.id for c in members)
         if any(members_key <= previous for previous in emitted):
+            return
+        if key in dismissed:
+            # Recorded as emitted even so. The same pair is found twice, once
+            # by MusicBrainz id and once by title, and returning early here
+            # let the dismissed pair come straight back under the other key.
+            emitted.append(members_key)
             return
         lengths = [c.duration for c in members]
         if max(lengths) - min(lengths) > SAME_RECORDING_SECONDS:
@@ -258,7 +266,11 @@ def find(connection: sqlite3.Connection,
             by_mbid[(copy.library_id, copy.mbid)].append(copy)
         title = normalise(copy.title)
         if title:
-            by_title[(copy.library_id, copy.artist.strip().lower(), title)].append(copy)
+            # Grouped on the track's own artist. Album artist buckets every
+            # track on a compilation under "Various Artists", where different
+            # songs of similar length start looking like copies of each other.
+            by_title[(copy.library_id, copy.track_artist.strip().lower(),
+                      title)].append(copy)
 
     for (library, mbid), members in sorted(by_mbid.items()):
         if len(members) > 1:
@@ -315,12 +327,22 @@ def resolve(group: Group, keeper_id: str,
     # is a star on both copies, whereas the reverse loses it outright.
     migrated = []
     if any(c.starred for c in losers) and not keeper.starred:
-        if navidrome.star(identity, keeper.id):
-            migrated.append("starred")
+        if not navidrome.star(identity, keeper.id):
+            # These report failure rather than raising, and quarantining
+            # anyway would destroy the very annotation this was meant to
+            # carry across. Nothing has moved yet, so stopping costs nothing.
+            raise ValueError(
+                "Could not move the star onto the copy you are keeping, so "
+                "nothing was removed. Check that Navidrome is reachable.")
+        migrated.append("starred")
+
     best_rating = max((c.rating for c in losers), default=0)
     if best_rating > keeper.rating:
-        if navidrome.set_rating(identity, keeper.id, best_rating):
-            migrated.append(f"rated {best_rating}")
+        if not navidrome.set_rating(identity, keeper.id, best_rating):
+            raise ValueError(
+                "Could not move the rating onto the copy you are keeping, so "
+                "nothing was removed. Check that Navidrome is reachable.")
+        migrated.append(f"rated {best_rating}")
 
     moved, failed = [], []
     for loser in losers:
