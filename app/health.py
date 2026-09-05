@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import diskaudit
+from . import diskaudit, uuidtags
 from .config import settings
 
 # The tag whose value Navidrome is configured to use as its persistent track
@@ -34,6 +34,13 @@ UUID_TAG = "$.navidrome_uuid[0].value"
 ALBUM_UUID_TAG = "$.navidrome_album_uuid[0].value"
 
 OK, WARN, FAIL, INFO = "ok", "warn", "fail", "info"
+
+# Formats with nowhere to put a custom tag, quoted for an IN clause. Kept in
+# step with uuidtags.UNTAGGABLE_SUFFIXES; Navidrome stores the suffix without
+# the leading dot.
+_UNTAGGABLE_SQL = ", ".join(
+    f"'{suffix.lstrip('.')}'" for suffix in sorted(uuidtags.UNTAGGABLE_SUFFIXES)
+)
 
 
 @dataclass
@@ -132,11 +139,21 @@ def _identity_section(connection: sqlite3.Connection, live: str) -> Section:
     stamped = _scalar(connection, f"""
         select count(*) from media_file mf
          where {live} and json_extract(mf.tags, '{UUID_TAG}') is not null""")
-    unstamped = total - stamped
+
+    # A wav has nowhere to put the tag. Counting those as failures leaves a
+    # red number that can never reach zero, which is how a panel like this
+    # trains you to stop reading it.
+    untaggable = _scalar(connection, f"""
+        select count(*) from media_file mf
+         where {live} and json_extract(mf.tags, '{UUID_TAG}') is null
+           and lower(mf.suffix) in ({_UNTAGGABLE_SQL})""")
+
+    unstamped = total - stamped - untaggable
     section.add(Check(
         "unstamped", "Tracks with no UUID", unstamped,
         OK if unstamped == 0 else FAIL,
-        f"{stamped} of {total} carry navidrome_uuid",
+        f"{stamped} of {total - untaggable} taggable tracks carry one"
+        + (f", {untaggable} cannot hold tags" if untaggable else ""),
         "Run the stamper, then a full scan - stamping preserves mtime, so an "
         "incremental scan will not notice the new tags.",
     ))
