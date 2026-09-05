@@ -16,9 +16,11 @@ running them past MusicBrainz again would re-decide releases that were settled
 long ago, and at several thousand albums against a rate-limited API it would
 take hours to do damage.
 
-    python -m app.reindex --apply
+    python -m app.reindex <user> [--apply]
 
-Nothing is written without --apply.
+Nothing is written without --apply. The user must be named: there is one
+beets database per person, and building the wrong one would leave the right
+one empty.
 """
 
 from __future__ import annotations
@@ -32,7 +34,6 @@ from pathlib import Path
 
 from . import workspace
 from .beets_runner import ensure_config
-from .config import settings
 
 # Moving and copying are both disabled: the files are already where they
 # belong, and this must not reorganise a library it is only reading. The
@@ -96,6 +97,8 @@ def reindex(space: workspace.Workspace, root: Path, apply: bool) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("user", help="whose library to index")
+    parser.add_argument("--library", type=int, default=None,
+                        help="library id, if that person has more than one")
     parser.add_argument("root", nargs="?", type=Path,
                         help="the existing library (default: that user's)")
     parser.add_argument("--apply", action="store_true")
@@ -104,13 +107,23 @@ def main() -> int:
     # Whose index this is has to be said out loud: there is one beets
     # database per person, and building the wrong one silently would leave
     # the right one empty.
-    space = next((w for w in workspace.existing() if w.username == args.user),
-                 None)
-    if space is None:
-        known = ", ".join(w.username for w in workspace.existing()) or "none"
+    # A workspace is a person *and* a library, so matching on the name alone
+    # would pick whichever sorted first and silently index the wrong one.
+    candidates = [w for w in workspace.existing() if w.username == args.user]
+    if args.library is not None:
+        candidates = [w for w in candidates if w.library_id == args.library]
+    if not candidates:
+        known = ", ".join(f"{w.username} (library {w.library_id})"
+                          for w in workspace.existing()) or "none"
         print(f"!! no workspace for {args.user!r}. Known: {known}",
               file=sys.stderr)
         return 1
+    if len(candidates) > 1:
+        ids = ", ".join(str(w.library_id) for w in candidates)
+        print(f"!! {args.user!r} has several libraries ({ids}); "
+              f"say which with --library", file=sys.stderr)
+        return 1
+    space = candidates[0]
     return reindex(space, args.root or space.library_path, args.apply)
 
 

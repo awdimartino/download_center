@@ -36,12 +36,19 @@ COOKIE = "dc_session"
 LIFETIME_SECONDS = 14 * 24 * 60 * 60
 
 
+# How often a session with no libraries asks Navidrome again. Frequent enough
+# that a database blip at sign-in heals by itself, rare enough that an account
+# genuinely assigned none does not open the database on every request.
+RECHECK_SECONDS = 60
+
+
 @dataclass
 class Session:
     id: str
     identity: navidrome.Identity
     created_at: float
     last_seen: float
+    libraries_checked_at: float = 0.0
 
     @property
     def expired(self) -> bool:
@@ -62,7 +69,7 @@ _lock = threading.Lock()
 def sign_in(username: str, password: str) -> Session:
     identity = navidrome.login(username, password)
     now = time.time()
-    session = Session(secrets.token_urlsafe(32), identity, now, now)
+    session = Session(secrets.token_urlsafe(32), identity, now, now, now)
     with _lock:
         _sessions[session.id] = session
     log.info("%s signed in (%d librar%s)", identity.username,
@@ -88,12 +95,14 @@ def get(session_id: str | None) -> Session | None:
             return None
         session.last_seen = time.time()
 
-    # Libraries are read at sign-in, and a database that was briefly
-    # unreadable then would otherwise leave this session with none for its
-    # whole fortnight - reporting that the account has no library at all.
-    # Retried here because the cost is one small query and the alternative
-    # is a session that is quietly useless.
-    if not session.identity.libraries:
+    # Libraries are read at sign-in, and a database briefly unreadable then
+    # would otherwise leave this session with none for its whole fortnight,
+    # reporting that the account has no library at all. Rate-limited: an
+    # account really assigned none would otherwise open the database on every
+    # request, on the event loop, forever.
+    if (not session.identity.libraries
+            and time.time() - session.libraries_checked_at > RECHECK_SECONDS):
+        session.libraries_checked_at = time.time()
         try:
             session.identity.libraries = navidrome.libraries_for(session.identity)
         except Exception as exc:

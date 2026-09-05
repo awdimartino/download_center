@@ -177,6 +177,8 @@ function connect() {
     // leaves the page looking merely offline when it needs a sign-in.
     if (event.code === 4401) {
       started = false;
+      if (healthTimer) clearInterval(healthTimer);
+      healthTimer = null;
       showSignin(true);
       return;
     }
@@ -232,6 +234,15 @@ document.getElementById("settings-toggle").addEventListener("click", async () =>
     const field = settingsForm.elements[key];
     if (field) field.placeholder = values[`${key}_set`] ? "unchanged" : "not set";
   });
+  // These belong to the installation, not to a person. Showing an editable
+  // form to someone who will be refused on save is worse than not offering
+  // it at all.
+  const mayEdit = values.editable !== false;
+  Array.from(settingsForm.elements).forEach((field) => {
+    field.disabled = !mayEdit;
+  });
+  settingsNote.textContent = mayEdit
+    ? "" : "Only a Navidrome administrator can change these.";
 });
 
 settingsForm.addEventListener("submit", async (event) => {

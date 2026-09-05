@@ -223,8 +223,11 @@ def adopt_legacy(space: Workspace) -> bool:
         # this workspace's would have beets file music somewhere the stamper
         # then fails to find, because it resolves relative paths against the
         # workspace's own root.
+        # A function, not a string: backslashes in a replacement template are
+        # escapes, so a Windows path raises on \U and silently substitutes a
+        # newline for \n.
         text = re.sub(r"(?m)^directory:.*$",
-                      f"directory: {space.library_path}", text)
+                      lambda _: f"directory: {space.library_path}", text)
         space.beets_config.write_text(text, encoding="utf-8")
 
     log.info("adopted the previous beets installation for %s: %s",

@@ -22,6 +22,7 @@ to carry an annotation.
 from __future__ import annotations
 
 import collections
+import hashlib
 import logging
 import re
 import shutil
@@ -118,10 +119,24 @@ class Group:
     confident: bool
     why: str = ""
 
+    @property
+    def dismiss_key(self) -> str:
+        """What "keep both" is remembered against.
+
+        Derived from the files themselves rather than from how they were
+        found. A group is discovered by MusicBrainz id or by title, and the
+        title key in particular changes whenever the grouping is refined - so
+        keying the decision on that would quietly resurrect every pair
+        somebody had already looked at and settled.
+        """
+        joined = "|".join(sorted(c.id for c in self.copies))
+        return "files:" + hashlib.sha1(joined.encode("utf-8")).hexdigest()[:16]
+
     def as_dict(self) -> dict[str, Any]:
         return {
-            "key": self.key, "reason": self.reason, "confident": self.confident,
-            "why": self.why, "keeper": self.keeper.id,
+            "key": self.dismiss_key, "reason": self.reason,
+            "confident": self.confident, "why": self.why,
+            "keeper": self.keeper.id,
             "copies": [c.as_dict() for c in self.copies],
         }
 
@@ -226,10 +241,12 @@ def find(connection: sqlite3.Connection,
         members_key = frozenset(c.id for c in members)
         if any(members_key <= previous for previous in emitted):
             return
-        if key in dismissed:
+        joined = "|".join(sorted(c.id for c in members))
+        settled = "files:" + hashlib.sha1(joined.encode("utf-8")).hexdigest()[:16]
+        if settled in dismissed:
             # Recorded as emitted even so. The same pair is found twice, once
             # by MusicBrainz id and once by title, and returning early here
-            # let the dismissed pair come straight back under the other key.
+            # let a dismissed pair come straight back under the other key.
             emitted.append(members_key)
             return
         lengths = [c.duration for c in members]

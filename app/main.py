@@ -245,7 +245,7 @@ class LoginRequest(BaseModel):
 
 
 def current_session(request: Request) -> auth.Session:
-    session = auth.get(request.cookies.get(auth.COOKIE))
+    session = getattr(request.state, "session", None)
     if session is None:
         raise HTTPException(status_code=401, detail="Please sign in.")
     return session
@@ -273,12 +273,24 @@ def admin_session(request: Request) -> auth.Session:
 OPEN_PATHS = {"/api/auth/login", "/api/auth/logout", "/api/auth/me"}
 
 
+@app.get("/healthz")
+async def healthz() -> dict[str, bool]:
+    """Liveness, for the container probe. Deliberately outside /api and
+    deliberately empty: a probe that needs credentials is a probe that fails,
+    and one that reports configuration is an unauthenticated information
+    leak."""
+    return {"ok": True}
+
+
 @app.middleware("http")
 async def require_session(request: Request, call_next):
+    # Looked up once and kept on the request, because the handler needs the
+    # same session and resolving it twice means two database opens per call.
+    session = auth.get(request.cookies.get(auth.COOKIE))
+    request.state.session = session
     path = request.url.path
-    if path.startswith("/api/") and path not in OPEN_PATHS:
-        if auth.get(request.cookies.get(auth.COOKIE)) is None:
-            return JSONResponse({"detail": "Please sign in."}, status_code=401)
+    if path.startswith("/api/") and path not in OPEN_PATHS and session is None:
+        return JSONResponse({"detail": "Please sign in."}, status_code=401)
     return await call_next(request)
 
 
@@ -467,8 +479,14 @@ async def delete_job(
     job_id: str, session: auth.Session = Depends(current_session),
 ) -> dict[str, bool]:
     job = _owned_job(job_id, session)
+    # Resolved before anything is removed: if the workspace cannot be built
+    # the job would otherwise be gone from memory with its scratch files
+    # still on disk and no event telling any browser it went.
+    try:
+        space = workspace.for_session(session.identity, job.get("library_id"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     JOBS.pop(job_id, None)
-    space = workspace.for_session(session.identity, job.get("library_id"))
     await asyncio.to_thread(staging.discard, space, job_id)
     await broker.publish({"type": "job_deleted", "id": job_id},
                          owner=session.identity.username)
@@ -681,7 +699,8 @@ async def resolve_duplicate(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
     groups = await asyncio.to_thread(_duplicate_groups, session.identity)
-    group = next((g for g in groups if g.key == request.key), None)
+    # Matched on what the browser was shown, which is the file-derived key.
+    group = next((g for g in groups if g.dismiss_key == request.key), None)
     if group is None:
         raise HTTPException(status_code=404, detail="No such duplicate group.")
     try:
@@ -810,7 +829,14 @@ async def websocket(ws: WebSocket) -> None:
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    # Never cached. The shell decides whether to show the sign-in form, so a
+    # browser holding yesterday's copy carries on as though the application
+    # still had no accounts - and never asks for the new one, because it has
+    # no reason to. The assets it references are revalidated normally.
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
