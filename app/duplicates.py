@@ -54,6 +54,12 @@ CONFIDENT_SECONDS = 1.0
 LOSSLESS = {"flac", "wav", "alac", "ape", "wv", "aiff"}
 
 
+def _album_key(album: str) -> str:
+    """Album names compared loosely, for deciding if two copies are on one
+    record. Casing and punctuation vary between imports of the same release."""
+    return re.sub(r"[^a-z0-9]+", "", (album or "").lower())
+
+
 def normalise(title: str) -> str:
     text = (title or "").strip().lower()
     # Repeated because a title can carry several qualifiers at once.
@@ -177,12 +183,20 @@ def find(connection: sqlite3.Connection) -> list[Group]:
             return
         ordered = sorted(members, key=_rank, reverse=True)
         why = _clearly_better(ordered[0], ordered[1:])
+        # Copies on different records are not a duplicate at all: one
+        # recording is often issued as a single and again on the album it
+        # belongs to, and removing either leaves that album a track short.
+        # Compared loosely, so "Timeless" and "TIMELESS" still count as one.
+        one_album = len({_album_key(c.album) for c in members}) == 1
         # Only a shared MusicBrainz id earns the right to act unattended.
         confident = bool(
             why
+            and one_album
             and reason == "musicbrainz"
             and max(lengths) - min(lengths) <= CONFIDENT_SECONDS
         )
+        if not one_album and why:
+            why += " — but they are on different albums"
         emitted.append(identity)
         groups.append(Group(key, reason, ordered, ordered[0], confident, why))
 
