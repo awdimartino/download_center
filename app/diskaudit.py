@@ -73,13 +73,14 @@ class Audit:
         }
 
 
-_cache: Audit | None = None
+# One audit per library. A library is one person's collection, and walking
+# them together would report somebody else's problems as yours.
+_cache: dict[str, Audit] = {}
 _lock = threading.Lock()
 
 
-def run(root: Path | None = None) -> Audit:
-    """Walk the library and report what identity tags are actually present."""
-    root = root or settings.music_dir
+def run(root: Path) -> Audit:
+    """Walk one library and report what identity tags are actually present."""
     started = time.time()
     audit = Audit()
 
@@ -141,23 +142,25 @@ def run(root: Path | None = None) -> Audit:
 
     audit.seconds = time.time() - started
     audit.taken_at = time.time()
-    log.info("disk audit: %d files in %.1fs, %d unstamped, %d split, %d spanning",
-             audit.files, audit.seconds, len(audit.missing_track_uuid),
-             len(audit.split_albums), len(audit.spanning_albums))
+    log.info("disk audit %s: %d files in %.1fs, %d unstamped, %d split, "
+             "%d spanning", root, audit.files, audit.seconds,
+             len(audit.missing_track_uuid), len(audit.split_albums),
+             len(audit.spanning_albums))
     return audit
 
 
-def refresh() -> Audit:
+def refresh(root: Path) -> Audit:
     """Run an audit and cache it. Concurrent callers share one walk."""
-    global _cache
     with _lock:
-        _cache = run()
-        return _cache
+        audit = run(root)
+        _cache[str(root)] = audit
+        return audit
 
 
-def cached() -> Audit | None:
-    return _cache
+def cached(root: Path) -> Audit | None:
+    return _cache.get(str(root))
 
 
-def stale() -> bool:
-    return _cache is None or (time.time() - _cache.taken_at) > REFRESH_SECONDS
+def stale(root: Path) -> bool:
+    audit = _cache.get(str(root))
+    return audit is None or (time.time() - audit.taken_at) > REFRESH_SECONDS

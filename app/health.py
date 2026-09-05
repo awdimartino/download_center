@@ -89,7 +89,8 @@ def _scalar(connection: sqlite3.Connection, sql: str, *args) -> int:
     return (row[0] or 0) if row else 0
 
 
-def _live_clause(connection: sqlite3.Connection) -> str:
+def _live_clause(connection: sqlite3.Connection,
+                 libraries: list[int] | None = None) -> str:
     """What counts as a track that actually exists.
 
     `media_file.missing` alone is not enough. When a whole directory
@@ -99,12 +100,14 @@ def _live_clause(connection: sqlite3.Connection) -> str:
     looking for files that are not there.
     """
     columns = _columns(connection, "media_file")
-    if "missing" not in columns:
-        return "1=1"
-    clause = "mf.missing = 0"
-    if "folder_id" in columns and _columns(connection, "folder"):
+    clause = "1=1" if "missing" not in columns else "mf.missing = 0"
+    if "missing" in columns and "folder_id" in columns and _columns(connection, "folder"):
         clause += (" and mf.folder_id in "
                    "(select id from folder where missing = 0)")
+    # Somebody else's collection is not this person's problem to see.
+    if libraries is not None:
+        inside = ",".join(str(int(i)) for i in libraries) or "-1"
+        clause += f" and mf.library_id in ({inside})"
     return clause
 
 
@@ -171,7 +174,8 @@ def _identity_section(connection: sqlite3.Connection, live: str) -> Section:
     return section
 
 
-def _library_section(connection: sqlite3.Connection, live: str) -> Section:
+def _library_section(connection: sqlite3.Connection, live: str,
+                     visible: list[dict[str, Any]]) -> Section:
     """Per-library totals.
 
     Reported separately because aggregates hide things: one library being
@@ -181,7 +185,7 @@ def _library_section(connection: sqlite3.Connection, live: str) -> Section:
     section = Section("Libraries")
     columns = _columns(connection, "library")
 
-    for row in connection.execute("select id, name from library"):
+    for row in visible:
         total = _scalar(
             connection,
             f"select count(*) from media_file mf where {live} and library_id = ?",
@@ -198,11 +202,17 @@ def _library_section(connection: sqlite3.Connection, live: str) -> Section:
         ))
 
     if "missing" in _columns(connection, "media_file"):
-        # Counted as the inverse of "live" rather than by the file's own flag,
-        # because a vanished directory is recorded on the folder and leaves
-        # the rows beneath it looking present.
-        missing = _scalar(
-            connection, f"select count(*) from media_file mf where not ({live})")
+        # The inverse of "live" rather than the file's own flag, because a
+        # vanished directory is recorded on the folder and leaves the rows
+        # beneath it looking present. Bounded to these libraries: the inverse
+        # of a scoped clause otherwise counts every file somebody else owns
+        # as one of yours that went missing.
+        inside = ",".join(str(int(lib["id"])) for lib in visible) or "-1"
+        held = _scalar(connection, "select count(*) from media_file mf"
+                                   f" where mf.library_id in ({inside})")
+        present = _scalar(connection,
+                          f"select count(*) from media_file mf where {live}")
+        missing = held - present
         section.add(Check(
             "missing_files", "Files Navidrome can no longer find", missing,
             OK if missing == 0 else INFO,
@@ -305,6 +315,31 @@ def _staging_section() -> Section:
         ))
 
     return section
+
+
+def _merge_audits(audits: list) -> Any:
+    """Fold several library audits into the one figure a person sees.
+
+    Someone with two libraries wants to know whether *their music* is sound,
+    not to read the same five checks twice. Counts add; the age shown is the
+    oldest, since a summary is only as current as its stalest part.
+    """
+    if not audits:
+        return None
+    if len(audits) == 1:
+        return audits[0]
+
+    merged = diskaudit.Audit()
+    for audit in audits:
+        merged.files += audit.files
+        merged.stamped += audit.stamped
+        merged.untaggable += audit.untaggable
+        merged.seconds += audit.seconds
+        for name in ("missing_track_uuid", "missing_album_uuid", "unreadable",
+                     "split_albums", "spanning_albums", "duplicate_uuids"):
+            getattr(merged, name).extend(getattr(audit, name))
+    merged.taken_at = min(a.taken_at for a in audits)
+    return merged
 
 
 def _disk_section(audit) -> Section:
@@ -413,11 +448,20 @@ def _duration(seconds: float) -> str:
     return f"{minutes}m"
 
 
-def report(started_at: float) -> dict[str, Any]:
-    """Everything the dashboard shows, in one pass."""
+def report(started_at: float,
+           libraries: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Everything the dashboard shows, for one person, in one pass.
+
+    Scoped to the libraries they may see. An aggregate over somebody else's
+    collection is not information they can act on, and reporting problems in
+    it is how a panel of things-that-should-be-zero starts getting ignored.
+    """
     sections: list[Section] = []
     error = None
-    audit = diskaudit.cached()
+    libraries = libraries or []
+    roots = [Path(lib["path"]) for lib in libraries]
+    audits = [a for a in (diskaudit.cached(r) for r in roots) if a]
+    audit = _merge_audits(audits)
     indexed_stamped: int | None = None
 
     try:
@@ -426,17 +470,22 @@ def report(started_at: float) -> dict[str, Any]:
         error = str(exc)
     else:
         with connection:
-            live = _live_clause(connection)
+            live = _live_clause(connection, [lib["id"] for lib in libraries])
             # Navidrome's schema moves between releases, and json_extract
             # needs a SQLite built with JSON1. One section failing should
             # cost that section, not the whole panel.
-            for build in (_identity_section, _library_section, _metadata_section):
+            builders = (
+                lambda c, l: _identity_section(c, l),
+                lambda c, l: _library_section(c, l, libraries),
+                lambda c, l: _metadata_section(c, l),
+            )
+            for build in builders:
                 try:
                     sections.append(build(connection, live))
                 except sqlite3.Error as exc:
                     sections.append(Section(
-                        build.__name__.strip("_").split("_")[0].title(),
-                        [Check("unavailable", "Checks unavailable", "—",
+                        "Checks unavailable",
+                        [Check("unavailable", "Query failed", "—",
                                INFO, str(exc)[:120])]))
             with contextlib.suppress(sqlite3.Error):
                 indexed_stamped = _scalar(connection, f"""

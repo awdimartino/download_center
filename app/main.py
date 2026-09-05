@@ -177,12 +177,43 @@ async def _audit_loop() -> None:
     never wrong, because nothing here writes anything.
     """
     while True:
-        if diskaudit.stale():
-            try:
-                await asyncio.to_thread(diskaudit.refresh)
-            except Exception:
-                log.exception("disk audit failed")
+        for root in _library_roots():
+            if diskaudit.stale(root):
+                try:
+                    await asyncio.to_thread(diskaudit.refresh, root)
+                except Exception:
+                    log.exception("disk audit failed for %s", root)
         await asyncio.sleep(600)
+
+
+def _library_roots() -> list[Path]:
+    """Every library Navidrome knows about, as paths inside this container.
+
+    Read from Navidrome rather than configured, so a library added there is
+    audited here without anyone remembering to say so. A path we cannot see
+    is reported once rather than retried silently forever.
+    """
+    try:
+        connection = navidrome.open_db()
+    except navidrome.Unavailable:
+        return [settings.music_dir]
+    with connection:
+        rows = connection.execute("select name, path from library").fetchall()
+
+    roots = []
+    for name, path in rows:
+        root = Path(path)
+        if root.is_dir():
+            roots.append(root)
+        elif str(root) not in _warned_missing:
+            _warned_missing.add(str(root))
+            log.warning("library %r is at %s, which is not mounted here - "
+                        "its files cannot be audited or stamped", name, root)
+    return roots or [settings.music_dir]
+
+
+# Libraries we have already complained about, so the log says it once.
+_warned_missing: set[str] = set()
 
 
 app = FastAPI(title="Download Center", lifespan=lifespan)
@@ -568,10 +599,13 @@ async def inbox_discard(request: PathRequest) -> dict[str, Any]:
 # --- health ---------------------------------------------------------------
 
 @app.get("/api/health")
-async def health() -> dict[str, Any]:
+async def health(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
     # Reads Navidrome's database and stats a few directories, so it is quick
     # but blocking; a thread keeps it off the event loop.
-    return await asyncio.to_thread(health_checks.report, STARTED_AT)
+    return await asyncio.to_thread(
+        health_checks.report, STARTED_AT, session.identity.libraries)
 
 
 # --- duplicates -----------------------------------------------------------
@@ -649,10 +683,15 @@ async def auto_resolve_duplicates(
 
 
 @app.post("/api/health/audit")
-async def health_audit() -> dict[str, Any]:
+async def health_audit(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
     """Re-read identity tags from every file. Slow, hence explicit."""
-    audit = await asyncio.to_thread(diskaudit.refresh)
-    return audit.as_dict()
+    def run() -> dict[str, Any]:
+        return {library["name"]: diskaudit.refresh(Path(library["path"])).as_dict()
+                for library in session.identity.libraries}
+
+    return await asyncio.to_thread(run)
 
 
 @app.get("/api/status")
