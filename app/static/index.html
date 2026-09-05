@@ -21,11 +21,11 @@
 <header>
   <h1>Download Center</h1>
   <nav class="tabs">
-    <button class="tab active" data-view="queue" type="button">Queue</button>
-    <button class="tab" data-view="browse" type="button">Browse</button>
-    <button class="tab" data-view="staging" type="button">Staging<span id="staging-badge" class="badge" hidden></span></button>
-    <button class="tab" data-view="health" type="button">Health<span id="health-badge" class="badge" hidden></span></button>
-    <button class="tab" data-view="dupes" type="button">Duplicates<span id="dupe-badge" class="badge" hidden></span></button>
+    <button class="tab active" data-view="queue" data-short="Queue" type="button">Queue</button>
+    <button class="tab" data-view="browse" data-short="Browse" type="button">Browse</button>
+    <button class="tab" data-view="staging" data-short="Staging" type="button">Staging<span id="staging-badge" class="badge" hidden></span></button>
+    <button class="tab" data-view="health" data-short="Health" type="button">Health<span id="health-badge" class="badge" hidden></span></button>
+    <button class="tab" data-view="dupes" data-short="Dupes" type="button">Duplicates<span id="dupe-badge" class="badge" hidden></span></button>
   </nav>
   <span id="conn" class="conn offline">connecting</span>
   <span id="whoami" class="whoami"></span>
@@ -79,32 +79,36 @@
   </section>
 
   <section id="view-staging" hidden>
-    <p class="section-note">
-      Waiting to be filed. Beets moves out everything it can match, so what
-      is left here is what it would not guess at.
+    <div class="panel-note">
+      <p>
+        Waiting to be filed. Beets moves out everything it can match, so what
+        is left here is what it would not guess at.
+      </p>
       <button id="staging-import" class="ghost" type="button">Try importing now</button>
-    </p>
+    </div>
     <div id="staging"></div>
     <p id="staging-empty" class="empty">Nothing waiting.</p>
   </section>
 
   <section id="view-health" hidden>
-    <p class="section-note">
-      Every number here should be zero. Anything else is worth a look.
+    <div class="panel-note">
+      <p>Every number here should be zero. Anything else is worth a look.</p>
       <button id="health-audit" class="ghost" type="button">Re-read files</button>
-    </p>
+    </div>
     <p id="health-error" class="warn" hidden></p>
     <div id="health"></div>
     <p id="health-empty" class="empty">Checking…</p>
   </section>
 
   <section id="view-dupes" hidden>
-    <p class="section-note">
-      Copies of the same recording. Nothing is deleted — the copy you drop
-      moves to <code>duplicates-removed/</code>, and any star or rating on it
-      is moved onto the one you keep.
+    <div class="panel-note">
+      <p>
+        Copies of the same recording. Nothing is deleted — the copy you
+        drop moves to <code>duplicates-removed/</code>, and any star or
+        rating on it is moved onto the one you keep.
+      </p>
       <button id="dupe-auto" class="ghost" type="button">Resolve MusicBrainz matches</button>
-    </p>
+    </div>
     <p id="dupe-note" class="warn" hidden></p>
     <div id="dupes"></div>
     <p id="dupes-empty" class="empty">Looking for duplicates…</p>
