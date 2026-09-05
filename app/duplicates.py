@@ -81,11 +81,14 @@ class Copy:
     duration: float
     size: int
     mbid: str
+    # This person's own annotations, and a note of anyone else holding one.
+    # Kept apart deliberately: conflating them made "starred" mean "starred
+    # by somebody", so a star could be quarantined away with its file.
     starred: bool
     rating: int
     library_id: int
     library: str
-    starred_by: str = ""
+    starred_by_others: str = ""
 
     @property
     def lossless(self) -> bool:
@@ -98,7 +101,8 @@ class Copy:
             "bit_rate": self.bit_rate, "duration": round(self.duration or 0),
             "size": self.size, "mbid": self.mbid, "starred": self.starred,
             "rating": self.rating, "lossless": self.lossless,
-            "library": self.library, "starred_by": self.starred_by,
+            "library": self.library,
+            "starred_by_others": self.starred_by_others,
         }
 
 
@@ -120,14 +124,13 @@ class Group:
 
 
 def _can_migrate(copy: Copy, identity: navidrome.Identity) -> bool:
-    """Whether this session could move that annotation to another file.
+    """Whether every annotation on this copy could be carried elsewhere.
 
-    Stars belong to a user and an API call acts as whoever it authenticated
-    as. Starring a track as the wrong account creates an annotation nobody
-    sees while the real one is quarantined away with its file - so unless
-    this is that person, the annotation is not theirs to move.
+    Our own star can be re-created on another file through the API. Somebody
+    else's cannot: acting as them is not possible, so quarantining their copy
+    would take their star with it.
     """
-    return not copy.starred or copy.starred_by == identity.username
+    return not copy.starred_by_others
 
 
 def _rank(copy: Copy, identity: navidrome.Identity) -> tuple:
@@ -181,21 +184,24 @@ def _load(connection: sqlite3.Connection,
                mf.suffix, mf.bit_rate, mf.duration, mf.size,
                coalesce(mf.mbz_recording_id, ''),
                mf.library_id, coalesce(l.name, ''),
+               coalesce(mine.starred, 0), coalesce(mine.rating, 0),
                (select group_concat(u.user_name)
                   from annotation an join user u on u.id = an.user_id
                  where an.item_id = mf.id and an.item_type = 'media_file'
-                   and an.starred = 1),
-               (select max(an.rating) from annotation an
-                 where an.item_id = mf.id and an.item_type = 'media_file')
+                   and an.starred = 1 and an.user_id != ?)
           from media_file mf
           left join library l on l.id = mf.library_id
-         where {live}""", tuple(allowed)).fetchall()
+          left join annotation mine
+            on mine.item_id = mf.id and mine.item_type = 'media_file'
+           and mine.user_id = ?
+         where {live}""", (identity.user_id, identity.user_id, *allowed)).fetchall()
     return [
         Copy(id=r[0], path=r[1], title=r[2] or "", album=r[3] or "",
              artist=(r[5] or r[4] or ""), suffix=r[6] or "",
              bit_rate=r[7] or 0, duration=r[8] or 0.0, size=r[9] or 0,
              mbid=r[10], library_id=r[11] or 0, library=r[12] or "",
-             starred=bool(r[13]), starred_by=r[13] or "", rating=r[14] or 0)
+             starred=bool(r[13]), rating=r[14] or 0,
+             starred_by_others=r[15] or "")
         for r in rows
     ]
 
@@ -293,27 +299,28 @@ def resolve(group: Group, keeper_id: str,
         raise ValueError("that copy is not in this group")
 
     losers = [c for c in group.copies if c.id != keeper_id]
-    # Annotations move first: if quarantining fails afterwards the worst case
-    # is a star on both copies, whereas the reverse loses it outright.
-    migrated, stranded = [], []
-    for loser in losers:
-        if loser.starred and not keeper.starred:
-            if not _can_migrate(loser, identity):
-                # Starred by somebody else. Refusing is the only honest
-                # option: starring as this account would leave the real
-                # annotation attached to a file about to be quarantined.
-                stranded.append(f"{loser.path}: starred by {loser.starred_by}")
-                continue
-            if navidrome.star(identity, keeper.id):
-                migrated.append("starred")
-        if loser.rating and loser.rating > keeper.rating:
-            if navidrome.set_rating(identity, keeper.id, loser.rating):
-                migrated.append(f"rated {loser.rating}")
 
+    # Refuse before touching anything. Checking as we went meant the first
+    # loser's star was already written to the keeper by the time a later one
+    # turned out to be somebody else's - leaving a half-applied change that
+    # repeated on every retry.
+    stranded = [f"{c.path}: starred by {c.starred_by_others}"
+                for c in losers if not _can_migrate(c, identity)]
     if stranded:
         raise ValueError(
             "That copy carries an annotation this app cannot move: "
             + "; ".join(stranded))
+
+    # Annotations move first: if quarantining fails afterwards the worst case
+    # is a star on both copies, whereas the reverse loses it outright.
+    migrated = []
+    if any(c.starred for c in losers) and not keeper.starred:
+        if navidrome.star(identity, keeper.id):
+            migrated.append("starred")
+    best_rating = max((c.rating for c in losers), default=0)
+    if best_rating > keeper.rating:
+        if navidrome.set_rating(identity, keeper.id, best_rating):
+            migrated.append(f"rated {best_rating}")
 
     moved, failed = [], []
     for loser in losers:

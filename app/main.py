@@ -248,6 +248,21 @@ def current_session(request: Request) -> auth.Session:
     return session
 
 
+def admin_session(request: Request) -> auth.Session:
+    """For settings that belong to the installation rather than to a person.
+
+    These hold the Spotify credentials and the Navidrome service password and
+    decide where every library lives, so any account being able to rewrite
+    them makes an ordinary user an administrator of the whole thing.
+    """
+    session = current_session(request)
+    if not session.identity.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only a Navidrome administrator can change these settings.")
+    return session
+
+
 # Signing in is the only thing you can do without being signed in. Everything
 # else is gated here rather than endpoint by endpoint: this tool queues
 # downloads, edits settings and quarantines files, and an authorisation check
@@ -510,8 +525,11 @@ SECRETS = ("spotify_client_secret", "navidrome_password")
 
 
 @app.get("/api/settings")
-async def get_settings() -> dict[str, Any]:
+async def get_settings(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
     values = {key: getattr(settings, key) for key in config.EDITABLE}
+    values["editable"] = session.identity.is_admin
     for key in SECRETS:
         values[key] = ""
         values[f"{key}_set"] = bool(getattr(settings, key))
@@ -519,14 +537,17 @@ async def get_settings() -> dict[str, Any]:
 
 
 @app.put("/api/settings")
-async def put_settings(update: SettingsUpdate) -> dict[str, Any]:
+async def put_settings(
+    update: SettingsUpdate,
+    session: auth.Session = Depends(admin_session),
+) -> dict[str, Any]:
     changes = {k: v for k, v in update.model_dump().items() if v is not None}
     # A blank secret means "leave it alone", since the form never receives it.
     for key in SECRETS:
         if not changes.get(key):
             changes.pop(key, None)
     if not changes:
-        return await get_settings()
+        return await get_settings(session)
 
     try:
         # Validate against the model before touching the live settings.
@@ -538,7 +559,7 @@ async def put_settings(update: SettingsUpdate) -> dict[str, Any]:
     if "spotify_client_id" in changes or "spotify_client_secret" in changes:
         spotify.reset_client()
     log.info("settings updated: %s", ", ".join(sorted(changes)))
-    return await get_settings()
+    return await get_settings(session)
 
 
 # --- browsing -------------------------------------------------------------
@@ -707,7 +728,10 @@ async def staging_contents(
     """
     def collect() -> dict[str, Any]:
         space = workspace.for_session(session.identity)
-        space.prepare()
+        # Written together, always. A staging folder with an owner marker but
+        # no beets config is one the sweep would later adopt with a guessed
+        # destination.
+        beets_runner.ensure_config(space)
         entries = []
         for kind, parent in (("album", space.albums_dir),
                              ("single", space.singles_dir)):

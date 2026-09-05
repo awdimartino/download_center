@@ -169,9 +169,17 @@ function connect() {
     handleMessage(JSON.parse(event.data));
   });
 
-  socket.addEventListener("close", () => {
+  socket.addEventListener("close", (event) => {
     connEl.textContent = "offline";
     connEl.className = "conn offline";
+    // 4401 is this server saying the session has gone - a restart signs
+    // everyone out. Reconnecting cannot fix that, and doing so forever
+    // leaves the page looking merely offline when it needs a sign-in.
+    if (event.code === 4401) {
+      started = false;
+      showSignin(true);
+      return;
+    }
     // Back off to at most 15s so a restarting server is picked up quickly
     // without hammering it while it is down.
     setTimeout(connect, retryDelay);
@@ -279,8 +287,12 @@ document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
     const view = tab.dataset.view;
-    ["queue", "browse", "library", "health", "dupes"].forEach((name) => {
-      document.getElementById(`view-${name}`).hidden = view !== name;
+    // Driven off the tabs themselves rather than a hand-kept list: a view
+    // removed from the markup used to leave a name here that resolved to
+    // null, and the resulting throw hid every panel at once.
+    document.querySelectorAll(".tab").forEach((other) => {
+      const section = document.getElementById(`view-${other.dataset.view}`);
+      if (section) section.hidden = other.dataset.view !== view;
     });
     if (view === "browse") queryInput.focus();
     if (view === "staging") loadStaging();

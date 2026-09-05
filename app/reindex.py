@@ -30,7 +30,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .beets_runner import BEETS_DIR, ensure_config
+from . import workspace
+from .beets_runner import ensure_config
 from .config import settings
 
 # Moving and copying are both disabled: the files are already where they
@@ -48,14 +49,14 @@ import:
 """
 
 
-def reindex(root: Path, apply: bool) -> int:
-    ensure_config()
+def reindex(space: workspace.Workspace, root: Path, apply: bool) -> int:
+    ensure_config(space)
 
     if not root.is_dir():
         print(f"!! not a directory: {root}", file=sys.stderr)
         return 1
 
-    library_db = BEETS_DIR / "library.db"
+    library_db = space.beets_library
     if library_db.exists() and apply:
         print(f"!! {library_db} already exists.\n"
               f"   Move it aside first - this is meant for a fresh index.",
@@ -69,7 +70,7 @@ def reindex(root: Path, apply: bool) -> int:
 
     command = [sys.executable, "-m", "beets", "--config", overlay_path,
                "import", "-A", "-q", str(root)]
-    environment = {**os.environ, "BEETSDIR": str(BEETS_DIR)}
+    environment = {**os.environ, "BEETSDIR": str(space.beets_dir)}
 
     print(f"{'APPLYING' if apply else 'DRY RUN'} - reindexing {root}")
     print("  " + " ".join(command) + "\n")
@@ -94,11 +95,23 @@ def reindex(root: Path, apply: bool) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("root", nargs="?", type=Path, default=settings.music_dir,
-                        help="the existing library (default: music_dir)")
+    parser.add_argument("user", help="whose library to index")
+    parser.add_argument("root", nargs="?", type=Path,
+                        help="the existing library (default: that user's)")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
-    return reindex(args.root, args.apply)
+
+    # Whose index this is has to be said out loud: there is one beets
+    # database per person, and building the wrong one silently would leave
+    # the right one empty.
+    space = next((w for w in workspace.existing() if w.username == args.user),
+                 None)
+    if space is None:
+        known = ", ".join(w.username for w in workspace.existing()) or "none"
+        print(f"!! no workspace for {args.user!r}. Known: {known}",
+              file=sys.stderr)
+        return 1
+    return reindex(space, args.root or space.library_path, args.apply)
 
 
 if __name__ == "__main__":

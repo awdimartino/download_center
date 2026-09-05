@@ -48,10 +48,26 @@ class Workspace:
     library_id: int
     library_name: str
     library_path: Path
+    # Whether this is its owner's only library, which decides whether the
+    # workspace needs the library in its name to stay distinct.
+    only_library: bool = True
+
+    @property
+    def key(self) -> str:
+        """The directory name for this workspace.
+
+        A workspace is a person *and* a library, because the beets config it
+        owns hard-codes one destination. Someone with a single library keeps
+        the plain name; anyone with more gets one workspace per library,
+        rather than a second silently reusing the first's configuration and
+        filing their music into the wrong place.
+        """
+        base = slug(self.username)
+        return base if self.only_library else f"{base}-{slug(self.library_name)}"
 
     @property
     def staging(self) -> Path:
-        return settings.output_dir / slug(self.username)
+        return settings.output_dir / self.key
 
     @property
     def albums_dir(self) -> Path:
@@ -69,7 +85,7 @@ class Workspace:
 
     @property
     def beets_dir(self) -> Path:
-        return CONFIG_DIR / "beets" / slug(self.username)
+        return CONFIG_DIR / "beets" / self.key
 
     @property
     def beets_config(self) -> Path:
@@ -84,10 +100,13 @@ class Workspace:
                           self.incomplete_dir, self.beets_dir):
             directory.mkdir(parents=True, exist_ok=True)
         # A note of who this belongs to, for anyone reading the disk later.
+        # Enough for the sweep - which runs with nobody signed in - to
+        # rebuild this workspace exactly, including where the music goes.
         marker = self.staging / ".owner"
-        if not marker.exists():
-            marker.write_text(f"{self.username}\n{self.library_name}\n",
-                              encoding="utf-8")
+        wanted = f"{self.username}\n{self.library_name}\n{self.library_path}\n"
+        current = marker.read_text(encoding="utf-8") if marker.exists() else None
+        if current != wanted:
+            marker.write_text(wanted, encoding="utf-8")
 
 
 def for_session(identity, library_id: int | None = None) -> Workspace:
@@ -111,7 +130,7 @@ def for_session(identity, library_id: int | None = None) -> Workspace:
             raise ValueError("That library does not belong to this account.")
 
     return Workspace(identity.username, library["id"], library["name"],
-                     Path(library["path"]))
+                     Path(library["path"]), only_library=len(libraries) == 1)
 
 
 def existing() -> list[Workspace]:
@@ -135,9 +154,15 @@ def existing() -> list[Workspace]:
         lines = marker.read_text(encoding="utf-8").splitlines()
         username = lines[0].strip() if lines else directory.name
         library_name = lines[1].strip() if len(lines) > 1 else ""
+        # The marker records the destination; a marker written by an older
+        # version may not, so the beets config is the fallback - it is the
+        # other place the answer was written down.
+        recorded = lines[2].strip() if len(lines) > 2 else ""
         beets_config = CONFIG_DIR / "beets" / directory.name / "config.yaml"
-        found.append(Workspace(username, 0, library_name,
-                               _library_path_from(beets_config)))
+        found.append(Workspace(
+            username, 0, library_name,
+            Path(recorded) if recorded else _library_path_from(beets_config),
+            only_library=directory.name == slug(username)))
     return found
 
 
@@ -169,6 +194,19 @@ def adopt_legacy(space: Workspace) -> bool:
         if source.exists():
             source.rename(target)
             moved.append(target.name)
+
+    # The configuration names its database and log by absolute path, so
+    # moving the files without rewriting it leaves beets building a fresh,
+    # empty index at the old location while the real one sits unread beside
+    # it - and nothing that depends on knowing what was just filed works.
+    if space.beets_config.exists():
+        text = space.beets_config.read_text(encoding="utf-8")
+        for old, new in ((legacy / "library.db", space.beets_library),
+                         (legacy / "import.log", space.beets_dir / "import.log")):
+            text = text.replace(str(old), str(new))
+            text = text.replace(old.as_posix(), new.as_posix())
+        space.beets_config.write_text(text, encoding="utf-8")
+
     log.info("adopted the previous beets installation for %s: %s",
              space.username, ", ".join(moved))
     return True

@@ -145,9 +145,18 @@ def libraries_for(identity: Identity) -> list[dict[str, Any]]:
                 "select l.id, l.name, l.path from library l"
                 " join user_library ul on ul.library_id = l.id"
                 " where ul.user_id = ?", (identity.user_id,)).fetchall()
-        else:
+        elif identity.is_admin:
+            # Older Navidrome had no per-user assignment, so an administrator
+            # legitimately sees everything.
             rows = connection.execute(
                 "select id, name, path from library").fetchall()
+        else:
+            # Failing open here would hand somebody else's collection to an
+            # ordinary account and point their downloads at it. Refusing is
+            # visible; quietly over-sharing is not.
+            log.warning("this Navidrome has no per-user library assignment, "
+                        "so %s is given none", identity.username)
+            rows = []
     return [{"id": r[0], "name": r[1], "path": r[2]} for r in rows]
 
 
