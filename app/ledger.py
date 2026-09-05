@@ -29,6 +29,17 @@ CREATE TABLE IF NOT EXISTS ledger (
     completed_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_isrc ON ledger(isrc);
+
+-- Duplicate groups deliberately kept as they are. Without this a pair you
+-- have already looked at and decided to keep comes back every time the
+-- library is scanned, and a review list that never shrinks is one nobody
+-- reads. Keyed by the group's identity, not by path, so the decision holds
+-- when beets moves the files.
+CREATE TABLE IF NOT EXISTS duplicate_dismissed (
+    group_key   TEXT PRIMARY KEY,
+    note        TEXT,
+    decided_at  TEXT NOT NULL
+);
 """
 
 
@@ -92,3 +103,32 @@ def count() -> int:
     assert _conn is not None, "ledger not connected"
     with _lock:
         return _conn.execute("SELECT COUNT(*) FROM ledger").fetchone()[0]
+
+
+# --- duplicate review decisions -------------------------------------------
+
+def dismiss_duplicate(group_key: str, note: str = "") -> None:
+    """Remember that a duplicate group was looked at and left alone."""
+    assert _conn is not None, "ledger not connected"
+    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _lock:
+        _conn.execute(
+            "INSERT OR REPLACE INTO duplicate_dismissed"
+            " (group_key, note, decided_at) VALUES (?, ?, ?)",
+            (group_key, note, stamp))
+        _conn.commit()
+
+
+def dismissed_duplicates() -> set[str]:
+    assert _conn is not None, "ledger not connected"
+    with _lock:
+        return {row[0] for row in
+                _conn.execute("SELECT group_key FROM duplicate_dismissed")}
+
+
+def undismiss_duplicate(group_key: str) -> None:
+    assert _conn is not None, "ledger not connected"
+    with _lock:
+        _conn.execute("DELETE FROM duplicate_dismissed WHERE group_key = ?",
+                      (group_key,))
+        _conn.commit()

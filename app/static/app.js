@@ -279,12 +279,13 @@ document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
     const view = tab.dataset.view;
-    ["queue", "browse", "library", "health"].forEach((name) => {
+    ["queue", "browse", "library", "health", "dupes"].forEach((name) => {
       document.getElementById(`view-${name}`).hidden = view !== name;
     });
     if (view === "browse") queryInput.focus();
     if (view === "library") openLibraryView();
     if (view === "health") loadHealth();
+    if (view === "dupes") loadDupes();
   });
 });
 
@@ -810,5 +811,137 @@ document.getElementById("health-audit").addEventListener("click", async (event) 
   } finally {
     button.disabled = false;
     button.textContent = "Re-read files";
+  }
+});
+
+// --- duplicates -----------------------------------------------------------
+// Groups of files that look like the same recording. The keeper is chosen on
+// quality alone, because stars are migrated onto it rather than protected in
+// place - so the better file wins even when the worse one is the starred one.
+
+const dupesEl = document.getElementById("dupes");
+const dupesEmpty = document.getElementById("dupes-empty");
+const dupeNote = document.getElementById("dupe-note");
+const dupeBadge = document.getElementById("dupe-badge");
+
+let dupeGroups = [];
+
+function describeCopy(copy) {
+  const bits = [copy.suffix];
+  if (copy.bit_rate) bits.push(`${copy.bit_rate}k`);
+  bits.push(`${copy.duration}s`);
+  if (copy.size) bits.push(`${(copy.size / 1e6).toFixed(1)}MB`);
+  return bits.join(" · ");
+}
+
+function renderGroup(group) {
+  const card = el("div", `dupe${group.confident ? " confident" : ""}`);
+  const first = group.copies[0];
+
+  const head = el("div", "dupe-head");
+  head.append(
+    el("span", "dupe-title", `${first.artist} — ${first.title}`),
+    el("span", "dupe-reason", group.reason === "musicbrainz"
+      ? "same MusicBrainz recording" : "same title and length")
+  );
+  if (group.why) head.append(el("span", "dupe-why", `keep ${group.why}`));
+  card.append(head);
+
+  const name = `dupe-${group.key}`;
+  group.copies.forEach((copy) => {
+    const row = el("label", "dupe-copy");
+    const radio = el("input");
+    radio.type = "radio";
+    radio.name = name;
+    radio.value = copy.id;
+    radio.checked = copy.id === group.keeper;
+
+    row.append(
+      radio,
+      el("span", "dupe-spec", describeCopy(copy)),
+      el("span", "dupe-album", copy.album || "—"),
+      el("span", "dupe-path", copy.path)
+    );
+    if (copy.starred) row.append(el("span", "dupe-star", "★"));
+    if (copy.rating) row.append(el("span", "dupe-star", "●".repeat(copy.rating)));
+    card.append(row);
+  });
+
+  const actions = el("div", "dupe-actions");
+  actions.append(
+    action("Keep selected, remove the rest", "primary", async () => {
+      const chosen = card.querySelector(`input[name="${CSS.escape(name)}"]:checked`);
+      if (!chosen) return;
+      await postDupe("/api/duplicates/resolve",
+        { key: group.key, keeper: chosen.value });
+    }),
+    action("Keep both", "", async () => {
+      await postDupe("/api/duplicates/dismiss", { key: group.key });
+    })
+  );
+  card.append(actions);
+  return card;
+}
+
+async function postDupe(path, body) {
+  showError("");
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      showError(detail.detail || `Request failed (${response.status})`);
+      return;
+    }
+    await loadDupes();
+  } catch {
+    showError("Could not reach the server.");
+  }
+}
+
+function renderDupes(payload) {
+  dupeGroups = payload.groups;
+  dupesEl.replaceChildren(...dupeGroups.map(renderGroup));
+  dupesEmpty.textContent = dupeGroups.length ? "" : "No duplicates found.";
+  dupesEmpty.hidden = dupeGroups.length > 0;
+
+  dupeBadge.textContent = dupeGroups.length || "";
+  dupeBadge.hidden = !dupeGroups.length;
+
+  dupeNote.textContent = payload.confident
+    ? `${payload.confident} group(s) share a MusicBrainz recording id and can be resolved in one go.`
+    : "";
+  dupeNote.hidden = !payload.confident;
+}
+
+async function loadDupes() {
+  try {
+    const response = await fetch("/api/duplicates");
+    if (!response.ok) throw new Error((await response.json()).detail || response.status);
+    renderDupes(await response.json());
+  } catch (err) {
+    dupesEmpty.textContent = `Could not list duplicates: ${err.message}`;
+    dupesEmpty.hidden = false;
+  }
+}
+
+document.getElementById("dupe-auto").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const preview = await fetch("/api/duplicates/auto", { method: "POST" })
+      .then((r) => r.json());
+    if (!preview.eligible) {
+      showError("Nothing is confident enough to resolve unattended.");
+      return;
+    }
+    if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/.`)) return;
+    await fetch("/api/duplicates/auto?apply=true", { method: "POST" });
+    await loadDupes();
+  } finally {
+    button.disabled = false;
   }
 });

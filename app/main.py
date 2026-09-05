@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import beets_library, beets_runner, diskaudit, generic, ledger
+from . import beets_library, beets_runner, diskaudit, duplicates, generic, ledger
 from . import spotify, staging, worker
 from . import config
 from . import health as health_checks
@@ -496,6 +496,67 @@ async def health() -> dict[str, Any]:
     # Reads Navidrome's database and stats a few directories, so it is quick
     # but blocking; a thread keeps it off the event loop.
     return await asyncio.to_thread(health_checks.report, STARTED_AT)
+
+
+# --- duplicates -----------------------------------------------------------
+
+class ResolveRequest(BaseModel):
+    key: str
+    keeper: str
+
+
+class DismissRequest(BaseModel):
+    key: str
+    note: str = ""
+
+
+def _duplicate_groups() -> list[duplicates.Group]:
+    connection = health_checks._connect()
+    with connection:
+        return duplicates.find(connection)
+
+
+@app.get("/api/duplicates")
+async def list_duplicates() -> dict[str, Any]:
+    try:
+        groups = await asyncio.to_thread(_duplicate_groups)
+    except health_checks.NavidromeUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "groups": [g.as_dict() for g in groups],
+        "confident": sum(1 for g in groups if g.confident),
+    }
+
+
+@app.post("/api/duplicates/resolve")
+async def resolve_duplicate(request: ResolveRequest) -> dict[str, Any]:
+    groups = await asyncio.to_thread(_duplicate_groups)
+    group = next((g for g in groups if g.key == request.key), None)
+    if group is None:
+        raise HTTPException(status_code=404, detail="No such duplicate group.")
+    try:
+        return await asyncio.to_thread(duplicates.resolve, group, request.keeper)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/duplicates/dismiss")
+async def dismiss_duplicate(request: DismissRequest) -> dict[str, Any]:
+    await asyncio.to_thread(ledger.dismiss_duplicate, request.key, request.note)
+    return {"dismissed": request.key}
+
+
+@app.post("/api/duplicates/auto")
+async def auto_resolve_duplicates(apply: bool = False) -> dict[str, Any]:
+    def run() -> dict[str, Any]:
+        connection = health_checks._connect()
+        with connection:
+            return duplicates.auto_resolve(connection, apply=apply)
+
+    try:
+        return await asyncio.to_thread(run)
+    except health_checks.NavidromeUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/health/audit")

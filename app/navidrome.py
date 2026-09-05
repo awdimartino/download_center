@@ -81,6 +81,31 @@ def scan_status() -> dict:
     return _call("getScanStatus.view").get("scanStatus", {})
 
 
+def star(track_id: str) -> bool:
+    """Star a track on the user's behalf, so an annotation can be moved.
+
+    This is the reason deduplication can prefer the better file rather than
+    the annotated one: the star follows the decision instead of constraining
+    it. Failures are reported, never raised - losing a star is worth knowing
+    about, but not worth aborting a resolution halfway through.
+    """
+    try:
+        _call("star.view", id=track_id)
+        return True
+    except Exception as exc:
+        log.warning("could not star %s: %s", track_id, exc)
+        return False
+
+
+def set_rating(track_id: str, rating: int) -> bool:
+    try:
+        _call("setRating.view", id=track_id, rating=str(int(rating)))
+        return True
+    except Exception as exc:
+        log.warning("could not rate %s: %s", track_id, exc)
+        return False
+
+
 def notify(full: bool = False) -> bool:
     """Trigger a scan, treating every failure as unimportant.
 
