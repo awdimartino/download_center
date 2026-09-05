@@ -214,12 +214,16 @@ document.getElementById("settings-toggle").addEventListener("click", async () =>
   if (settingsForm.hidden) return;
   settingsNote.textContent = "";
   const values = await fetch("/api/settings").then((r) => r.json());
+  const secrets = ["spotify_client_secret", "navidrome_password"];
   Object.entries(values).forEach(([key, value]) => {
     const field = settingsForm.elements[key];
-    if (field && key !== "spotify_client_secret") field.value = value;
+    if (field && !secrets.includes(key)) field.value = value;
   });
-  settingsForm.elements.spotify_client_secret.placeholder =
-    values.spotify_client_secret_set ? "unchanged" : "not set";
+  // Secrets are never sent back, only whether one is set.
+  secrets.forEach((key) => {
+    const field = settingsForm.elements[key];
+    if (field) field.placeholder = values[`${key}_set`] ? "unchanged" : "not set";
+  });
 });
 
 settingsForm.addEventListener("submit", async (event) => {
@@ -227,7 +231,7 @@ settingsForm.addEventListener("submit", async (event) => {
   const payload = {};
   new FormData(settingsForm).forEach((value, key) => {
     if (value === "") return;
-    payload[key] = ["concurrency", "max_attempts"].includes(key)
+    payload[key] = ["concurrency", "max_attempts", "staging_sweep_minutes"].includes(key)
       ? parseInt(value, 10)
       : key === "rate_limit_sleep"
       ? parseFloat(value)

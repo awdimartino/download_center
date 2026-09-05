@@ -16,7 +16,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import beets_library, diskaudit, generic, ledger, spotify, staging, worker
+from . import beets_library, beets_runner, diskaudit, generic, ledger
+from . import spotify, staging, worker
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -131,13 +132,38 @@ async def lifespan(app: FastAPI):
     if not settings.spotify_configured:
         log.warning("Spotify credentials missing - add them to config/config.toml")
 
-    auditor = asyncio.create_task(_audit_loop())
+    background = [asyncio.create_task(_audit_loop()),
+                  asyncio.create_task(_sweep_loop())]
     try:
         yield
     finally:
-        auditor.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await auditor
+        for task in background:
+            task.cancel()
+        for task in background:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+
+async def _sweep_loop() -> None:
+    """Import anything that arrives in staging without a download job.
+
+    Files reach staging by other routes - dropped in by hand, copied from
+    elsewhere, or left behind by a job that finished while beets was busy.
+    Without this they would sit there forever, which was survivable only while
+    something outside this process was also running beets.
+    """
+    while True:
+        minutes = settings.staging_sweep_minutes
+        if minutes <= 0:
+            await asyncio.sleep(300)
+            continue
+        await asyncio.sleep(minutes * 60)
+        try:
+            result = await asyncio.to_thread(beets_runner.sweep_staging)
+            if result.get("ran"):
+                log.info("staging sweep: %s", result)
+        except Exception:
+            log.exception("staging sweep failed")
 
 
 async def _audit_loop() -> None:
@@ -301,14 +327,23 @@ class SettingsUpdate(BaseModel):
     audio_bitrate: str | None = None
     max_attempts: int | None = None
     rate_limit_sleep: float | None = None
+    navidrome_url: str | None = None
+    navidrome_user: str | None = None
+    navidrome_password: str | None = None
+    staging_sweep_minutes: int | None = None
+
+
+# Values the browser must never be sent back. Reported as a boolean instead,
+# so a form can show whether one is set without ever holding it.
+SECRETS = ("spotify_client_secret", "navidrome_password")
 
 
 @app.get("/api/settings")
 async def get_settings() -> dict[str, Any]:
     values = {key: getattr(settings, key) for key in config.EDITABLE}
-    # Never send the secret back to the browser; report only whether it is set.
-    values["spotify_client_secret"] = ""
-    values["spotify_client_secret_set"] = bool(settings.spotify_client_secret)
+    for key in SECRETS:
+        values[key] = ""
+        values[f"{key}_set"] = bool(getattr(settings, key))
     return values
 
 
@@ -316,8 +351,9 @@ async def get_settings() -> dict[str, Any]:
 async def put_settings(update: SettingsUpdate) -> dict[str, Any]:
     changes = {k: v for k, v in update.model_dump().items() if v is not None}
     # A blank secret means "leave it alone", since the form never receives it.
-    if not changes.get("spotify_client_secret"):
-        changes.pop("spotify_client_secret", None)
+    for key in SECRETS:
+        if not changes.get(key):
+            changes.pop(key, None)
     if not changes:
         return await get_settings()
 

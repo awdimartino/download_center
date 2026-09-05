@@ -24,6 +24,10 @@ _ENV_OVERRIDES = {
     "beets_enabled": "DC_BEETS_ENABLED",
     "music_dir": "DC_MUSIC_DIR",
     "navidrome_db": "DC_NAVIDROME_DB",
+    "navidrome_url": "DC_NAVIDROME_URL",
+    "navidrome_user": "DC_NAVIDROME_USER",
+    "navidrome_password": "DC_NAVIDROME_PASSWORD",
+    "staging_sweep_minutes": "DC_STAGING_SWEEP_MINUTES",
 }
 
 
@@ -53,6 +57,22 @@ class Settings(BaseModel):
     # caches from it. State changes go through Navidrome's HTTP API.
     navidrome_db: Path = Path("/navidrome/navidrome.db")
 
+    # Navidrome's API, used to ask for a scan once beets has filed something.
+    # Optional: without it new music simply waits for Navidrome's own
+    # schedule instead of appearing straight away.
+    navidrome_url: str = ""
+    navidrome_user: str = ""
+    navidrome_password: str = ""
+
+    # How often to look for anything sitting in staging that no download job
+    # put there - a manual drop, or a job that finished while beets was busy.
+    # Zero disables the sweep.
+    staging_sweep_minutes: int = Field(default=15, ge=0)
+
+    # How long a file must sit unchanged before it is considered finished.
+    # Importing a directory still being written to gets a partial album.
+    staging_quiet_seconds: int = Field(default=120, ge=0)
+
     @property
     def albums_dir(self) -> Path:
         return self.output_dir / "albums"
@@ -81,6 +101,8 @@ class Settings(BaseModel):
 EDITABLE = (
     "spotify_client_id", "spotify_client_secret", "concurrency",
     "audio_bitrate", "max_attempts", "rate_limit_sleep", "beets_enabled",
+    "navidrome_url", "navidrome_user", "navidrome_password",
+    "staging_sweep_minutes",
 )
 
 

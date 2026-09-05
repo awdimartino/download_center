@@ -20,14 +20,19 @@ import os
 import sqlite3
 import sys
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
-from . import stamp
+from . import navidrome, stamp
 from .config import CONFIG_DIR, settings
 
 log = logging.getLogger("download_center.beets")
+
+# Serialises every beets invocation. Two processes writing one library.db
+# and moving files into the same tree is how things get lost.
+_import_lock = threading.Lock()
 
 BEETS_DIR = CONFIG_DIR / "beets"
 CONFIG_PATH = BEETS_DIR / "config.yaml"
@@ -57,7 +62,11 @@ import:
   # in staging rather than guessed at, so you can look at it later.
   quiet: yes
   quiet_fallback: skip
-  duplicate_action: skip
+  # Downloading a track from an album already held is the ordinary case, not
+  # an error. `skip` would leave every such track sitting in staging for a
+  # human; `merge` files it alongside its siblings, where it also inherits
+  # the album UUID they already share instead of founding a second copy.
+  duplicate_action: merge
   log: /config/beets/import.log
 
 # Left at the defaults deliberately. Loosening strong_rec_thresh, or telling
@@ -128,6 +137,17 @@ def _run(path: Path, singleton: bool) -> tuple[bool, str]:
     return True, output[-400:]
 
 
+def library_root() -> Path:
+    """The `directory` beets files into, from its own config."""
+    try:
+        import yaml
+        raw = yaml.safe_load(ensure_config().read_text(encoding="utf-8")) or {}
+        configured = raw.get("directory")
+    except Exception:
+        configured = None
+    return Path(configured) if configured else settings.music_dir
+
+
 def filed_since(moment: float) -> list[Path]:
     """Paths beets added to the library after `moment`.
 
@@ -141,15 +161,24 @@ def filed_since(moment: float) -> list[Path]:
     try:
         connection = sqlite3.connect(f"file:{library_db}?mode=ro", uri=True,
                                      timeout=10)
+        with connection:
+            rows = connection.execute(
+                "select path from items where added >= ?", (moment,)).fetchall()
     except sqlite3.Error as exc:
         log.warning("could not read the beets library: %s", exc)
         return []
-    with connection:
-        rows = connection.execute(
-            "select path from items where added >= ?", (moment,)).fetchall()
-    # beets stores paths as bytes, since a filesystem path is not necessarily
-    # valid text in any encoding.
-    return [Path(os.fsdecode(row[0])) for row in rows]
+
+    # Paths are stored as bytes, since a filesystem path is not necessarily
+    # valid text in any encoding - and, since beets 2.x, relative to the
+    # library directory. Resolving them is not optional: a relative path
+    # silently resolves against the working directory instead, matches
+    # nothing, and stamping quietly does nothing at all.
+    root = library_root()
+    paths = []
+    for row in rows:
+        path = Path(os.fsdecode(row[0]))
+        paths.append(path if path.is_absolute() else root / path)
+    return paths
 
 
 def import_paths(published: list[Path]) -> dict[str, Any]:
@@ -161,6 +190,14 @@ def import_paths(published: list[Path]) -> dict[str, Any]:
     if not settings.beets_enabled:
         return {"ran": False, "reason": "disabled"}
 
+    # Two beets processes against one library.db, both moving files into the
+    # same tree, is a way to lose things. The sweep and a finishing job can
+    # both land here, so they queue instead.
+    with _import_lock:
+        return _import_paths(published)
+
+
+def _import_paths(published: list[Path]) -> dict[str, Any]:
     ensure_config()
     imported, skipped, failed = 0, 0, []
     # Recorded before the first import so nothing filed during the run is
@@ -193,6 +230,12 @@ def import_paths(published: list[Path]) -> dict[str, Any]:
         log.info("stamped %d new track UUID(s), %d album UUID(s)",
                  stamped.tracks_written, stamped.albums_written)
 
+    # Freshly imported files are new to Navidrome, so an ordinary scan finds
+    # them; the tags were written before it ever looked. Only re-tagging
+    # existing files needs a full scan, since stamping preserves mtime.
+    if imported:
+        navidrome.notify()
+
     return {
         "ran": True,
         "imported": imported,
@@ -201,6 +244,56 @@ def import_paths(published: list[Path]) -> dict[str, Any]:
         "stamped": stamped.tracks_written,
         "stamp_failures": stamped.failures,
     }
+
+
+def settled(path: Path, quiet_seconds: int | None = None) -> bool:
+    """Whether a path has stopped changing and is safe to import.
+
+    A directory still being written to imports as a partial album, which is
+    exactly the mistake this pipeline exists to avoid. Nothing here can know
+    whether a downloader is mid-run, so it waits for stillness instead.
+    """
+    if quiet_seconds is None:
+        quiet_seconds = settings.staging_quiet_seconds
+    cutoff = time.time() - quiet_seconds
+    newest = path.stat().st_mtime
+    if path.is_dir():
+        for child in path.rglob("*"):
+            newest = max(newest, child.stat().st_mtime)
+    return newest <= cutoff
+
+
+def sweep_staging() -> dict[str, Any]:
+    """Import anything sitting in staging that no download job put there.
+
+    Files arrive by other routes - a manual drop, a job that finished while
+    beets was busy, something copied in from elsewhere - and without this they
+    would sit in staging indefinitely. Beets moves out what it can match, so
+    whatever remains afterwards is by definition something that needs a human.
+    """
+    if not settings.beets_enabled:
+        return {"ran": False, "reason": "disabled"}
+
+    candidates: list[Path] = []
+    for parent, want_dirs in ((settings.albums_dir, True),
+                              (settings.singles_dir, False)):
+        if not parent.is_dir():
+            continue
+        for entry in parent.iterdir():
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir() != want_dirs:
+                continue
+            if not settled(entry):
+                log.debug("%s is still changing, leaving it", entry.name)
+                continue
+            candidates.append(entry)
+
+    if not candidates:
+        return {"ran": False, "reason": "nothing waiting"}
+
+    log.info("sweeping %d item(s) from staging", len(candidates))
+    return import_paths(candidates)
 
 
 def _prune_empty() -> None:
