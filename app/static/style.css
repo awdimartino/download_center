@@ -745,7 +745,16 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
    size a finger can actually hit. */
 
 @media (max-width: 720px) {
-  html, body { max-width: 100%; overflow-x: hidden; }
+  /* No overflow-x here, deliberately. It was `hidden`, which makes an
+     element a scroll container - and a scroll container is what a sticky
+     descendant sticks to, so the header stuck to a box that never scrolls
+     and scrolled away with the page, taking Settings and Sign out with it.
+     WebKit knocks a fixed element loose from the same rule, which is the
+     bottom tab bar. `clip` breaks sticky in Chromium too. Nothing here
+     actually overflows at 390px - the long strings are handled by the
+     overflow-wrap rule at the end of this block - so the safety net was
+     only ever costing us the two things it was meant to protect. */
+  html, body { max-width: 100%; }
   main { padding: var(--s-3) var(--s-3) 5.5rem; }   /* room for the bottom bar */
 
   header {
