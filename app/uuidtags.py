@@ -23,9 +23,19 @@ from mutagen.mp4 import MP4
 TRACK_KEY = "NAVIDROME_UUID"
 ALBUM_KEY = "NAVIDROME_ALBUM_UUID"
 
-# MP4 has no free-text tag space, so freeform atoms are namespaced.
-MP4_TRACK = "----:com.navidrome:UUID"
-MP4_ALBUM = "----:com.navidrome:ALBUM_UUID"
+# MP4 has no free-text tag space, so freeform atoms carry a "mean" namespace.
+# Navidrome reads these through TagLib, which surfaces freeform atoms under
+# com.apple.iTunes - the de facto namespace every player understands. Atoms
+# written under any other mean parse fine with mutagen and are invisible to
+# Navidrome, which is exactly what happened here: it read the standard atoms
+# from these files and none of ours.
+MP4_TRACK = "----:com.apple.iTunes:NAVIDROME_UUID"
+MP4_ALBUM = "----:com.apple.iTunes:NAVIDROME_ALBUM_UUID"
+
+# What earlier versions wrote. Still read so an already-stamped file keeps the
+# identity it has - regenerating one would orphan whatever it carries.
+MP4_TRACK_LEGACY = "----:com.navidrome:UUID"
+MP4_ALBUM_LEGACY = "----:com.navidrome:ALBUM_UUID"
 
 AUDIO_SUFFIXES = {".mp3", ".flac", ".m4a", ".mp4", ".ogg", ".oga", ".opus",
                   ".wav", ".wv", ".aiff", ".ape"}
@@ -74,14 +84,18 @@ def read(path: Path) -> tuple[str | None, str | None]:
         except Exception as exc:
             raise UnreadableFile(f"{type(exc).__name__}: {exc}") from exc
 
-        def atom(name: str) -> str | None:
-            values = audio.tags.get(name) if audio.tags else None
-            if not values:
-                return None
-            raw = values[0]
-            return raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+        def atom(*names: str) -> str | None:
+            for name in names:
+                values = audio.tags.get(name) if audio.tags else None
+                if not values:
+                    continue
+                raw = values[0]
+                return (raw.decode("utf-8", "replace")
+                        if isinstance(raw, bytes) else str(raw))
+            return None
 
-        return atom(MP4_TRACK), atom(MP4_ALBUM)
+        return (atom(MP4_TRACK, MP4_TRACK_LEGACY),
+                atom(MP4_ALBUM, MP4_ALBUM_LEGACY))
 
     try:
         audio = MutagenFile(path)
@@ -148,9 +162,13 @@ def write(path: Path, track_uuid: str | None, album_uuid: str | None) -> None:
         audio = MP4(path)
         if audio.tags is None:
             audio.add_tags()
-        for atom, value in ((MP4_TRACK, track_uuid), (MP4_ALBUM, album_uuid)):
-            if value is not None:
-                audio.tags[atom] = [value.encode("utf-8")]
+        for atom, legacy, value in ((MP4_TRACK, MP4_TRACK_LEGACY, track_uuid),
+                                    (MP4_ALBUM, MP4_ALBUM_LEGACY, album_uuid)):
+            if value is None:
+                continue
+            audio.tags[atom] = [value.encode("utf-8")]
+            # Drop the old atom so a file cannot end up carrying two answers.
+            audio.tags.pop(legacy, None)
         audio.save()
         return
 
