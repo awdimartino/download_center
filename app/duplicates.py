@@ -83,6 +83,9 @@ class Copy:
     mbid: str
     starred: bool
     rating: int
+    library_id: int
+    library: str
+    starred_by: str = ""
 
     @property
     def lossless(self) -> bool:
@@ -95,6 +98,7 @@ class Copy:
             "bit_rate": self.bit_rate, "duration": round(self.duration or 0),
             "size": self.size, "mbid": self.mbid, "starred": self.starred,
             "rating": self.rating, "lossless": self.lossless,
+            "library": self.library, "starred_by": self.starred_by,
         }
 
 
@@ -115,10 +119,27 @@ class Group:
         }
 
 
+def _can_migrate(copy: Copy) -> bool:
+    """Whether this application could move that annotation to another file.
+
+    Stars belong to a user, and the API acts as whoever it is authenticated
+    as. Starring a track as the wrong account creates an annotation nobody
+    sees while the real one is quarantined away with its file - so unless we
+    are that user, the annotation is not ours to move.
+    """
+    return (not copy.starred
+            or copy.starred_by == settings.navidrome_user)
+
+
 def _rank(copy: Copy) -> tuple:
-    """Better copies sort higher. Quality only - annotations are migrated."""
-    return (copy.lossless, copy.bit_rate or 0, copy.size or 0,
-            1 if copy.mbid else 0)
+    """Better copies sort higher.
+
+    Quality decides, but only among copies whose annotations we could carry
+    across. A star we cannot migrate has to be protected in place instead,
+    so a copy holding one outranks a better file.
+    """
+    return (not _can_migrate(copy), copy.lossless, copy.bit_rate or 0,
+            copy.size or 0, 1 if copy.mbid else 0)
 
 
 def _clearly_better(best: Copy, rest: list[Copy]) -> str:
@@ -141,22 +162,33 @@ def _clearly_better(best: Copy, rest: list[Copy]) -> str:
 
 
 def _load(connection: sqlite3.Connection) -> list[Copy]:
+    """Every live track, with which library it belongs to and who starred it.
+
+    Both matter. A library is one person's collection, and an annotation
+    belongs to a user - neither is a property of the file.
+    """
     live = ("mf.missing = 0 and mf.folder_id in "
             "(select id from folder where missing = 0)")
     rows = connection.execute(f"""
         select mf.id, mf.path, mf.title, mf.album, mf.artist, mf.album_artist,
                mf.suffix, mf.bit_rate, mf.duration, mf.size,
                coalesce(mf.mbz_recording_id, ''),
-               coalesce(a.starred, 0), coalesce(a.rating, 0)
+               mf.library_id, coalesce(l.name, ''),
+               (select group_concat(u.user_name)
+                  from annotation an join user u on u.id = an.user_id
+                 where an.item_id = mf.id and an.item_type = 'media_file'
+                   and an.starred = 1),
+               (select max(an.rating) from annotation an
+                 where an.item_id = mf.id and an.item_type = 'media_file')
           from media_file mf
-          left join annotation a
-            on a.item_id = mf.id and a.item_type = 'media_file'
+          left join library l on l.id = mf.library_id
          where {live}""").fetchall()
     return [
         Copy(id=r[0], path=r[1], title=r[2] or "", album=r[3] or "",
              artist=(r[5] or r[4] or ""), suffix=r[6] or "",
              bit_rate=r[7] or 0, duration=r[8] or 0.0, size=r[9] or 0,
-             mbid=r[10], starred=bool(r[11]), rating=r[12] or 0)
+             mbid=r[10], library_id=r[11] or 0, library=r[12] or "",
+             starred=bool(r[13]), starred_by=r[13] or "", rating=r[14] or 0)
         for r in rows
     ]
 
@@ -200,21 +232,25 @@ def find(connection: sqlite3.Connection) -> list[Group]:
         emitted.append(identity)
         groups.append(Group(key, reason, ordered, ordered[0], confident, why))
 
-    by_mbid: dict[str, list[Copy]] = collections.defaultdict(list)
+    # Grouping is per library, always. A library is one person's collection:
+    # the same song held by two people is not a duplicate of anything, and
+    # treating it as one would delete somebody else's music to keep the
+    # higher-bitrate copy of a file that was never theirs.
+    by_mbid: dict[tuple, list[Copy]] = collections.defaultdict(list)
     by_title: dict[tuple, list[Copy]] = collections.defaultdict(list)
     for copy in copies:
         if copy.mbid:
-            by_mbid[copy.mbid].append(copy)
+            by_mbid[(copy.library_id, copy.mbid)].append(copy)
         title = normalise(copy.title)
         if title:
-            by_title[(copy.artist.strip().lower(), title)].append(copy)
+            by_title[(copy.library_id, copy.artist.strip().lower(), title)].append(copy)
 
-    for mbid, members in sorted(by_mbid.items()):
+    for (library, mbid), members in sorted(by_mbid.items()):
         if len(members) > 1:
-            build(f"mb:{mbid}", "musicbrainz", members)
-    for (artist, title), members in sorted(by_title.items()):
+            build(f"mb:{library}:{mbid}", "musicbrainz", members)
+    for (library, artist, title), members in sorted(by_title.items()):
         if len(members) > 1:
-            build(f"t:{artist}|{title}", "title", members)
+            build(f"t:{library}:{artist}|{title}", "title", members)
 
     groups.sort(key=lambda g: (not g.confident, g.copies[0].artist.lower()))
     return groups
@@ -237,14 +273,25 @@ def resolve(group: Group, keeper_id: str) -> dict[str, Any]:
     losers = [c for c in group.copies if c.id != keeper_id]
     # Annotations move first: if quarantining fails afterwards the worst case
     # is a star on both copies, whereas the reverse loses it outright.
-    migrated = []
+    migrated, stranded = [], []
     for loser in losers:
         if loser.starred and not keeper.starred:
+            if not _can_migrate(loser):
+                # Starred by somebody else. Refusing is the only honest
+                # option: starring as this account would leave the real
+                # annotation attached to a file about to be quarantined.
+                stranded.append(f"{loser.path}: starred by {loser.starred_by}")
+                continue
             if navidrome.star(keeper.id):
                 migrated.append("starred")
         if loser.rating and loser.rating > keeper.rating:
             if navidrome.set_rating(keeper.id, loser.rating):
                 migrated.append(f"rated {loser.rating}")
+
+    if stranded:
+        raise ValueError(
+            "That copy carries an annotation this app cannot move: "
+            + "; ".join(stranded))
 
     moved, failed = [], []
     for loser in losers:
