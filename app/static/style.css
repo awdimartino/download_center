@@ -1,3 +1,14 @@
+/* `hidden` is how every panel here is shown and concealed. The browser
+   expresses it as display:none from the user-agent stylesheet, which any
+   class of ours that sets `display` silently outranks - so hiding such an
+   element does nothing. The sign-in overlay is display:flex: signing in
+   worked, the application loaded behind it, and the form just stayed put.
+   Two elements already carried their own patch for this; stated once here
+   instead, and marked important so no later rule can take it back. */
+[hidden] {
+  display: none !important;
+}
+
 :root {
   --bg: #14161a;
   --panel: #1c1f26;
@@ -125,7 +136,6 @@ button:disabled { opacity: .5; cursor: default; }
 .remove:hover { color: var(--bad); }
 
 .tracks { border-top: 1px solid var(--line); }
-.tracks[hidden] { display: none; }
 
 .track {
   display: flex;
@@ -205,7 +215,6 @@ header .ghost { margin-left: auto; }
   border: 1px solid var(--line);
   border-radius: 10px;
 }
-#settings[hidden] { display: none; }
 
 #settings label {
   display: flex;
