@@ -119,27 +119,26 @@ class Group:
         }
 
 
-def _can_migrate(copy: Copy) -> bool:
-    """Whether this application could move that annotation to another file.
+def _can_migrate(copy: Copy, identity: navidrome.Identity) -> bool:
+    """Whether this session could move that annotation to another file.
 
-    Stars belong to a user, and the API acts as whoever it is authenticated
+    Stars belong to a user and an API call acts as whoever it authenticated
     as. Starring a track as the wrong account creates an annotation nobody
-    sees while the real one is quarantined away with its file - so unless we
-    are that user, the annotation is not ours to move.
+    sees while the real one is quarantined away with its file - so unless
+    this is that person, the annotation is not theirs to move.
     """
-    return (not copy.starred
-            or copy.starred_by == settings.navidrome_user)
+    return not copy.starred or copy.starred_by == identity.username
 
 
-def _rank(copy: Copy) -> tuple:
+def _rank(copy: Copy, identity: navidrome.Identity) -> tuple:
     """Better copies sort higher.
 
-    Quality decides, but only among copies whose annotations we could carry
-    across. A star we cannot migrate has to be protected in place instead,
-    so a copy holding one outranks a better file.
+    Quality decides, but only among copies whose annotations can be carried
+    across. A star this session cannot migrate is protected in place instead,
+    so the copy holding it outranks a better file.
     """
-    return (not _can_migrate(copy), copy.lossless, copy.bit_rate or 0,
-            copy.size or 0, 1 if copy.mbid else 0)
+    return (not _can_migrate(copy, identity), copy.lossless,
+            copy.bit_rate or 0, copy.size or 0, 1 if copy.mbid else 0)
 
 
 def _clearly_better(best: Copy, rest: list[Copy]) -> str:
@@ -161,7 +160,8 @@ def _clearly_better(best: Copy, rest: list[Copy]) -> str:
     return ""
 
 
-def _load(connection: sqlite3.Connection) -> list[Copy]:
+def _load(connection: sqlite3.Connection,
+          identity: navidrome.Identity) -> list[Copy]:
     """Every live track, with which library it belongs to and who starred it.
 
     Both matter. A library is one person's collection, and an annotation
@@ -169,6 +169,13 @@ def _load(connection: sqlite3.Connection) -> list[Copy]:
     """
     live = ("mf.missing = 0 and mf.folder_id in "
             "(select id from folder where missing = 0)")
+    # Only libraries this person may see. Somebody else's collection is not
+    # theirs to deduplicate, and their copy of a song is not a duplicate of
+    # anything.
+    allowed = [lib["id"] for lib in identity.libraries]
+    if not allowed:
+        return []
+    live += " and mf.library_id in (%s)" % ",".join("?" * len(allowed))
     rows = connection.execute(f"""
         select mf.id, mf.path, mf.title, mf.album, mf.artist, mf.album_artist,
                mf.suffix, mf.bit_rate, mf.duration, mf.size,
@@ -182,7 +189,7 @@ def _load(connection: sqlite3.Connection) -> list[Copy]:
                  where an.item_id = mf.id and an.item_type = 'media_file')
           from media_file mf
           left join library l on l.id = mf.library_id
-         where {live}""").fetchall()
+         where {live}""", tuple(allowed)).fetchall()
     return [
         Copy(id=r[0], path=r[1], title=r[2] or "", album=r[3] or "",
              artist=(r[5] or r[4] or ""), suffix=r[6] or "",
@@ -193,9 +200,10 @@ def _load(connection: sqlite3.Connection) -> list[Copy]:
     ]
 
 
-def find(connection: sqlite3.Connection) -> list[Group]:
+def find(connection: sqlite3.Connection,
+         identity: navidrome.Identity) -> list[Group]:
     """Every group of copies that look like the same recording."""
-    copies = _load(connection)
+    copies = _load(connection, identity)
     dismissed = ledger.dismissed_duplicates()
     groups: list[Group] = []
     # The same pair is often found twice - once by MusicBrainz id and once by
@@ -207,13 +215,14 @@ def find(connection: sqlite3.Connection) -> list[Group]:
     def build(key: str, reason: str, members: list[Copy]) -> None:
         if key in dismissed:
             return
-        identity = frozenset(c.id for c in members)
-        if any(identity <= previous for previous in emitted):
+        members_key = frozenset(c.id for c in members)
+        if any(members_key <= previous for previous in emitted):
             return
         lengths = [c.duration for c in members]
         if max(lengths) - min(lengths) > SAME_RECORDING_SECONDS:
             return
-        ordered = sorted(members, key=_rank, reverse=True)
+        ordered = sorted(members, key=lambda c: _rank(c, identity),
+                         reverse=True)
         why = _clearly_better(ordered[0], ordered[1:])
         # Copies on different records are not a duplicate at all: one
         # recording is often issued as a single and again on the album it
@@ -229,7 +238,7 @@ def find(connection: sqlite3.Connection) -> list[Group]:
         )
         if not one_album and why:
             why += " — but they are on different albums"
-        emitted.append(identity)
+        emitted.append(members_key)
         groups.append(Group(key, reason, ordered, ordered[0], confident, why))
 
     # Grouping is per library, always. A library is one person's collection:
@@ -264,7 +273,20 @@ def _quarantine_dir() -> Path:
     return path
 
 
-def resolve(group: Group, keeper_id: str) -> dict[str, Any]:
+def _library_root(copy: Copy, identity: navidrome.Identity) -> Path:
+    """Where this copy actually lives on disk.
+
+    Paths in Navidrome are relative to the library that holds them, so a
+    library other than our own cannot be resolved against music_dir.
+    """
+    for library in identity.libraries:
+        if library["id"] == copy.library_id:
+            return Path(library["path"])
+    return settings.music_dir
+
+
+def resolve(group: Group, keeper_id: str,
+            identity: navidrome.Identity) -> dict[str, Any]:
     """Keep one copy, set the others aside, and move annotations across."""
     keeper = next((c for c in group.copies if c.id == keeper_id), None)
     if keeper is None:
@@ -276,16 +298,16 @@ def resolve(group: Group, keeper_id: str) -> dict[str, Any]:
     migrated, stranded = [], []
     for loser in losers:
         if loser.starred and not keeper.starred:
-            if not _can_migrate(loser):
+            if not _can_migrate(loser, identity):
                 # Starred by somebody else. Refusing is the only honest
                 # option: starring as this account would leave the real
                 # annotation attached to a file about to be quarantined.
                 stranded.append(f"{loser.path}: starred by {loser.starred_by}")
                 continue
-            if navidrome.star(keeper.id):
+            if navidrome.star(identity, keeper.id):
                 migrated.append("starred")
         if loser.rating and loser.rating > keeper.rating:
-            if navidrome.set_rating(keeper.id, loser.rating):
+            if navidrome.set_rating(identity, keeper.id, loser.rating):
                 migrated.append(f"rated {loser.rating}")
 
     if stranded:
@@ -295,7 +317,7 @@ def resolve(group: Group, keeper_id: str) -> dict[str, Any]:
 
     moved, failed = [], []
     for loser in losers:
-        source = settings.music_dir / loser.path
+        source = _library_root(loser, identity) / loser.path
         if not source.exists():
             failed.append(f"{loser.path}: already gone")
             continue
@@ -315,9 +337,10 @@ def resolve(group: Group, keeper_id: str) -> dict[str, Any]:
             "migrated": migrated, "failed": failed}
 
 
-def auto_resolve(connection: sqlite3.Connection, apply: bool = False) -> dict[str, Any]:
+def auto_resolve(connection: sqlite3.Connection, identity: navidrome.Identity,
+                 apply: bool = False) -> dict[str, Any]:
     """Act only on groups a shared MusicBrainz id makes unambiguous."""
-    groups = [g for g in find(connection) if g.confident]
+    groups = [g for g in find(connection, identity) if g.confident]
     if not apply:
         return {"eligible": len(groups),
                 "preview": [g.as_dict() for g in groups[:20]]}
@@ -325,7 +348,7 @@ def auto_resolve(connection: sqlite3.Connection, apply: bool = False) -> dict[st
     resolved, failures = 0, []
     for group in groups:
         try:
-            outcome = resolve(group, group.keeper.id)
+            outcome = resolve(group, group.keeper.id, identity)
             failures.extend(outcome["failed"])
             resolved += 1
         except Exception as exc:

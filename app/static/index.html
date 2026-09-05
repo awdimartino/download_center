@@ -7,6 +7,17 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<div id="signin" class="signin" hidden>
+  <form id="signin-form" autocomplete="on">
+    <h1>Download Center</h1>
+    <p class="signin-note">Sign in with your Navidrome account.</p>
+    <label>Username<input name="username" type="text" autocomplete="username" required></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Sign in</button>
+    <p id="signin-error" class="error" hidden></p>
+  </form>
+</div>
+
 <header>
   <h1>Download Center</h1>
   <nav class="tabs">
@@ -17,7 +28,9 @@
     <button class="tab" data-view="dupes" type="button">Duplicates<span id="dupe-badge" class="badge" hidden></span></button>
   </nav>
   <span id="conn" class="conn offline">connecting</span>
+  <span id="whoami" class="whoami"></span>
   <button id="settings-toggle" class="ghost" type="button">Settings</button>
+  <button id="signout" class="ghost" type="button">Sign out</button>
 </header>
 
 <main>

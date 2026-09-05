@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import diskaudit, uuidtags
+from . import diskaudit, navidrome, uuidtags
 from .config import settings
 
 # The tag whose value Navidrome is configured to use as its persistent track
@@ -75,25 +75,9 @@ class Section:
                 "checks": [check.as_dict() for check in self.checks]}
 
 
-class NavidromeUnavailable(RuntimeError):
-    """The database could not be opened - not fatal, just unreportable."""
-
-
-def _connect() -> sqlite3.Connection:
-    path = settings.navidrome_db
-    if not path.is_file():
-        raise NavidromeUnavailable(f"no database at {path}")
-    try:
-        # mode=ro still reads the write-ahead log, so the view is current
-        # rather than a stale snapshot. immutable=1 would be faster and wrong.
-        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
-        # A mount that points somewhere unexpected opens fine and then fails
-        # on the first real query, so check for a table we actually need.
-        connection.execute("select 1 from media_file limit 1")
-    except sqlite3.Error as exc:
-        raise NavidromeUnavailable(f"{exc}") from exc
-    connection.row_factory = sqlite3.Row
-    return connection
+# Kept as an alias so callers reading "health" still name the right error.
+NavidromeUnavailable = navidrome.Unavailable
+_connect = navidrome.open_db
 
 
 def _columns(connection: sqlite3.Connection, table: str) -> set[str]:

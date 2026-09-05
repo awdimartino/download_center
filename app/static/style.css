@@ -552,3 +552,35 @@ header .ghost { margin-left: 0; }
   .dupe-copy { grid-template-columns: auto 1fr auto; }
   .dupe-album, .dupe-path { grid-column: 2 / -1; }
 }
+
+/* --- sign in -------------------------------------------------------------- */
+
+.signin {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 20, 24, 0.92);
+  backdrop-filter: blur(3px);
+}
+
+.signin form {
+  width: min(22rem, calc(100vw - 3rem));
+  padding: 1.6rem;
+  border-radius: 8px;
+  background: var(--panel, #1c1c21);
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.signin h1 { margin: 0; font-size: 1.15rem; }
+.signin-note { margin: 0 0 0.3rem; font-size: 0.85rem; opacity: 0.65; }
+.signin label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; }
+.signin input { padding: 0.45rem 0.55rem; }
+.signin button { margin-top: 0.3rem; padding: 0.5rem; }
+
+.whoami { font-size: 0.85rem; opacity: 0.7; margin-left: auto; }

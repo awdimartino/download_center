@@ -11,12 +11,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
+                     WebSocket, WebSocketDisconnect)
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import beets_library, beets_runner, diskaudit, duplicates, generic, ledger
+from . import auth, beets_library, beets_runner, diskaudit, duplicates
+from . import generic, ledger, navidrome
 from . import spotify, staging, worker
 from . import config
 from . import health as health_checks
@@ -184,6 +186,80 @@ async def _audit_loop() -> None:
 
 
 app = FastAPI(title="Download Center", lifespan=lifespan)
+
+
+# --- who is asking --------------------------------------------------------
+# Navidrome is the authority on accounts, so signing in means asking it. The
+# session then decides which library a download lands in, whose stars a
+# duplicate carries and who a playlist belongs to - none of which are
+# properties of the files, and all of which were being treated as though
+# they were.
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def current_session(request: Request) -> auth.Session:
+    session = auth.get(request.cookies.get(auth.COOKIE))
+    if session is None:
+        raise HTTPException(status_code=401, detail="Please sign in.")
+    return session
+
+
+# Signing in is the only thing you can do without being signed in. Everything
+# else is gated here rather than endpoint by endpoint: this tool queues
+# downloads, edits settings and quarantines files, and an authorisation check
+# that has to be remembered per route is one that will eventually be missed.
+OPEN_PATHS = {"/api/auth/login", "/api/auth/logout", "/api/auth/me"}
+
+
+@app.middleware("http")
+async def require_session(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/") and path not in OPEN_PATHS:
+        if auth.get(request.cookies.get(auth.COOKIE)) is None:
+            return JSONResponse({"detail": "Please sign in."}, status_code=401)
+    return await call_next(request)
+
+
+@app.post("/api/auth/login")
+async def sign_in(body: LoginRequest, response: Response) -> dict[str, Any]:
+    try:
+        session = await asyncio.to_thread(
+            auth.sign_in, body.username, body.password)
+    except navidrome.LoginFailed as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except navidrome.NotConfigured as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Navidrome is not configured: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not reach Navidrome: {exc}"[:200]) from exc
+
+    response.set_cookie(
+        auth.COOKIE, session.id, httponly=True, samesite="lax",
+        max_age=auth.LIFETIME_SECONDS,
+    )
+    return session.as_dict()
+
+
+@app.post("/api/auth/logout")
+async def sign_out(request: Request, response: Response) -> dict[str, bool]:
+    auth.sign_out(request.cookies.get(auth.COOKIE) or "")
+    response.delete_cookie(auth.COOKIE)
+    return {"signed_out": True}
+
+
+@app.get("/api/auth/me")
+async def whoami(request: Request) -> dict[str, Any]:
+    session = auth.get(request.cookies.get(auth.COOKIE))
+    if session is None:
+        return {"signed_in": False,
+                "navidrome_configured": bool(settings.navidrome_url)}
+    return {"signed_in": True, **session.as_dict()}
 
 
 class JobRequest(BaseModel):
@@ -510,17 +586,19 @@ class DismissRequest(BaseModel):
     note: str = ""
 
 
-def _duplicate_groups() -> list[duplicates.Group]:
-    connection = health_checks._connect()
+def _duplicate_groups(identity: navidrome.Identity) -> list[duplicates.Group]:
+    connection = navidrome.open_db()
     with connection:
-        return duplicates.find(connection)
+        return duplicates.find(connection, identity)
 
 
 @app.get("/api/duplicates")
-async def list_duplicates() -> dict[str, Any]:
+async def list_duplicates(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
     try:
-        groups = await asyncio.to_thread(_duplicate_groups)
-    except health_checks.NavidromeUnavailable as exc:
+        groups = await asyncio.to_thread(_duplicate_groups, session.identity)
+    except navidrome.Unavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
         "groups": [g.as_dict() for g in groups],
@@ -529,33 +607,44 @@ async def list_duplicates() -> dict[str, Any]:
 
 
 @app.post("/api/duplicates/resolve")
-async def resolve_duplicate(request: ResolveRequest) -> dict[str, Any]:
-    groups = await asyncio.to_thread(_duplicate_groups)
+async def resolve_duplicate(
+    request: ResolveRequest,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    groups = await asyncio.to_thread(_duplicate_groups, session.identity)
     group = next((g for g in groups if g.key == request.key), None)
     if group is None:
         raise HTTPException(status_code=404, detail="No such duplicate group.")
     try:
-        return await asyncio.to_thread(duplicates.resolve, group, request.keeper)
+        return await asyncio.to_thread(
+            duplicates.resolve, group, request.keeper, session.identity)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/duplicates/dismiss")
-async def dismiss_duplicate(request: DismissRequest) -> dict[str, Any]:
+async def dismiss_duplicate(
+    request: DismissRequest,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
     await asyncio.to_thread(ledger.dismiss_duplicate, request.key, request.note)
     return {"dismissed": request.key}
 
 
 @app.post("/api/duplicates/auto")
-async def auto_resolve_duplicates(apply: bool = False) -> dict[str, Any]:
+async def auto_resolve_duplicates(
+    apply: bool = False,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
     def run() -> dict[str, Any]:
-        connection = health_checks._connect()
+        connection = navidrome.open_db()
         with connection:
-            return duplicates.auto_resolve(connection, apply=apply)
+            return duplicates.auto_resolve(connection, session.identity,
+                                           apply=apply)
 
     try:
         return await asyncio.to_thread(run)
-    except health_checks.NavidromeUnavailable as exc:
+    except navidrome.Unavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
@@ -578,6 +667,9 @@ async def status() -> dict[str, Any]:
 
 @app.websocket("/ws")
 async def websocket(ws: WebSocket) -> None:
+    if auth.get(ws.cookies.get(auth.COOKIE)) is None:
+        await ws.close(code=4401)
+        return
     await broker.register(ws)
     try:
         await ws.send_json({"type": "snapshot", "jobs": sorted_jobs()})

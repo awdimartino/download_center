@@ -735,7 +735,6 @@ function openLibraryView() {
   }
 }
 
-connect();
 
 // --- health ---------------------------------------------------------------
 // A list of numbers that should be zero. The badge on the tab is the whole
@@ -792,9 +791,9 @@ async function loadHealth() {
 }
 
 // Poll quietly in the background so the tab badge is current without anyone
-// having opened the panel.
-loadHealth();
-setInterval(loadHealth, 5 * 60 * 1000);
+// having opened the panel. Started only once there is a session, so an
+// unauthenticated page does not sit hammering endpoints that will refuse it.
+let healthTimer = null;
 
 // Reading tags from every file takes long enough that it runs on a timer in
 // the background; this is for when you have just fixed something and want the
@@ -944,4 +943,98 @@ document.getElementById("dupe-auto").addEventListener("click", async (event) => 
   } finally {
     button.disabled = false;
   }
+});
+
+// --- sign in --------------------------------------------------------------
+// Navidrome owns the accounts, so this only forwards credentials to it and
+// keeps the session cookie it hands back. Which library a download lands in,
+// whose stars a duplicate carries and who owns a new playlist all follow from
+// who signed in, rather than from configuration.
+
+const signinEl = document.getElementById("signin");
+const signinForm = document.getElementById("signin-form");
+const signinError = document.getElementById("signin-error");
+const whoamiEl = document.getElementById("whoami");
+
+let session = null;
+
+function showSignin(show) {
+  signinEl.hidden = !show;
+  document.querySelector("header").hidden = show;
+  document.querySelector("main").hidden = show;
+  if (show) signinForm.elements.username.focus();
+}
+
+function applySession(me) {
+  session = me;
+  const libraries = (me.libraries || []).map((l) => l.name).join(", ");
+  whoamiEl.textContent = libraries
+    ? `${me.username} · ${libraries}`
+    : `${me.username} · no library assigned`;
+  showSignin(false);
+}
+
+async function checkSession() {
+  try {
+    const me = await fetch("/api/auth/me").then((r) => r.json());
+    if (me.signed_in) {
+      applySession(me);
+      return true;
+    }
+  } catch {
+    /* server unreachable; the sign-in form is still the right thing to show */
+  }
+  showSignin(true);
+  return false;
+}
+
+signinForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  signinError.hidden = true;
+  const button = signinForm.querySelector("button");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: signinForm.elements.username.value,
+        password: signinForm.elements.password.value,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      signinError.textContent = body.detail || `Sign in failed (${response.status})`;
+      signinError.hidden = false;
+      return;
+    }
+    signinForm.reset();
+    applySession({ signed_in: true, ...body });
+    start();
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById("signout").addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  if (socket) socket.close();
+  location.reload();
+});
+
+
+// Nothing runs until we know who is asking - the socket, the health poll and
+// every panel are all views of somebody's library.
+let started = false;
+
+function start() {
+  if (started) return;
+  started = true;
+  connect();
+  loadHealth();
+  healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
+}
+
+checkSession().then((signedIn) => {
+  if (signedIn) start();
 });
