@@ -27,7 +27,7 @@
     <span id="menu-dot" class="menu-dot" hidden></span>
   </button>
   <!-- With the tabs gone this is the only thing saying where you are. -->
-  <h1 id="view-title">Queue</h1>
+  <h1 id="current-view">Queue</h1>
   <span id="conn" class="conn offline">connecting</span>
 </header>
 
@@ -38,12 +38,10 @@
 <div id="menu" class="menu" hidden>
   <div id="menu-backdrop" class="menu-backdrop"></div>
   <nav class="menu-panel" aria-label="Sections">
-    <div class="menu-head">
-      <span class="menu-title">Download Center</span>
-      <button id="menu-close" class="menu-close" type="button"
-              aria-label="Close menu">&times;</button>
-    </div>
-
+    <!-- No title bar of its own. It used to carry "Download Center" and a
+         close button, which meant opening the menu swapped one header for a
+         different one in the same place - the jarring part. The real header
+         stays put above this, and the burger is already the close control. -->
     <button class="nav-item active" data-view="queue" type="button">
       <span class="nav-label">Queue</span>
     </button>
@@ -68,7 +66,9 @@
 
     <hr class="menu-rule">
 
-    <button id="settings-toggle" class="nav-item" type="button">
+    <!-- A section like any other, not a form that appears on top of whichever
+         panel you happened to be looking at. -->
+    <button class="nav-item" data-view="settings" type="button">
       <span class="nav-label">Settings</span>
     </button>
 
@@ -80,22 +80,6 @@
 </div>
 
 <main>
-  <form id="settings" hidden autocomplete="off">
-    <label>Spotify client ID<input name="spotify_client_id" type="text" spellcheck="false"></label>
-    <label>Spotify client secret<input name="spotify_client_secret" type="password" placeholder="unchanged"></label>
-    <label>Concurrent downloads<input name="concurrency" type="number" min="1" max="10"></label>
-    <label>MP3 bitrate<input name="audio_bitrate" type="text"></label>
-    <label>Attempts per track<input name="max_attempts" type="number" min="1" max="10"></label>
-    <label>Pause between downloads (s)<input name="rate_limit_sleep" type="number" min="0" step="0.5"></label>
-    <label>Staging sweep (minutes, 0 = off)<input name="staging_sweep_minutes" type="number" min="0"></label>
-    <label>Navidrome URL<input name="navidrome_url" type="text" spellcheck="false" placeholder="http://localhost:4533"></label>
-    <label>Navidrome username<input name="navidrome_user" type="text" spellcheck="false"></label>
-    <label>Navidrome password<input name="navidrome_password" type="password" placeholder="unchanged"></label>
-    <div class="settings-actions">
-      <button type="submit">Save</button>
-      <span id="settings-note"></span>
-    </div>
-  </form>
 
   <p id="error" class="error" hidden></p>
   <p id="warn" class="warn" hidden></p>
@@ -226,6 +210,33 @@
 
     <div id="playlists"></div>
     <p id="playlists-empty" class="empty">Loading…</p>
+  </section>
+
+  <section id="view-settings" hidden>
+    <div class="panel-note">
+      <p>
+        These belong to the installation rather than to a person: they hold
+        the Spotify credentials and the Navidrome service password, and
+        decide where every library lives. Only a Navidrome administrator can
+        change them.
+      </p>
+    </div>
+    <form id="settings" autocomplete="off">
+      <label>Spotify client ID<input name="spotify_client_id" type="text" spellcheck="false"></label>
+      <label>Spotify client secret<input name="spotify_client_secret" type="password" placeholder="unchanged"></label>
+      <label>Concurrent downloads<input name="concurrency" type="number" min="1" max="10"></label>
+      <label>MP3 bitrate<input name="audio_bitrate" type="text"></label>
+      <label>Attempts per track<input name="max_attempts" type="number" min="1" max="10"></label>
+      <label>Pause between downloads (s)<input name="rate_limit_sleep" type="number" min="0" step="0.5"></label>
+      <label>Staging sweep (minutes, 0 = off)<input name="staging_sweep_minutes" type="number" min="0"></label>
+      <label>Navidrome URL<input name="navidrome_url" type="text" spellcheck="false" placeholder="http://localhost:4533"></label>
+      <label>Navidrome username<input name="navidrome_user" type="text" spellcheck="false"></label>
+      <label>Navidrome password<input name="navidrome_password" type="password" placeholder="unchanged"></label>
+      <div class="settings-actions">
+        <button type="submit">Save</button>
+        <span id="settings-note"></span>
+      </div>
+    </form>
   </section>
 
 </main>
