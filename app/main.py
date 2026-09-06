@@ -46,6 +46,10 @@ STARTED_AT = time.time()
 # acting on.
 NEXT_SWEEP: float | None = None
 
+# How soon after startup the first staging sweep runs, rather than a whole
+# interval later. See _sweep_loop.
+FIRST_SWEEP_SECONDS = 90
+
 
 # --- job state ------------------------------------------------------------
 # Jobs are plain dicts held in memory and are not persisted. They serialise
@@ -254,14 +258,23 @@ async def _sweep_loop() -> None:
     something outside this process was also running beets.
     """
     global NEXT_SWEEP
+    # The first pass is soon, not a full interval away. The loop used to
+    # sleep the whole interval before ever sweeping, so every restart bought
+    # staging another fifteen minutes of nothing - and on an afternoon of
+    # deploys, each one landing inside the previous wait, the sweep never ran
+    # at all. From the outside that is indistinguishable from an importer
+    # that does not work. Long enough after startup to be past the opening
+    # rush of requests, short enough that a deploy is not a reset.
+    delay = FIRST_SWEEP_SECONDS
     while True:
         minutes = settings.staging_sweep_minutes
         if minutes <= 0:
             NEXT_SWEEP = None
             await asyncio.sleep(300)
             continue
-        NEXT_SWEEP = time.time() + minutes * 60
-        await asyncio.sleep(minutes * 60)
+        NEXT_SWEEP = time.time() + delay
+        await asyncio.sleep(delay)
+        delay = minutes * 60
         # Cleared while it runs, so the panel says "sweeping now" rather than
         # counting down to a moment that has already passed.
         NEXT_SWEEP = None
