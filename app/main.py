@@ -60,6 +60,11 @@ MAX_ACTIVE_JOBS = 5
 
 FINISHED = ("complete", "failed", "partial", "cancelled")
 
+# How long to wait for a cancelled job to unwind before deleting its files
+# anyway. Cancellation lands at the next suspension point, so a download
+# mid-chunk stops promptly; this only bounds the pathological case.
+STOP_TIMEOUT = 10
+
 
 def _evict_old_jobs(owner: str) -> None:
     """Drop this person's oldest finished jobs once there are too many.
@@ -610,11 +615,54 @@ async def delete_job(
                                       require_library=False)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Stopped before anything is removed. Deleting used to drop the job from
+    # memory and delete its scratch directory while its downloads were still
+    # running: yt-dlp recreated the directory underneath itself, every rename
+    # failed with ENOENT, and the worker retried the whole way through its
+    # backoff. The tasks never stopped, because nothing had told them to.
+    #
+    # They also each held a slot on the download gate. That gate is
+    # process-wide, so orphaned tasks did not merely waste their own job's
+    # capacity - they starved every later job of every user, which presents
+    # as a queue stuck at "running" with nothing in the log to explain it.
+    await _stop_job(job_id)
+
     JOBS.pop(job_id, None)
     await asyncio.to_thread(staging.discard, space, job_id)
     await broker.publish({"type": "job_deleted", "id": job_id},
                          owner=session.identity.username)
     return {"ok": True}
+
+
+async def _stop_job(job_id: str) -> None:
+    """Cancel a job's task and wait for it to unwind.
+
+    Awaited, not fired and forgotten. `cancel()` only schedules the
+    CancelledError; the task still has to reach a suspension point and run
+    its cleanup. Returning before that means the caller deletes the files it
+    is using, which is the race this exists to close.
+    """
+    task = RUNNING.get(job_id)
+    if task is None or task.done():
+        RUNNING.pop(job_id, None)
+        return
+    task.cancel()
+    try:
+        # Shielded, so the timeout below cannot cancel it a second time and
+        # leave the wait looking like the task stopped when it has not.
+        await asyncio.wait_for(asyncio.shield(task), timeout=STOP_TIMEOUT)
+    except asyncio.CancelledError:
+        pass                     # what we asked for
+    except TimeoutError:
+        # It is still running, and its files are about to be removed. Say so:
+        # this is the shape of the bug that stalled every later job, and a
+        # silent version of it would be indistinguishable from working.
+        log.warning("job %s did not stop within %ss; deleting its files "
+                    "anyway", job_id, STOP_TIMEOUT)
+    except Exception:
+        pass                     # the job's own failure is not ours to raise
+    RUNNING.pop(job_id, None)
 
 
 @app.post("/api/jobs/{job_id}/cancel")

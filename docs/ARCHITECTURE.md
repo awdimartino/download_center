@@ -322,6 +322,18 @@ destroys it.
 The general rule: before writing anything outside `/config` or `/downloads`,
 check that the destination is on a mount, not merely that the path resolves.
 
+**Async jobs**
+- A job's task must be cancelled *and awaited* before its files are removed.
+  `cancel()` only schedules the CancelledError; the task still has to reach
+  a suspension point and run its own cleanup. Deleting first is a race the
+  filesystem loses - yt-dlp recreates its output directory, renames fail
+  with ENOENT, and the retry loop runs for ever.
+- The download gate in `worker.gate()` is process-wide, which is what makes
+  `concurrency` mean what it says. The cost is that one task which never
+  releases starves every later job of every user. Anything holding a permit
+  must be guaranteed to release it, so orphaned tasks are not a tidiness
+  problem here - they are an outage.
+
 **This environment**
 - `python` is not on PATH. Use `.venv/Scripts/python.exe`.
 - Some bash heredocs fail in this harness; write files with the editor tool

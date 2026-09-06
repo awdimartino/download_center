@@ -145,3 +145,126 @@ def test_the_track_cap_is_a_real_number():
 
 def test_the_active_job_cap_is_a_real_number():
     assert 0 < main.MAX_ACTIVE_JOBS <= 20
+
+
+# --- stopping a job before deleting its files -----------------------------
+
+@pytest.mark.asyncio
+async def test_stopping_a_job_cancels_it_and_waits():
+    """Deleting used to pop the job and rmtree its scratch directory while
+    the downloads were still running. yt-dlp recreated the directory
+    underneath itself, every rename failed with ENOENT, and the worker
+    retried the whole way through its backoff - for ever, because nothing
+    had told it to stop."""
+    stopped = asyncio.Event()
+
+    async def work():
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            stopped.set()
+            raise
+
+    main.RUNNING["j1"] = asyncio.create_task(work())
+    await asyncio.sleep(0)
+
+    await main._stop_job("j1")
+
+    assert stopped.is_set(), "the task should have seen the cancellation"
+    assert "j1" not in main.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_stopping_waits_for_cleanup_before_returning():
+    """The point of awaiting: the caller deletes files the task is using, so
+    it must not return while the task is still touching them."""
+    order = []
+
+    async def work():
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            # Stand-in for staging.discard in the worker's own handler.
+            await asyncio.sleep(0.05)
+            order.append("task cleaned up")
+            raise
+
+    main.RUNNING["j1"] = asyncio.create_task(work())
+    await asyncio.sleep(0)
+
+    await main._stop_job("j1")
+    order.append("stop returned")
+
+    assert order == ["task cleaned up", "stop returned"]
+
+
+@pytest.mark.asyncio
+async def test_stopping_an_unknown_or_finished_job_is_harmless():
+    await main._stop_job("never-existed")
+
+    async def done():
+        return None
+
+    task = asyncio.create_task(done())
+    await task
+    main.RUNNING["j1"] = task
+    await main._stop_job("j1")
+    assert "j1" not in main.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_a_task_that_will_not_stop_does_not_hang_the_delete(monkeypatch):
+    """Bounded, so one wedged task cannot make Delete unresponsive too."""
+    monkeypatch.setattr(main, "STOP_TIMEOUT", 0.05)
+
+    async def stubborn():
+        # Swallows the first cancellation and honours the second. Ignoring
+        # every cancellation would leave a task the event loop can never
+        # reap, which hangs the test run itself rather than testing anything.
+        ignored = False
+        while True:
+            try:
+                await asyncio.sleep(0.01)
+            except asyncio.CancelledError:
+                if ignored:
+                    raise
+                ignored = True
+
+    task = asyncio.create_task(stubborn())
+    main.RUNNING["j1"] = task
+    await asyncio.sleep(0)
+
+    # Returns despite the task still running: the timeout is the bound.
+    await asyncio.wait_for(main._stop_job("j1"), timeout=2)
+    assert not task.done(), "the point of this test is that it did not stop"
+
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_download_gives_its_gate_slot_back(monkeypatch):
+    """The reason an orphaned task was fatal rather than merely untidy. The
+    gate is process-wide, so a task that never releases starves every later
+    job of every user - a queue stuck at "running" with nothing in the log."""
+    monkeypatch.setattr(worker, "_gate", None)
+    monkeypatch.setattr(worker, "_gate_size", 0)
+    monkeypatch.setattr(settings, "concurrency", 1)
+
+    holding = asyncio.Event()
+
+    async def hog():
+        async with worker.gate():
+            holding.set()
+            await asyncio.sleep(3600)
+
+    task = asyncio.create_task(hog())
+    await asyncio.wait_for(holding.wait(), timeout=1)
+    assert worker.gate().locked(), "the only slot should be taken"
+
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    # Free again, immediately: the next job is not queued behind a ghost.
+    await asyncio.wait_for(worker.gate().acquire(), timeout=1)
+    worker.gate().release()
