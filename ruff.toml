@@ -1,0 +1,28 @@
+# Deliberately narrow. The point is to catch the class of mistake this
+# codebase has actually produced - an unused import left behind, a name that
+# does not exist, a bare except - not to relitigate a style that is already
+# consistent across five thousand lines.
+
+line-length = 88
+target-version = "py313"
+
+[lint]
+select = [
+    "F",    # pyflakes: undefined names, unused imports, f-strings with no placeholders
+    "E9",   # syntax and IO errors
+    "B",    # bugbear: mutable defaults, loop-variable capture, useless comparisons
+    "UP",   # outdated syntax for the Python this actually runs on
+]
+ignore = [
+    "B008",  # FastAPI's Depends() in a default is the documented idiom
+    # tools/ are standalone scripts meant to run on a host with only
+    # mutagen installed, where the Python version is not ours to assume.
+]
+
+[lint.per-file-ignores]
+# Tests reach into private helpers on purpose: several of these bugs were
+# only reachable from inside.
+"tests/*" = ["F811"]
+# datetime.UTC needs 3.11+. These scripts must keep working on whatever
+# Python the host happens to have.
+"tools/*" = ["UP017", "UP035"]

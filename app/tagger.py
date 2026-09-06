@@ -9,6 +9,7 @@ difference between an unattended import and one that stops to ask.
 from __future__ import annotations
 
 import logging
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,17 @@ from mutagen.id3._util import ID3NoHeaderError
 log = logging.getLogger("download_center.tagger")
 
 
+# urllib honours file:// and ftp:// as happily as http. The URL comes from
+# Spotify or from whatever yt-dlp scraped, so it is not ours to trust with a
+# scheme that can read the filesystem.
+ALLOWED_COVER_SCHEMES = ("http", "https")
+
+
 def _fetch_cover(url: str) -> bytes | None:
+    scheme = urllib.parse.urlparse(url).scheme.lower()
+    if scheme not in ALLOWED_COVER_SCHEMES:
+        log.debug("refusing to fetch cover over %r", scheme)
+        return None
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "download-center"})
         with urllib.request.urlopen(request, timeout=15) as response:

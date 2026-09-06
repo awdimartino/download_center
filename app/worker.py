@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any
+from collections.abc import Awaitable, Callable
 
 from . import beets_runner, downloader, ledger, matcher, staging, tagger
 from . import workspace
@@ -28,7 +29,30 @@ BACKOFF = (2, 8, 30)
 # hundreds of times per file, which is far more than a UI needs.
 PUSH_INTERVAL = 0.5
 
+# One gate for the whole process, not one per job.
+#
+# It used to be created inside run_job, so `concurrency` meant "per job" and
+# three queued playlists ran three times as many downloads at once - each
+# spawning yt-dlp and ffmpeg, on a Raspberry Pi. rate_limit_sleep had the
+# same problem: it paced one job while the others ignored it, which is not
+# what "stay under YouTube's radar" means.
+#
+# Built lazily because the limit is a setting and can change, and because a
+# Semaphore binds to the running loop.
+_gate: asyncio.Semaphore | None = None
+_gate_size: int = 0
+
+
+def gate() -> asyncio.Semaphore:
+    global _gate, _gate_size
+    if _gate is None or _gate_size != settings.concurrency:
+        _gate = asyncio.Semaphore(settings.concurrency)
+        _gate_size = settings.concurrency
+    return _gate
+
 Push = Callable[[dict[str, Any]], Awaitable[None]]
+# Job plus only the items whose visible state moved.
+Progress = Callable[[dict[str, Any], list], Awaitable[None]]
 
 
 def _mark(item: dict[str, Any], status: str, **fields: Any) -> None:
@@ -62,6 +86,32 @@ async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
     raise downloader.DownloadError(last_error)
 
 
+async def _match_with_retries(item: dict[str, Any]) -> Any:
+    """Find the recording, retrying only when the search itself failed.
+
+    A MatchError means the results were seen and none of them was good
+    enough; asking again returns the same results. A SearchUnavailable means
+    the question never got through - a 429, a dropped connection - and that
+    clears on its own. Treating the two alike meant one rate limit failed
+    every remaining track in the job, permanently, with a message blaming
+    YouTube's catalogue for a problem with the connection.
+    """
+    last: Exception | None = None
+    for attempt in range(1, settings.max_attempts + 1):
+        try:
+            return await asyncio.to_thread(matcher.find, item)
+        except matcher.SearchUnavailable as exc:
+            last = exc
+            if attempt >= settings.max_attempts:
+                break
+            delay = BACKOFF[min(attempt - 1, len(BACKOFF) - 1)]
+            log.warning("search unavailable (%s), retrying in %ds",
+                        str(exc)[:80], delay)
+            _mark(item, "retrying", error=str(exc)[:200])
+            await asyncio.sleep(delay)
+    raise last if last else matcher.SearchUnavailable("search failed")
+
+
 async def _process(item: dict[str, Any], dest: dict[str, Any],
                    gate: asyncio.Semaphore) -> None:
     async with gate:
@@ -74,11 +124,17 @@ async def _process(item: dict[str, Any], dest: dict[str, Any],
         else:
             _mark(item, "matching")
             try:
-                url, score, _parts = await asyncio.to_thread(matcher.find, item)
+                url, score, _parts = await _match_with_retries(item)
             except matcher.MatchError as exc:
                 # Not retried: an identical search returns identical results,
-                # so trying again only burns time.
+                # so trying again only burns time. This is a judgement about
+                # the results, not about reaching YouTube - see
+                # _match_with_retries for the case that is worth another go.
                 _mark(item, "failed", error=str(exc))
+                return
+            except matcher.SearchUnavailable as exc:
+                _mark(item, "failed",
+                      error=f"Could not reach YouTube Music: {exc}"[:200])
                 return
             except Exception as exc:
                 _mark(item, "failed", error=f"Search error: {exc}"[:200])
@@ -107,18 +163,51 @@ async def _process(item: dict[str, Any], dest: dict[str, Any],
             await asyncio.sleep(settings.rate_limit_sleep)
 
 
-async def _pusher(job: dict[str, Any], push: Push) -> None:
-    """Send the job to the browser at a fixed rate while it is running."""
+def _item_state(item: dict[str, Any]) -> tuple:
+    """The part of an item a browser can see change.
+
+    Progress is rounded to a percent: yt-dlp's hook fires hundreds of times
+    per file and nobody can see a thousandth of a bar move.
+    """
+    return (item["status"], round((item.get("progress") or 0) * 100),
+            item.get("error"))
+
+
+async def _pusher(job: dict[str, Any], push: Push,
+                  push_progress: Progress | None = None) -> None:
+    """Tell the browser what changed, at a fixed rate, while the job runs.
+
+    It used to send the entire job - every track, with all its metadata -
+    twice a second. For a 200-track playlist that is the whole list
+    re-serialised and sent to a phone 120 times a minute, almost all of it
+    identical to the last one. Now only the items whose visible state moved
+    are sent, and nothing at all is sent when nothing moved.
+    """
+    last: dict[str, tuple] = {}
+    last_status = None
     try:
         while True:
             await asyncio.sleep(PUSH_INTERVAL)
-            await push(job)
+            changed = [item for item in job["items"]
+                       if last.get(item["id"]) != _item_state(item)]
+            for item in changed:
+                last[item["id"]] = _item_state(item)
+
+            if not changed and job["status"] == last_status:
+                continue
+            last_status = job["status"]
+
+            if push_progress is None:
+                await push(job)
+            else:
+                await push_progress(job, changed)
     except asyncio.CancelledError:
         pass
 
 
 async def run_job(job: dict[str, Any], push: Push,
-                  space: workspace.Workspace) -> None:
+                  space: workspace.Workspace,
+                  push_progress: Progress | None = None) -> None:
     """Drive one job to completion, into one person's library.
 
     The workspace comes from whoever queued the job rather than from
@@ -151,12 +240,11 @@ async def run_job(job: dict[str, Any], push: Push,
         return
 
     layout = staging.plan(space, job["id"], pending)
-    gate = asyncio.Semaphore(settings.concurrency)
-    ticker = asyncio.create_task(_pusher(job, push))
+    ticker = asyncio.create_task(_pusher(job, push, push_progress))
 
     try:
         await asyncio.gather(
-            *(_process(item, layout[item["id"]], gate) for item in pending)
+            *(_process(item, layout[item["id"]], gate()) for item in pending)
         )
     finally:
         ticker.cancel()

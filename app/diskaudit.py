@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from . import uuidtags
-from .config import settings
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +76,16 @@ class Audit:
 # them together would report somebody else's problems as yours.
 _cache: dict[str, Audit] = {}
 _lock = threading.Lock()
+
+# Roots currently being walked, so concurrent callers wait on the walk that
+# is already happening instead of starting a second one. The lock guards this
+# mapping only - never the walk itself.
+_walking: dict[str, threading.Event] = {}
+
+# A walk that has not finished in this long is not going to be useful to
+# somebody holding a request open. They get an empty audit and the walk
+# carries on and populates the cache for next time.
+WALK_TIMEOUT = 600
 
 
 def run(root: Path) -> Audit:
@@ -150,11 +159,44 @@ def run(root: Path) -> Audit:
 
 
 def refresh(root: Path) -> Audit:
-    """Run an audit and cache it. Concurrent callers share one walk."""
+    """Run an audit and cache it. Concurrent callers share one walk.
+
+    They genuinely share it now. This used to hold a single module-wide lock
+    around the whole walk, so a second caller did not share anything - it
+    waited for the first to finish and then walked the library again itself,
+    occupying a threadpool worker for both. Two people pressing "Re-read
+    files" cost two full walks and two blocked threads.
+
+    Now the first caller for a root claims it and the rest wait on the same
+    result. The lock is only ever held long enough to decide who is walking,
+    never for the walk.
+    """
+    key = str(root)
     with _lock:
+        in_flight = _walking.get(key)
+        if in_flight is None:
+            in_flight = _walking[key] = threading.Event()
+            mine = True
+        else:
+            mine = False
+
+    if not mine:
+        # Somebody else is already reading these files. Their answer is our
+        # answer - it is the same directory, read at the same moment.
+        in_flight.wait(timeout=WALK_TIMEOUT)
+        cached_result = _cache.get(key)
+        if cached_result is not None:
+            return cached_result
+        return Audit(taken_at=time.time())
+
+    try:
         audit = run(root)
-        _cache[str(root)] = audit
+        _cache[key] = audit
         return audit
+    finally:
+        with _lock:
+            _walking.pop(key, None)
+        in_flight.set()
 
 
 def cached(root: Path) -> Audit | None:

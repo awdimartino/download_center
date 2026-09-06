@@ -27,7 +27,7 @@ import logging
 import re
 import shutil
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -196,7 +196,8 @@ def _load(connection: sqlite3.Connection,
     allowed = [lib["id"] for lib in identity.libraries]
     if not allowed:
         return []
-    live += " and mf.library_id in (%s)" % ",".join("?" * len(allowed))
+    placeholders = ",".join("?" * len(allowed))
+    live += f" and mf.library_id in ({placeholders})"
     rows = connection.execute(f"""
         select mf.id, mf.path, mf.title, mf.album, mf.artist, mf.album_artist,
                mf.suffix, mf.bit_rate, mf.duration, mf.size,

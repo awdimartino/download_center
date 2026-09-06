@@ -7,7 +7,7 @@ import contextlib
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth, beets_runner, diskaudit, duplicates
-from . import generic, ledger, navidrome
+from . import generic, ledger, navidrome, operations
 from . import playlists as smart_playlists
 from . import spotify, staging, worker, workspace
 from . import config
@@ -48,9 +48,35 @@ JOBS: dict[str, dict[str, Any]] = {}
 # The asyncio task driving each active job, so it can be cancelled.
 RUNNING: dict[str, asyncio.Task] = {}
 
+# How many finished jobs to keep per person. They are only history once they
+# have stopped, and every one of them is re-serialised on each GET /api/jobs
+# and held for the life of the process. A few hundred tracks each adds up.
+MAX_FINISHED_JOBS = 40
+
+# How many jobs one person may have in flight. Each resolves and downloads
+# concurrently, and nothing else bounded this: a handful of pasted playlist
+# links was an unbounded pile of tasks on a Raspberry Pi.
+MAX_ACTIVE_JOBS = 5
+
+FINISHED = ("complete", "failed", "partial", "cancelled")
+
+
+def _evict_old_jobs(owner: str) -> None:
+    """Drop this person's oldest finished jobs once there are too many.
+
+    Only finished ones, and never one still running or being cancelled.
+    """
+    theirs = [job for job in JOBS.values() if job.get("owner") == owner
+              and job.get("status") in FINISHED and job["id"] not in RUNNING]
+    if len(theirs) <= MAX_FINISHED_JOBS:
+        return
+    theirs.sort(key=lambda j: j["created_at"])
+    for job in theirs[:len(theirs) - MAX_FINISHED_JOBS]:
+        JOBS.pop(job["id"], None)
+
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def new_job(url: str, space: workspace.Workspace) -> dict[str, Any]:
@@ -120,16 +146,36 @@ class Broker:
         async with self._lock:
             self._clients.pop(ws, None)
 
+    # A client that has stopped reading must not hold up the others. Sends
+    # were sequential and unbounded, so one phone on bad wifi with a full TCP
+    # window stalled the publish loop - and with it the pusher driving every
+    # active job - for everybody.
+    SEND_TIMEOUT = 5.0
+
     async def publish(self, message: dict[str, Any],
                       owner: str | None = None) -> None:
         async with self._lock:
-            targets = [(ws, who) for ws, who in self._clients.items()]
-        for ws, who in targets:
-            if owner is not None and who != owner:
-                continue
+            targets = [(ws, who) for ws, who in self._clients.items()
+                       if owner is None or who == owner]
+        if not targets:
+            return
+
+        async def send(ws: WebSocket) -> WebSocket | None:
             try:
-                await ws.send_json(message)
+                await asyncio.wait_for(ws.send_json(message),
+                                       timeout=self.SEND_TIMEOUT)
+                return None
             except Exception:
+                # Including the timeout. A socket that cannot take five
+                # seconds of slack is gone; it will reconnect and get a fresh
+                # snapshot, which is cheaper than holding everyone else up.
+                return ws
+
+        # Concurrently, so the slowest client costs the slowest client's time
+        # rather than the sum of everybody's.
+        stalled = await asyncio.gather(*(send(ws) for ws, _ in targets))
+        for ws in stalled:
+            if ws is not None:
                 await self.unregister(ws)
 
 
@@ -140,9 +186,33 @@ async def push_job(job: dict[str, Any]) -> None:
     await broker.publish({"type": "job", "job": job}, owner=job.get("owner"))
 
 
+async def push_progress(job: dict[str, Any], changed: list) -> None:
+    """Only what moved.
+
+    The full job goes out on every phase change; between those, a 200-track
+    playlist would otherwise re-send every track twice a second to a phone,
+    almost all of it identical to the last one.
+    """
+    await broker.publish({
+        "type": "job_progress",
+        "id": job["id"],
+        "status": job["status"],
+        "error": job.get("error"),
+        "items": [{"id": i["id"], "status": i["status"],
+                   "progress": i.get("progress"), "error": i.get("error")}
+                  for i in changed],
+    }, owner=job.get("owner"))
+
+
+async def push_operation(operation: operations.Operation) -> None:
+    await broker.publish({"type": "operation", "operation": operation.as_dict()},
+                         owner=operation.owner)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     ledger.connect(settings.ledger_path)
+    operations.subscribe(push_operation)
     log.info("staging directory: %s", settings.output_dir)
     log.info("ledger holds %d previously downloaded track(s)", ledger.count())
     if not settings.spotify_configured:
@@ -296,7 +366,8 @@ async def require_session(request: Request, call_next):
 
 
 @app.post("/api/auth/login")
-async def sign_in(body: LoginRequest, response: Response) -> dict[str, Any]:
+async def sign_in(request: Request, body: LoginRequest,
+                  response: Response) -> dict[str, Any]:
     try:
         session = await asyncio.to_thread(
             auth.sign_in, body.username, body.password)
@@ -311,8 +382,12 @@ async def sign_in(body: LoginRequest, response: Response) -> dict[str, Any]:
             status_code=502,
             detail=f"Could not reach Navidrome: {exc}"[:200]) from exc
 
+    # Secure only when the request actually arrived over TLS. Setting it
+    # unconditionally would stop the cookie being stored at all on the plain
+    # HTTP this is normally served over on a LAN.
     response.set_cookie(
         auth.COOKIE, session.id, httponly=True, samesite="lax",
+        secure=request.url.scheme == "https",
         max_age=auth.LIFETIME_SECONDS,
     )
     return session.as_dict()
@@ -341,6 +416,15 @@ class JobRequest(BaseModel):
     library_id: int | None = None
 
 
+# A resolved job is held in memory, pushed over the websocket on every tick
+# and re-serialised on every GET /api/jobs. Nothing bounded it, so a link to
+# a ten-thousand-track playlist was ten thousand dicts going over the socket
+# twice a second to a phone. Refused with a number rather than truncated
+# silently: quietly downloading the first few hundred of somebody's playlist
+# and calling it complete is worse than saying no.
+MAX_TRACKS_PER_JOB = 500
+
+
 def _resolve(url: str) -> tuple[str, str, list[dict[str, Any]]]:
     """Dispatch a link to whichever resolver handles it."""
     if generic.looks_like_url(url) and "spotify.com" not in url:
@@ -361,6 +445,14 @@ async def _resolve_job(job: dict[str, Any], url: str,
     """Resolve a link off the event loop, then announce the result."""
     try:
         kind, title, tracks = await asyncio.to_thread(_resolve, url)
+    except asyncio.CancelledError:
+        # Cancelled while resolving. Without this the job sat at "resolving"
+        # for the life of the process, with no task behind it and no way to
+        # tell it apart from one still working.
+        job.update(status="cancelled", error=None)
+        RUNNING.pop(job["id"], None)
+        await push_job(job)
+        raise
     except (spotify.ResolveError, generic.ResolveError) as exc:
         job.update(status="failed", error=str(exc))
         log.warning("resolve failed for %s: %s", url, exc)
@@ -368,6 +460,16 @@ async def _resolve_job(job: dict[str, Any], url: str,
         job.update(status="failed", error=f"Resolve error: {exc}")
         log.exception("unexpected resolve failure for %s", url)
     else:
+        if len(tracks) > MAX_TRACKS_PER_JOB:
+            job.update(
+                status="failed",
+                title=title,
+                error=f"That resolved to {len(tracks)} tracks, more than the "
+                      f"{MAX_TRACKS_PER_JOB} this can queue at once. Queue it "
+                      "in parts - by album, say.")
+            log.warning("refused %s: %d tracks", title, len(tracks))
+            await push_job(job)
+            return
         job.update(
             kind=kind,
             title=title,
@@ -378,6 +480,9 @@ async def _resolve_job(job: dict[str, Any], url: str,
         await push_job(job)
         await _run(job, space)
         return
+    # Only reached when resolving failed: _run owns the entry from here on,
+    # and clears it in its own finally.
+    RUNNING.pop(job["id"], None)
     await push_job(job)
 
 
@@ -386,7 +491,7 @@ async def _run(job: dict[str, Any], space: workspace.Workspace) -> None:
     job_id = job["id"]
     RUNNING[job_id] = asyncio.current_task()
     try:
-        await worker.run_job(job, push_job, space)
+        await worker.run_job(job, push_job, space, push_progress)
     except asyncio.CancelledError:
         job["status"] = "cancelled"
         for item in job["items"]:
@@ -422,6 +527,16 @@ async def create_job(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    active = sum(1 for job in JOBS.values()
+                 if job.get("owner") == session.identity.username
+                 and job.get("status") not in FINISHED)
+    if active >= MAX_ACTIVE_JOBS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You already have {active} downloads going. Let some "
+                   "finish before queuing more.")
+    _evict_old_jobs(session.identity.username)
+
     def prepare() -> None:
         # A single-user installation predates accounts; the first person to
         # queue something inherits it rather than starting an empty index
@@ -434,7 +549,11 @@ async def create_job(
 
     job = new_job(url, space)
     await push_job(job)
-    asyncio.create_task(_resolve_job(job, url, space))
+    # Tracked from the moment it exists, not from when downloading starts.
+    # Resolving a large playlist takes a while, and cancelling during it used
+    # to report 409 "that job is not running" because RUNNING was only
+    # populated once _run was reached.
+    RUNNING[job["id"]] = asyncio.create_task(_resolve_job(job, url, space))
     return {"id": job["id"]}
 
 
@@ -522,10 +641,14 @@ async def retry_job(
     for item in retryable:
         item.update(status="pending", error=None, progress=0, attempts=0)
 
+    try:
+        space = workspace.for_session(session.identity, job.get("library_id"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     job.update(status="queued", error=None)
     await push_job(job)
-    asyncio.create_task(_run(
-        job, workspace.for_session(session.identity, job.get("library_id"))))
+    asyncio.create_task(_run(job, space))
     return {"retrying": len(retryable)}
 
 
@@ -540,6 +663,9 @@ class SettingsUpdate(BaseModel):
     navidrome_user: str | None = None
     navidrome_password: str | None = None
     staging_sweep_minutes: int | None = None
+    # Listed in config.EDITABLE and returned by GET, so it has to be settable
+    # or the two disagree about what "editable" means.
+    beets_enabled: bool | None = None
 
 
 # Values the browser must never be sent back. Reported as a boolean instead,
@@ -551,8 +677,18 @@ SECRETS = ("spotify_client_secret", "navidrome_password")
 async def get_settings(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
+    """These settings belong to the installation, so only an admin sees them.
+
+    Secrets were already masked, but the rest was not: any signed-in account
+    got the Navidrome service URL and username and the Spotify client id.
+    The form is disabled for them anyway, so there was nothing to show and
+    something to leak.
+    """
+    if not session.identity.is_admin:
+        return {"editable": False}
+
     values = {key: getattr(settings, key) for key in config.EDITABLE}
-    values["editable"] = session.identity.is_admin
+    values["editable"] = True
     for key in SECRETS:
         values[key] = ""
         values[f"{key}_set"] = bool(getattr(settings, key))
@@ -717,12 +853,23 @@ async def health(
 async def health_audit(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """Re-read identity tags from every file. Slow, hence explicit."""
+    """Re-read identity tags from every file.
+
+    Started, not awaited. It reads every file in the library, which is
+    minutes on a Pi - far longer than a browser will hold a request open, so
+    awaiting it made the button look broken while the work went on unseen.
+    The result arrives over the websocket and is readable from
+    /api/operations.
+    """
+    libraries = list(session.identity.libraries)
+
     def run() -> dict[str, Any]:
         return {library["name"]: diskaudit.refresh(Path(library["path"])).as_dict()
-                for library in session.identity.libraries}
+                for library in libraries}
 
-    return await asyncio.to_thread(run)
+    operation, started = operations.start(
+        "audit", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
 
 
 # --- duplicates -----------------------------------------------------------
@@ -961,15 +1108,34 @@ async def staging_contents(
 async def staging_import(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """Try to import everything waiting, now rather than on the timer."""
-    def run() -> dict[str, Any]:
+    """Try to import everything waiting, now rather than on the timer.
+
+    Started, not awaited: beets gets 900 seconds *per path*, so a staging
+    area with a dozen items could hold a request open for hours. The result
+    arrives over the websocket and is readable from /api/operations.
+    """
+    try:
         space = workspace.for_session(session.identity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def run() -> dict[str, Any]:
         waiting = beets_runner.waiting_in(space)
         if not waiting:
             return {"ran": False, "reason": "nothing waiting"}
         return beets_runner.import_paths(space, waiting)
 
-    return await asyncio.to_thread(run)
+    operation, started = operations.start(
+        "import", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
+@app.get("/api/operations")
+async def list_operations(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """What long-running work is in flight, and how the last run went."""
+    return {"operations": operations.all_operations()}
 
 
 @app.get("/api/status")

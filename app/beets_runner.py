@@ -159,6 +159,27 @@ def library_root(space: workspace.Workspace) -> Path:
     return space.library_path
 
 
+def _library_size(space: workspace.Workspace) -> int:
+    """How many items beets has indexed for this person.
+
+    The authority on whether an import actually filed anything. Returns -1
+    when the database cannot be read, which never compares greater than a
+    previous count, so an unreadable database reads as "nothing imported"
+    rather than as a spurious success.
+    """
+    library_db = space.beets_library
+    if not library_db.exists():
+        return 0
+    try:
+        connection = sqlite3.connect(f"file:{library_db}?mode=ro", uri=True,
+                                     timeout=10)
+        with connection:
+            return connection.execute("select count(*) from items").fetchone()[0]
+    except sqlite3.Error as exc:
+        log.warning("could not count the beets library: %s", exc)
+        return -1
+
+
 def filed_since(space: workspace.Workspace, moment: float) -> list[Path]:
     """Paths beets added to the library after `moment`.
 
@@ -206,8 +227,21 @@ def import_paths(space: workspace.Workspace,
     # Held across every workspace rather than per user: they have separate
     # databases but the machine has one disk, and a sweep plus a finishing
     # job is the collision worth avoiding.
-    with _import_lock:
+    #
+    # Acquired without blocking. Waiting here meant a threadpool worker sat
+    # on this lock for as long as the running import took - up to 900s per
+    # path - and enough of those starve every other `to_thread` call in the
+    # application. Refusing is honest and costs nothing: an import is a sweep
+    # over whatever is waiting, so the one already running will pick up this
+    # caller's paths too if they have settled, and the timer catches the rest.
+    if not _import_lock.acquire(blocking=False):
+        log.info("an import is already running; not starting another")
+        return {"ran": False, "reason": "an import is already running",
+                "busy": True}
+    try:
         return _import_paths(space, published)
+    finally:
+        _import_lock.release()
 
 
 def _import_paths(space: workspace.Workspace,
@@ -223,16 +257,24 @@ def _import_paths(space: workspace.Workspace,
             continue
         # Singles are files; album imports are whole directories.
         singleton = path.is_file()
+        before = _library_size(space)
         ok, output = _run(space, path, singleton)
         if not ok:
             failed.append(f"{path.name}: {output.splitlines()[-1] if output else 'failed'}")
             log.warning("beets import failed for %s: %s", path.name, output)
-        elif "Skipping" in output:
-            skipped += 1
-            log.info("beets skipped %s (no confident match)", path.name)
-        else:
+            continue
+        # Asked of beets' own database rather than of its console output.
+        # This used to test `"Skipping" in output`, which is a human-readable
+        # message that changes between versions and matches any path with the
+        # word in it. Stamping and the Navidrome scan are both gated on the
+        # answer, so getting it wrong silently switched off identity tagging
+        # for the import.
+        if _library_size(space) > before:
             imported += 1
             log.info("beets imported %s", path.name)
+        else:
+            skipped += 1
+            log.info("beets skipped %s (no confident match)", path.name)
 
     _prune_empty(space)
 

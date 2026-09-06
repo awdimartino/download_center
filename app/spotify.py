@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 import threading
-from typing import Any, Iterator
+from typing import Any
+from collections.abc import Iterator
 
 import spotipy
 from spotipy.cache_handler import CacheFileHandler

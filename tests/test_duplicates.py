@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from app import duplicates, ledger, navidrome
-from conftest import add_track, annotate
+from conftest import add_track
 
 
 @pytest.fixture(autouse=True)

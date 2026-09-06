@@ -116,7 +116,8 @@ def _live_clause(connection: sqlite3.Connection,
 
 # --- the checks -----------------------------------------------------------
 
-def _identity_section(connection: sqlite3.Connection, live: str) -> Section:
+def _identity_section(connection: sqlite3.Connection, live: str,
+                      user_id: str = "") -> Section:
     """Whether every track still has a stable identity.
 
     This is the load-bearing one. A track without the UUID tag falls back to
@@ -148,11 +149,15 @@ def _identity_section(connection: sqlite3.Connection, live: str) -> Section:
         "incremental scan will not notice the new tags.",
     ))
 
+    # This person's own annotations only. It used to count every user's, so
+    # a non-admin was shown a number they could neither explain nor act on -
+    # and the architecture notes claimed the whole panel was scoped.
     orphans = _scalar(connection, """
         select count(*) from annotation
          where item_type = 'media_file'
+           and user_id = ?
            and (starred = 1 or rating > 0)
-           and item_id not in (select id from media_file)""")
+           and item_id not in (select id from media_file)""", user_id)
     section.add(Check(
         "orphan_annotations", "Stars and ratings pointing nowhere", orphans,
         OK if orphans == 0 else WARN,
@@ -257,9 +262,12 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
     if "rg_track_gain" in columns:
         total = _scalar(connection,
                         f"select count(*) from media_file mf where {live}")
+        # `is not null` alone. Testing `!= 0` as well counted a track
+        # legitimately measured at 0 dB as unmeasured, which is exactly the
+        # value a already-normalised track gets.
         gained = _scalar(connection, f"""
             select count(*) from media_file mf
-             where {live} and rg_track_gain is not null and rg_track_gain != 0""")
+             where {live} and rg_track_gain is not null""")
         section.add(Check(
             "no_replaygain", "Tracks with no ReplayGain", total - gained,
             OK if total == gained else INFO,
@@ -468,6 +476,7 @@ def report(started_at: float,
     error = None
     libraries = libraries or []
     space = None
+    user_id = getattr(identity, "user_id", "") or ""
     if identity is not None:
         with contextlib.suppress(ValueError):
             space = workspace.for_session(identity)
@@ -487,7 +496,7 @@ def report(started_at: float,
             # needs a SQLite built with JSON1. One section failing should
             # cost that section, not the whole panel.
             builders = (
-                lambda c, l: _identity_section(c, l),
+                lambda c, l: _identity_section(c, l, user_id),
                 lambda c, l: _library_section(c, l, libraries),
                 lambda c, l: _metadata_section(c, l),
             )

@@ -34,31 +34,46 @@ function el(tag, className, text) {
 const ACTIVE = new Set(["matching", "downloading", "tagging", "retrying"]);
 
 function renderTrack(item) {
-  const row = el("div", `track ${item.status}`);
+  const row = el("div", "track");
 
   const name = el("span", "track-name", item.title);
-  if (item.error) name.title = item.error;
+  const status = el("span", "track-status", "");
 
-  const status = el("span", `track-status ${item.status}`, item.status);
+  // The bar is built once and hidden, rather than added and removed. It only
+  // means something while bytes are moving, but creating it per update is
+  // what made a progress tick cost a subtree.
+  const bar = el("div", "bar");
+  const fill = el("div", "bar-fill");
+  bar.append(fill);
 
   row.append(
     el("span", "track-no", item.track_no ?? ""),
     name,
     el("span", "track-artist", item.artist),
     el("span", "track-dur", duration(item.duration_ms)),
-    status
+    status,
+    bar
   );
-
-  // A progress bar only means something while bytes are moving.
-  if (item.status === "downloading" && item.progress > 0) {
-    const bar = el("div", "bar");
-    const fill = el("div", "bar-fill");
-    fill.style.width = `${Math.round(item.progress * 100)}%`;
-    bar.append(fill);
-    row.append(bar);
-  }
-  if (ACTIVE.has(item.status)) row.classList.add("active");
+  row._parts = { name, status, bar, fill };
+  updateTrack(row, item);
   return row;
+}
+
+// Patches the row in place. Only the fields the server sends in a progress
+// delta can change: status, progress and error.
+function updateTrack(row, item) {
+  const parts = row._parts;
+  if (!parts) return;
+
+  row.className = `track ${item.status}${ACTIVE.has(item.status) ? " active" : ""}`;
+  parts.status.className = `track-status ${item.status}`;
+  parts.status.textContent = item.status;
+  if (item.error) parts.name.title = item.error;
+  else parts.name.removeAttribute("title");
+
+  const moving = item.status === "downloading" && item.progress > 0;
+  parts.bar.hidden = !moving;
+  if (moving) parts.fill.style.width = `${Math.round(item.progress * 100)}%`;
 }
 
 function summarise(items) {
@@ -95,16 +110,22 @@ function action(label, className, handler) {
   return button;
 }
 
-function renderJob(job) {
+// Job id -> the nodes making up that card, so a re-render patches what
+// changed instead of rebuilding it. The whole list used to be recreated on
+// every message - for a 200-track playlist that is 200 row subtrees thrown
+// away and rebuilt twice a second, on a phone, which also lost any text
+// selection and scroll position inside the card.
+const jobNodes = new Map();
+
+function buildJob(job) {
   const card = el("div", "job");
   card.dataset.id = job.id;
 
+  const title = el("span", "job-title", "");
+  const meta = el("span", "job-meta", "");
+  const badge = el("span", "badge", "");
   const head = el("div", "job-head");
-  head.append(
-    el("span", "job-title", job.title || job.source_url),
-    el("span", "job-meta", job.items.length ? summarise(job.items) : ""),
-    el("span", `badge ${job.status}`, job.status)
-  );
+  head.append(title, meta, badge);
 
   const remove = el("button", "remove", "\u00d7");
   remove.title = "Remove";
@@ -115,26 +136,90 @@ function renderJob(job) {
   head.append(remove);
 
   const tracks = el("div", "tracks");
-  tracks.hidden = collapsed.has(job.id);
-  job.items.forEach((item) => tracks.append(renderTrack(item)));
-
   head.addEventListener("click", () => {
     tracks.hidden = !tracks.hidden;
     if (tracks.hidden) collapsed.add(job.id);
     else collapsed.delete(job.id);
   });
 
-  card.append(head, tracks);
-  if (job.error) card.append(el("div", "job-error", job.error));
-  return card;
+  const error = el("div", "job-error", "");
+  error.hidden = true;
+  card.append(head, tracks, error);
+
+  const nodes = { card, title, meta, badge, tracks, error, rows: new Map() };
+  jobNodes.set(job.id, nodes);
+  return nodes;
+}
+
+function updateJob(job) {
+  const nodes = jobNodes.get(job.id) || buildJob(job);
+
+  nodes.title.textContent = job.title || job.source_url;
+  nodes.meta.textContent = job.items.length ? summarise(job.items) : "";
+  nodes.badge.textContent = job.status;
+  nodes.badge.className = `badge ${job.status}`;
+  nodes.tracks.hidden = collapsed.has(job.id);
+  nodes.error.textContent = job.error || "";
+  nodes.error.hidden = !job.error;
+
+  // Rows are keyed by item id, so an item list that only changed state
+  // reuses every row it already had.
+  const wanted = new Set();
+  job.items.forEach((item) => {
+    wanted.add(item.id);
+    let row = nodes.rows.get(item.id);
+    if (!row) {
+      row = renderTrack(item);
+      nodes.rows.set(item.id, row);
+      nodes.tracks.append(row);
+    } else {
+      updateTrack(row, item);
+    }
+  });
+  nodes.rows.forEach((row, id) => {
+    if (!wanted.has(id)) {
+      row.remove();
+      nodes.rows.delete(id);
+    }
+  });
+  return nodes;
 }
 
 function render() {
   const ordered = [...jobs.values()].sort((a, b) =>
     b.created_at.localeCompare(a.created_at)
   );
-  jobsEl.replaceChildren(...ordered.map(renderJob));
+
+  // Drop cards for jobs that have gone.
+  jobNodes.forEach((nodes, id) => {
+    if (!jobs.has(id)) {
+      nodes.card.remove();
+      jobNodes.delete(id);
+    }
+  });
+
+  ordered.forEach((job, index) => {
+    const nodes = updateJob(job);
+    // Only touch the DOM when the order actually differs.
+    if (jobsEl.children[index] !== nodes.card) {
+      jobsEl.insertBefore(nodes.card, jobsEl.children[index] || null);
+    }
+  });
   emptyEl.hidden = ordered.length > 0;
+}
+
+// A delta from the server: the job's status plus only the items that moved.
+function applyProgress(message) {
+  const job = jobs.get(message.id);
+  if (!job) return;
+  job.status = message.status;
+  job.error = message.error;
+  const byId = new Map(job.items.map((i) => [i.id, i]));
+  message.items.forEach((patch) => {
+    const item = byId.get(patch.id);
+    if (item) Object.assign(item, patch);
+  });
+  render();
 }
 
 function handleMessage(message) {
@@ -143,9 +228,16 @@ function handleMessage(message) {
     message.jobs.forEach((job) => jobs.set(job.id, job));
   } else if (message.type === "job") {
     jobs.set(message.job.id, message.job);
+  } else if (message.type === "job_progress") {
+    applyProgress(message);
+    return;
   } else if (message.type === "job_deleted") {
     jobs.delete(message.id);
     collapsed.delete(message.id);
+  } else if (message.type === "operation") {
+    // Import and audit finish long after their request returned.
+    showOperation(message.operation);
+    return;
   } else {
     return;
   }
@@ -227,9 +319,12 @@ document.getElementById("settings-toggle").addEventListener("click", async () =>
   settingsNote.textContent = "";
   const values = await fetch("/api/settings").then((r) => r.json());
   const secrets = ["spotify_client_secret", "navidrome_password"];
+  // A non-admin is sent nothing but `editable: false` - these settings hold
+  // the service credentials and decide where every library lives, so there
+  // is nothing here for them to see and something to leak.
   Object.entries(values).forEach(([key, value]) => {
     const field = settingsForm.elements[key];
-    if (field && !secrets.includes(key)) field.value = value;
+    if (field && !secrets.includes(key)) field.value = value ?? "";
   });
   // Secrets are never sent back, only whether one is set.
   secrets.forEach((key) => {
@@ -605,21 +700,65 @@ async function loadStaging() {
   }
 }
 
-document.getElementById("staging-import").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  button.textContent = "Importing…";
-  try {
-    const result = await fetch("/api/staging/import", { method: "POST" })
-      .then((r) => r.json());
-    if (!result.ran) showError(`Nothing to import: ${result.reason}`);
-    await loadStaging();
-  } catch (err) {
-    showError(`Import failed: ${err.message}`);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Try importing now";
+// Import and audit are started, not awaited - beets gets 900s per path and
+// an audit reads every file in the library, both far longer than a browser
+// will hold a request open. The server pushes the outcome over the socket.
+const OPERATION_LABELS = {
+  import: { button: "staging-import", idle: "Try importing now",
+            busy: "Importing…" },
+  audit: { button: "health-audit", idle: "Re-read files", busy: "Reading…" },
+};
+
+function showOperation(operation) {
+  const spec = OPERATION_LABELS[operation.name];
+  if (!spec) return;
+  const button = document.getElementById(spec.button);
+  if (button) {
+    button.disabled = operation.status === "running";
+    button.textContent = operation.status === "running" ? spec.busy : spec.idle;
   }
+  if (operation.status === "running") return;
+
+  if (operation.status === "failed") {
+    showError(`${operation.name} failed: ${operation.error}`);
+    return;
+  }
+  const result = operation.result || {};
+  if (operation.name === "import") {
+    if (result.busy) {
+      showError("An import is already running; this one was not started.");
+    } else if (!result.ran) {
+      showError(`Nothing to import: ${result.reason}`);
+    } else {
+      const failed = result.failed || [];
+      showError(failed.length ? `Import problems: ${failed.join("; ")}` : "");
+    }
+    loadStaging();
+  } else {
+    loadHealth();
+  }
+}
+
+async function startOperation(name, path) {
+  showError("");
+  try {
+    const payload = await fetch(path, { method: "POST" })
+      .then((r) => r.json());
+    if (payload.detail) {
+      showError(payload.detail);
+      return;
+    }
+    if (!payload.started) {
+      showError(`That is already running; watching the one in flight.`);
+    }
+    showOperation(payload.operation);
+  } catch (err) {
+    showError(`Could not start: ${err.message}`);
+  }
+}
+
+document.getElementById("staging-import").addEventListener("click", () => {
+  startOperation("import", "/api/staging/import");
 });
 
 // --- health ---------------------------------------------------------------
@@ -684,19 +823,8 @@ let healthTimer = null;
 // Reading tags from every file takes long enough that it runs on a timer in
 // the background; this is for when you have just fixed something and want the
 // answer now rather than in six hours.
-document.getElementById("health-audit").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  button.textContent = "Reading…";
-  try {
-    await fetch("/api/health/audit", { method: "POST" });
-    await loadHealth();
-  } catch (err) {
-    showError(`Audit failed: ${err.message}`);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Re-read files";
-  }
+document.getElementById("health-audit").addEventListener("click", () => {
+  startOperation("audit", "/api/health/audit");
 });
 
 // --- duplicates -----------------------------------------------------------

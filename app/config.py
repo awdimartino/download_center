@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tomllib
+from typing import Any
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -119,12 +120,30 @@ def save(updates: dict[str, Any]) -> None:
 
     Only a flat table of scalars is ever written, so a hand-rolled serialiser
     is enough and avoids taking a dependency for six keys.
+
+    Anything already in the file that this app does not consider editable is
+    carried across untouched. The previous version wrote only the EDITABLE
+    keys, so saving from the Settings panel silently deleted any hand-set
+    `staging_quiet_seconds`, `music_dir` or `output_dir` - and
+    `staging_quiet_seconds` has no environment override either, so it simply
+    reverted to its default on the next restart with nothing to say why.
     """
     for key, value in updates.items():
         if key in EDITABLE:
             setattr(settings, key, value)
 
-    stored = {key: getattr(settings, key) for key in EDITABLE}
+    existing: dict[str, Any] = {}
+    if CONFIG_FILE.exists():
+        try:
+            existing = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError:
+            # A file we cannot parse is one we should not silently discard.
+            raise
+
+    stored = {key: value for key, value in existing.items()
+              if key not in EDITABLE}
+    stored.update({key: getattr(settings, key) for key in EDITABLE})
+
     lines = [
         "# Written by Download Center. Environment variables still take",
         "# precedence over anything set here.",
