@@ -262,6 +262,9 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 .menu-toggle[aria-expanded="true"] .burger::before { transform: translateY(6px) rotate(45deg); }
 .menu-toggle[aria-expanded="true"] .burger::after { transform: translateY(-6px) rotate(-45deg); }
 
+/* Redundant while the menu is open - the counts themselves are on screen. */
+.menu-toggle[aria-expanded="true"] .menu-dot { display: none; }
+
 /* Whether opening the menu is worth it. Deliberately not a number: the
    counts are one tap away, and three of them competing on a 20px button was
    what made the old badge positioning such a fight. */
@@ -277,14 +280,25 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   box-shadow: 0 0 0 2px var(--bg);
 }
 
-#view-title { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+#current-view { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
 
 /* --- the menu overlay ----------------------------------------------------- */
 
+/* Hangs from the bottom edge of the header rather than covering it. The
+   first version was inset:0 with a title bar of its own, so opening the menu
+   swapped one header for a different one in the same place - two bars in the
+   same spot, which is the jarring part. Now the header never moves, its
+   burger animates to a cross, and the panel drops out from under it.
+
+   z-index below the header, which is opaque and sticky at 30, so the header
+   paints over the backdrop and stays legible. */
 .menu {
   position: fixed;
-  inset: 0;
-  z-index: 60;
+  top: var(--header-h, 56px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   display: flex;
 }
 
@@ -310,32 +324,14 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
      behind it and leaves you somewhere else when it closes. */
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* Clears the notch at the top and the home indicator at the bottom. The
-     panel is full-height, so both are its problem. */
-  padding-top: calc(var(--s-3) + env(safe-area-inset-top, 0px));
+  /* The notch is the header's problem now - this starts below it. The home
+     indicator is still ours, since the panel runs to the bottom. */
   padding-bottom: calc(var(--s-4) + env(safe-area-inset-bottom, 0px));
+  /* Square against the header, so the two read as one surface rather than a
+     card floating under a bar. */
+  border-radius: 0;
 }
 
-.menu-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-  padding: var(--s-2) var(--s-2) var(--s-3);
-}
-.menu-title { font-size: 13px; font-weight: 650; color: var(--muted); }
-.menu-close {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  font-size: 20px;
-  line-height: 1;
-  background: none;
-  border-color: transparent;
-  color: var(--muted);
-  border-radius: var(--r-sm);
-}
-.menu-close:hover { background: var(--panel-2); color: var(--text); }
 
 .nav-item {
   display: flex;
@@ -1155,7 +1151,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
 
   header { gap: var(--s-2); padding: var(--s-2) var(--s-3); }
   header { padding-top: calc(var(--s-2) + env(safe-area-inset-top, 0px)); }
-  #view-title { font-size: 15px; white-space: nowrap; }
+  #current-view { font-size: 15px; white-space: nowrap; }
 
   /* Full width on a phone: a drawer that leaves a sliver of the page behind
      it invites a mis-tap on whatever is under that sliver. */
@@ -1239,5 +1235,5 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   /* The tab rule that used to live here shrank five labels to fit across the
      screen. A vertical menu has no such constraint, so only the title needs
      to give way. */
-  #view-title { font-size: 14px; }
+  #current-view { font-size: 14px; }
 }

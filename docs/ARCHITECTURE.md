@@ -199,9 +199,21 @@ rather than a hand-kept list — an earlier version named a view that no
 longer existed and the resulting throw hid every panel at once.
 
 The header carries the menu button, the current view's name and the
-connection pill; Settings, the username and Sign out live in the overlay.
-The view name matters: with no tabs on screen it is the only thing saying
-where you are.
+connection pill; the username and Sign out live in the overlay. The view
+name matters: with no tabs on screen it is the only thing saying where you
+are.
+
+The menu hangs from the header's bottom edge rather than covering it, at a
+z-index *below* the opaque sticky header. Its first version was `inset: 0`
+with a title bar of its own, which meant opening it swapped one header for a
+different one in the same place. The panel's top offset comes from
+`--header-h`, measured in JS on load, resize and open, because the height
+moves with the safe-area inset and the 720px breakpoint.
+
+Settings is a view like any other (`#view-settings`), not a form that
+toggles on top of whichever panel is showing. Every nav item's `data-view`
+has a matching `#view-<name>` section and nothing else does - the header's
+own title is `#current-view` precisely so it cannot be mistaken for one.
 
 `style.css` is token-based: colours, spacing scale, radii and shadow all
 come from `:root`, with one button in three weights (filled, outlined,

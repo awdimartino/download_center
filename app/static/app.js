@@ -313,13 +313,10 @@ form.addEventListener("submit", async (event) => {
 const settingsForm = document.getElementById("settings");
 const settingsNote = document.getElementById("settings-note");
 
-document.getElementById("settings-toggle").addEventListener("click", async () => {
-  // Settings lives in the menu now, but the form it reveals is in the page
-  // behind it - so the menu has to get out of the way or the form opens
-  // underneath an opaque overlay.
-  closeMenu();
-  settingsForm.hidden = !settingsForm.hidden;
-  if (settingsForm.hidden) return;
+// A view like any other, loaded when it is shown. It used to be a form that
+// toggled on top of whichever panel you were looking at, which meant Settings
+// appeared above a list of duplicates and left you with no clear way back.
+async function loadSettings() {
   settingsNote.textContent = "";
   const values = await fetch("/api/settings").then((r) => r.json());
   const secrets = ["spotify_client_secret", "navidrome_password"];
@@ -344,7 +341,7 @@ document.getElementById("settings-toggle").addEventListener("click", async () =>
   });
   settingsNote.textContent = mayEdit
     ? "" : "Only a Navidrome administrator can change these.";
-});
+}
 
 settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -413,19 +410,33 @@ let searchToken = 0;
 const menu = document.getElementById("menu");
 const menuToggle = document.getElementById("menu-toggle");
 const menuBackdrop = document.getElementById("menu-backdrop");
-const menuClose = document.getElementById("menu-close");
 const menuDot = document.getElementById("menu-dot");
-const viewTitle = document.getElementById("view-title");
+const viewTitle = document.getElementById("current-view");
 const navItems = () => document.querySelectorAll(".nav-item[data-view]");
 
+// The panel hangs below the header rather than covering it, so it needs to
+// know where the header ends. Measured rather than assumed: the height moves
+// with the safe-area inset, the font size and the 720px breakpoint.
+function syncHeaderHeight() {
+  const header = document.querySelector("header");
+  if (!header) return;
+  document.documentElement.style.setProperty(
+    "--header-h", `${Math.round(header.getBoundingClientRect().height)}px`);
+}
+
+syncHeaderHeight();
+addEventListener("resize", syncHeaderHeight);
+addEventListener("orientationchange", syncHeaderHeight);
+
 function openMenu() {
+  syncHeaderHeight();
   menu.hidden = false;
   menuToggle.setAttribute("aria-expanded", "true");
   menuToggle.setAttribute("aria-label", "Close menu");
   // The active section, so the menu opens on where you already are rather
   // than at the top of the list.
-  const current = document.querySelector(".nav-item.active") || menuClose;
-  current.focus();
+  const current = document.querySelector(".nav-item.active");
+  if (current) current.focus();
 }
 
 function closeMenu() {
@@ -442,7 +453,6 @@ menuToggle.addEventListener("click", () => {
   if (menu.hidden) openMenu();
   else closeMenu();
 });
-menuClose.addEventListener("click", closeMenu);
 menuBackdrop.addEventListener("click", closeMenu);
 
 document.addEventListener("keydown", (event) => {
@@ -455,7 +465,7 @@ document.addEventListener("keydown", (event) => {
   // Keep Tab inside the panel while it is open. Without this the focus ring
   // walks off into the page behind an opaque overlay, where it cannot be
   // seen and Enter presses something invisible.
-  const focusable = menu.querySelectorAll("button:not([disabled])");
+  const focusable = [menuToggle, ...menu.querySelectorAll("button:not([disabled])")];
   if (!focusable.length) return;
   const first = focusable[0];
   const last = focusable[focusable.length - 1];
@@ -496,6 +506,7 @@ function showView(view) {
   if (view === "health") loadHealth();
   if (view === "dupes") loadDupes();
   if (view === "playlists") loadPlaylists();
+  if (view === "settings") loadSettings();
 }
 
 navItems().forEach((item) => {
