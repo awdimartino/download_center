@@ -13,7 +13,7 @@ services:
       - "${PORT:-8000}:8000"
 
     environment:
-      # Must match the user that owns MUSIC_DIR, or the files written here
+      # Must match the user that owns LIBRARY_DIR, or the files written here
       # will not be readable by whatever serves your library.
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
@@ -32,13 +32,16 @@ services:
       # singles/ are created inside it.
       - ${STAGING_DIR:-./untagged}:/downloads
 
-      # The tagged library beets files into, using the paths in its own
-      # config at /config/beets/config.yaml. Point a music server at this.
+      # The tagged library beets files into, using the paths in each person's
+      # own config at /config/beets/<username>-<library id>/config.yaml.
+      # This is what Navidrome should index.
       - ${LIBRARY_DIR:-./library}:/music
 
-      # Navidrome's database, for the health panel. Uncomment and point at
-      # your navidrome.db to enable it. Read-only on purpose: Navidrome owns
-      # this file and caches from it, so nothing here ever writes to it.
-      # Without it the panel still reports staging and disk, just not the
-      # library checks.
+      # Navidrome's database. Uncomment and point at your navidrome.db.
+      # Read-only on purpose: Navidrome owns this file and caches from it, so
+      # nothing here ever writes to it.
+      #
+      # This is NOT optional. Which libraries an account may see is read from
+      # this file, so without it every user signs in with no library, no
+      # download has anywhere to go, and Health has nothing to report.
       # - /path/to/navidrome/navidrome.db:/navidrome/navidrome.db:ro

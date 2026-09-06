@@ -147,7 +147,9 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
 ## Companion features
 
 - **`health.py`** (522 lines) — checks against Navidrome's database and the
-  disk audit. Every query is scoped to the signed-in user's libraries.
+  disk audit. Scoped to the signed-in user's libraries via `_live_clause`,
+  with one exception: `orphan_annotations` counts every user's dangling
+  stars, because the rows it looks at have no library to scope to.
 - **`diskaudit.py`** — walks the library reading tags directly, because
   Navidrome's index can be stale or wrong. Runs in the background and
   caches.
@@ -202,9 +204,9 @@ ssh -i ~/.ssh/id_ed25519_pi argyle@alex-pi \
   'cd ~/Docker && docker compose pull download-center && docker compose up -d download-center'
 ```
 
-The README's "Deploying to a Raspberry Pi" section describes an
-rsync-and-build flow that is **not** what runs. There is no git checkout on
-the Pi; `~/Docker/download-center/` holds only `config/`.
+There is no git checkout on the Pi; `~/Docker/download-center/` holds only
+`config/`. The README describes this same pull-and-restart flow, without the
+host specifics.
 
 ---
 
