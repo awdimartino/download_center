@@ -81,6 +81,44 @@ CREATE TABLE IF NOT EXISTS duplicate_quarantined (
 );
 CREATE INDEX IF NOT EXISTS idx_quarantined_group
     ON duplicate_quarantined(group_key);
+
+-- Navidrome keeps a *cumulative* play_count and only the most recent
+-- play_date, so "what did I listen to in March" is a question its schema
+-- cannot answer. These snapshots are the only way to recover it, and only
+-- from the day they start: history not captured is gone.
+--
+-- Keyed by track UUID rather than media_file.id because the id is an index
+-- artefact - it changes when a file is re-imported, and the whole point of
+-- the UUID work was that identity survives that.
+--
+-- Only *changed* counts are stored. A full capture is a few thousand rows a
+-- night and almost all of it identical to yesterday; storing the changes
+-- keeps a year in the tens of thousands rather than near a million. To read
+-- the count for a day, take the most recent row at or before it.
+CREATE TABLE IF NOT EXISTS play_snapshot (
+    taken_on    TEXT NOT NULL,
+    track_uuid  TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    username    TEXT,
+    play_count  INTEGER NOT NULL,
+    play_date   TEXT,
+    PRIMARY KEY (taken_on, track_uuid, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_track
+    ON play_snapshot(track_uuid, user_id, taken_on);
+CREATE INDEX IF NOT EXISTS idx_snapshot_day ON play_snapshot(taken_on);
+
+-- A count that went *down*. A re-import or a counter reset can do that, and
+-- it is not minus four plays - it is a fact about the data that any later
+-- statistic needs to know, rather than a number to average into one.
+CREATE TABLE IF NOT EXISTS play_anomaly (
+    noticed_on  TEXT NOT NULL,
+    track_uuid  TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    was         INTEGER NOT NULL,
+    became      INTEGER NOT NULL,
+    PRIMARY KEY (noticed_on, track_uuid, user_id)
+);
 """
 
 
@@ -143,6 +181,16 @@ def connect(path: Path) -> None:
     _migrate(_conn)
     _conn.executescript(SCHEMA)
     _conn.commit()
+
+
+def connection() -> sqlite3.Connection:
+    """The open state.db handle, for modules that own their own tables.
+
+    Exposed rather than reached for privately: play-count snapshots live in
+    this database but their SQL belongs with the code that understands them.
+    """
+    assert _conn is not None, "ledger not connected"
+    return _conn
 
 
 def already_downloaded(source_id: str, isrc: str | None,
