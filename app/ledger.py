@@ -111,6 +111,26 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_day ON play_snapshot(taken_on);
 -- A count that went *down*. A re-import or a counter reset can do that, and
 -- it is not minus four plays - it is a fact about the data that any later
 -- statistic needs to know, rather than a number to average into one.
+-- Listening from before the snapshots started, imported once from Last.fm.
+-- Kept in its own table rather than mixed into play_snapshot because the two
+-- are different kinds of evidence: a snapshot is a cumulative total this app
+-- read itself, an import is somebody else's record of individual plays,
+-- matched to a track by text. A later question can ask about either, and the
+-- join between them stays visible rather than assumed.
+--
+-- `source` is part of the key so a second import replaces its own rows and
+-- cannot double anyone's history.
+CREATE TABLE IF NOT EXISTS play_imported (
+    day         TEXT NOT NULL,
+    track_uuid  TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    username    TEXT,
+    plays       INTEGER NOT NULL,
+    source      TEXT NOT NULL,
+    PRIMARY KEY (day, track_uuid, user_id, source)
+);
+CREATE INDEX IF NOT EXISTS idx_imported_day ON play_imported(day);
+
 CREATE TABLE IF NOT EXISTS play_anomaly (
     noticed_on  TEXT NOT NULL,
     track_uuid  TEXT NOT NULL,

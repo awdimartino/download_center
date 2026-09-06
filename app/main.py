@@ -275,7 +275,10 @@ async def _snapshot_loop() -> None:
     """
     while True:
         try:
-            if not await asyncio.to_thread(playcounts.taken_on, playcounts.today()):
+            # The day it *closes*, not the day it runs on. A snapshot taken
+            # just after midnight is the total at the end of yesterday.
+            day = await asyncio.to_thread(playcounts.closing_day)
+            if not await asyncio.to_thread(playcounts.taken_on, day):
                 await asyncio.to_thread(playcounts.take)
         except Exception:
             log.exception("play-count snapshot failed")

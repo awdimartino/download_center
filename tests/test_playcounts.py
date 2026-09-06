@@ -285,3 +285,115 @@ def test_the_day_is_utc():
     later as one day with twice the plays and one with none."""
     day = playcounts.today()
     assert len(day) == 10 and day[4] == "-" and day[7] == "-"
+
+
+# --- which midnight closes a day -------------------------------------------
+
+def test_the_zone_is_configurable(monkeypatch):
+    monkeypatch.setattr(settings, "play_day_timezone", "America/New_York")
+    assert "New_York" in str(playcounts.zone())
+
+
+def test_utc_never_needs_a_timezone_database(monkeypatch):
+    """The fallback must not be able to raise the error it is catching.
+    ZoneInfo("UTC") needs tzdata like any other name; datetime.UTC does not."""
+    monkeypatch.setattr(settings, "play_day_timezone", "UTC")
+    assert playcounts.zone() is not None
+    monkeypatch.setattr(settings, "play_day_timezone", "Not/AZone")
+    assert playcounts.zone() is not None
+
+
+def test_a_snapshot_in_the_small_hours_closes_yesterday(monkeypatch):
+    """It records a cumulative total at the moment it runs, and just after
+    midnight that total is everything up to the end of yesterday. Labelling
+    it with today's date shifted every delta a day late."""
+    import app.playcounts as pc
+
+    class FakeDatetime(pc.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return pc.datetime(2026, 3, 10, 0, 5, tzinfo=tz)
+
+    monkeypatch.setattr(pc, "datetime", FakeDatetime)
+    assert pc.closing_day() == "2026-03-09"
+    assert pc.today() == "2026-03-10"
+
+
+def test_a_snapshot_later_in_the_day_belongs_to_today(monkeypatch):
+    """A restart at noon is a partial reading of today, not of yesterday."""
+    import app.playcounts as pc
+
+    class FakeDatetime(pc.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return pc.datetime(2026, 3, 10, 12, 0, tzinfo=tz)
+
+    monkeypatch.setattr(pc, "datetime", FakeDatetime)
+    assert pc.closing_day() == "2026-03-10"
+
+
+# --- imported history sits beside the snapshots ----------------------------
+
+def _import(day, track_uuid, user_id, plays, username="alex"):
+    ledger.connection().execute(
+        "INSERT OR REPLACE INTO play_imported"
+        " (day, track_uuid, user_id, username, plays, source)"
+        " VALUES (?, ?, ?, ?, ?, 'lastfm')",
+        (day, track_uuid, user_id, username, plays))
+    ledger.connection().commit()
+
+
+def test_imported_history_is_readable_alongside_snapshots(wired):
+    _import("2026-02-14", "uuid-a", ALEX, 4)
+    plays = playcounts.plays_between("2026-02-01", "2026-02-28")
+    assert plays == [{"track_uuid": "uuid-a", "user_id": ALEX,
+                      "username": "alex", "plays": 4}]
+
+
+def test_imported_history_outside_the_range_is_ignored(wired):
+    _import("2026-01-01", "uuid-a", ALEX, 4)
+    assert playcounts.plays_between("2026-02-01", "2026-02-28") == []
+
+
+def test_importing_twice_does_not_double_a_history(wired):
+    """The key includes the source, so a re-run replaces its own rows."""
+    _import("2026-02-14", "uuid-a", ALEX, 4)
+    _import("2026-02-14", "uuid-a", ALEX, 4)
+    plays = playcounts.plays_between("2026-02-01", "2026-02-28")
+    assert plays[0]["plays"] == 4
+
+
+def test_imported_history_can_be_scoped_to_one_person(wired):
+    _import("2026-02-14", "uuid-a", ALEX, 4)
+    _import("2026-02-14", "uuid-a", KELLY, 9, username="kelly")
+    mine = playcounts.plays_between("2026-02-01", "2026-02-28", user_id=ALEX)
+    assert [row["plays"] for row in mine] == [4]
+
+
+# --- tracks whose files have gone -------------------------------------------
+
+def test_a_track_in_a_vanished_directory_is_not_counted(wired):
+    """Navidrome marks a disappeared directory missing on the *folder* row
+    and leaves the rows beneath it untouched. Trusting media_file.missing
+    alone counts tracks whose files were deleted months ago - 49 of them on
+    the real library, left behind by the migration."""
+    add_track(wired, "here", tags=UUID_A, folder_id="f1")
+    add_track(wired, "gone", tags=UUID_B, folder_id="gone", path="b.mp3")
+    played(wired, "here", ALEX, 5)
+    played(wired, "gone", ALEX, 40)
+
+    result = playcounts.take("2026-03-01")
+
+    assert result["tracked"] == 1
+    stored = ledger.connection().execute(
+        "select track_uuid, play_count from play_snapshot").fetchall()
+    assert stored == [("uuid-a", 5)]
+
+
+def test_a_file_flagged_missing_is_not_counted(wired):
+    add_track(wired, "here", tags=UUID_A)
+    add_track(wired, "gone", tags=UUID_B, path="b.mp3", missing=1)
+    played(wired, "here", ALEX, 5)
+    played(wired, "gone", ALEX, 40)
+
+    assert playcounts.take("2026-03-01")["tracked"] == 1

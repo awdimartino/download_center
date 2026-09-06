@@ -39,10 +39,12 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, tzinfo, UTC
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import ledger, navidrome
+from .config import settings
 
 log = logging.getLogger("download_center.playcounts")
 
@@ -50,15 +52,57 @@ log = logging.getLogger("download_center.playcounts")
 # media_file.tags, so it can be read in the same query.
 UUID_TAG = "$.navidrome_uuid[0].value"
 
+# Before this hour, a snapshot is understood to be closing yesterday rather
+# than reporting today. The loop fires within half an hour of midnight, so
+# the window is generous; a manual run at noon is a reading of today.
+CLOSING_HOUR = 4
+
+
+def zone() -> tzinfo:
+    """Which midnight closes a listening day.
+
+    Configured rather than taken from the container's TZ, which is Etc/UTC.
+    For a listener on the US east coast that would put the boundary at 8pm
+    and split every evening across two reported days.
+
+    The fallback is `datetime.UTC`, not `ZoneInfo("UTC")`. ZoneInfo needs a
+    time zone database - the system one, or the `tzdata` package - and on a
+    machine with neither, looking up "UTC" fails exactly like any other name.
+    A fallback that can raise the error it is catching is not a fallback.
+    """
+    name = settings.play_day_timezone or "UTC"
+    if name.upper() == "UTC":
+        return UTC
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        log.warning("unknown timezone %r; falling back to UTC", name)
+        return UTC
+
 
 def today() -> str:
-    """The day a snapshot is filed under.
+    """The date it is now, where the listener is."""
+    return datetime.now(zone()).strftime("%Y-%m-%d")
 
-    UTC, deliberately. Navidrome stores play dates in UTC, and a local date
-    would shift under daylight saving - which would show up much later as a
-    day with twice the plays and a day with none.
+
+def closing_day() -> str:
+    """The day a snapshot taken *now* actually closes.
+
+    A snapshot records a cumulative total at the moment it runs. Run shortly
+    after midnight, that total is everything up to the end of *yesterday* -
+    so yesterday is the day it describes.
+
+    Labelling it with today's date was an off-by-one: every delta came out
+    attributed a day late. Caught while only the baseline existed; three
+    months of data later it would have been very hard to see.
     """
-    return datetime.now(UTC).strftime("%Y-%m-%d")
+    now = datetime.now(zone())
+    # Anything captured in the small hours is closing the previous day. Later
+    # in the day - a restart, a manual run - it is a partial reading of today
+    # and belongs to today.
+    if now.hour < CLOSING_HOUR:
+        return (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    return now.strftime("%Y-%m-%d")
 
 
 # --- reading what Navidrome currently believes -----------------------------
@@ -71,6 +115,13 @@ def _current(connection: sqlite3.Connection) -> tuple[dict, int]:
     without one cannot be followed across a re-import and its history would
     silently restart.
     """
+    # Joined to `folder`, not just filtered on `media_file.missing`. When a
+    # directory vanishes Navidrome marks the *folder* row missing and leaves
+    # the rows beneath it untouched, so a query that trusts `mf.missing`
+    # alone counts tracks whose files were deleted months ago. On this
+    # library that is 49 tracks left behind by the migration - their plays
+    # are real history, but of tracks that no longer exist, and carrying
+    # them forward for ever would quietly inflate every later statistic.
     rows = connection.execute(f"""
         select a.user_id,
                u.user_name,
@@ -79,9 +130,12 @@ def _current(connection: sqlite3.Connection) -> tuple[dict, int]:
                a.play_date
           from annotation a
           join media_file mf on mf.id = a.item_id
+          join folder f on f.id = mf.folder_id
           join user u on u.id = a.user_id
          where a.item_type = 'media_file'
            and a.play_count > 0
+           and mf.missing = 0
+           and f.missing = 0
     """).fetchall()
 
     counts: dict[tuple[str, str], dict[str, Any]] = {}
@@ -123,7 +177,7 @@ def take(when: str | None = None) -> dict[str, Any]:
     Idempotent for a given day: the primary key is (day, track, user), so
     running it twice replaces rather than duplicates.
     """
-    day = when or today()
+    day = when or closing_day()
     try:
         source = navidrome.open_db()
     except navidrome.Unavailable as exc:
@@ -230,8 +284,8 @@ def plays_between(start: str, end: str,
         """, (day,)).fetchall()
         return {(t, u): c for t, u, c in rows}
 
-    # The day before the range starts, so a track played on the first day of
-    # it is counted from where it actually stood rather than from zero.
+    # A snapshot labelled D holds the total at the *end* of D, so the
+    # opening balance for the range is the end of the day before it.
     before = (datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
               - timedelta(days=1)).strftime("%Y-%m-%d")
     opening, closing = value_at(before), value_at(end)
@@ -239,18 +293,31 @@ def plays_between(start: str, end: str,
     names = dict(ledger.connection().execute(
         "SELECT user_id, username FROM play_snapshot GROUP BY user_id"))
 
-    out = []
+    totals: dict[tuple[str, str], int] = {}
     for key, finished in closing.items():
         if user_id is not None and key[1] != user_id:
             continue
         started = opening.get(key, 0)
-        if finished <= started:
+        if finished > started:
+            totals[key] = finished - started
+
+    # Days before the snapshots began, imported from Last.fm. Added rather
+    # than merged: the two sources cover disjoint periods by construction -
+    # the import stops the day snapshots start - so nothing is counted twice.
+    imported = ledger.connection().execute("""
+        select track_uuid, user_id, username, sum(plays)
+          from play_imported
+         where day between ? and ?
+         group by track_uuid, user_id, username
+    """, (start, end)).fetchall()
+    for track_uuid, who, username, plays in imported:
+        if user_id is not None and who != user_id:
             continue
-        out.append({
-            "track_uuid": key[0],
-            "user_id": key[1],
-            "username": names.get(key[1]),
-            "plays": finished - started,
-        })
+        names.setdefault(who, username)
+        totals[(track_uuid, who)] = totals.get((track_uuid, who), 0) + plays
+
+    out = [{"track_uuid": track_uuid, "user_id": who,
+            "username": names.get(who), "plays": plays}
+           for (track_uuid, who), plays in totals.items()]
     out.sort(key=lambda row: row["plays"], reverse=True)
     return out
