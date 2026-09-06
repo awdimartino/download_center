@@ -23,7 +23,10 @@ from . import workspace
 from .config import settings
 
 # Characters Windows forbids in a filename, plus control characters.
-_ILLEGAL = re.compile(r'[<>:"/\|?*\x00-\x1f]')
+# The backslash is escaped: inside a character class `\|` escapes the pipe
+# and the backslash itself never joins the set, so "AC\DC" came through
+# untouched and became a directory separator.
+_ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _TRAILING = re.compile(r"[. ]+$")
 # Device names Windows still reserves, with or without an extension.
 _RESERVED = {
@@ -153,7 +156,13 @@ def demote_partial_albums(space: workspace.Workspace, job_id: str,
 
 
 def _move_into_place(source: Path, target: Path) -> Path:
-    """Move a file or directory to target, never overwriting silently."""
+    """Move a file or directory to target, never overwriting silently.
+
+    Running out of candidates raises rather than falling through. The loop
+    used to leave `target` at the original name when all 98 were taken, so
+    the one case the numbering exists to prevent - a real collision - ended
+    in os.replace overwriting the file it was protecting.
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         stem, suffix = target.stem, target.suffix
@@ -162,6 +171,10 @@ def _move_into_place(source: Path, target: Path) -> Path:
             if not candidate.exists():
                 target = candidate
                 break
+        else:
+            raise FileExistsError(
+                f"{target} and 98 numbered variants all exist; refusing to "
+                f"overwrite. Clear some out of {target.parent}.")
     os.replace(source, target)
     return target
 
