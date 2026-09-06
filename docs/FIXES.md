@@ -15,23 +15,32 @@ decision from the user before it can be done.
 
 ## Tier 1 — loses or corrupts data
 
-- [ ] **1a. Duplicate resolve has no confirmation.**
+- [x] **1a. Duplicate resolve has no confirmation.**
       `app/static/app.js`, `renderGroup`. Bulk auto-resolve confirms; playlist
       delete confirms; the per-group button that moves a file out of the
       library does not.
-- [ ] **1b. Quarantine flattens album structure.**
+- [x] **1b. Quarantine flattens album structure.**
       `duplicates._quarantine_dir()` / `resolve()` use `source.name`, so two
       albums' `01 Intro.mp3` collide and become `... (2).mp3`. Recovery is
       guesswork.
-- [ ] **1c. Nothing records what was quarantined.** No ledger row, no
+- [x] **1c. Nothing records what was quarantined.** No ledger row, no
       source→target log. Undo is archaeology.
-- [ ] **1d. `postDupe` discards the response.** A failed move or an
+- [x] **1d. `postDupe` discards the response.** A failed move or an
       unmigrated star is never shown; the group just silently persists.
-- [ ] **1e. Quarantine directory is not per-library.**
-      `settings.music_dir.parent / "duplicates-removed"` is global while
-      `_library_root()` is per-library, so Kelly's files land in alex's root,
-      likely across a filesystem boundary.
-- [ ] **2. Duplicate review UI never shows each copy's title** — only the
+- [x] **1e. Quarantine directory was outside every mounted volume.**
+      Filed as "not per-library", and it was worse than that.
+      `settings.music_dir.parent / "duplicates-removed"` resolves to
+      `/duplicates-removed`. The container mounts `/config`, `/downloads`,
+      `/music`, `/kelly` and `/navidrome` — confirmed against the running
+      container on 2026-09-06 — and not that. So a quarantined file was
+      *copied* into the container's own writable layer (the move crossed a
+      device boundary, so the original was unlinked) and destroyed by the
+      next `docker compose pull`. "Nothing is deleted" was false in the
+      deployed layout.
+      **Operational follow-up:** anything resolved before this fix is in the
+      running container's `/duplicates-removed` and will be lost on the next
+      deploy. Rescue it first — see the note at the end of this file.
+- [x] **2. Duplicate review UI never shows each copy's title** — only the
       group's first. `normalise()` strips `feat.` clauses, so two different
       collaborations group together and render as identical rows.
 - [?] **3a. The ledger is global, not per-user.** `app/ledger.py` has no user
@@ -40,7 +49,7 @@ decision from the user before it can be done.
       "Per-user questions" below.**
 - [?] **3b. No path ever removes a ledger row.** A quarantined or deleted
       track can never be re-downloaded. Same decision.
-- [ ] **4. `health.py` `indexed_stamped` query is broken and silently
+- [x] **4. `health.py` `indexed_stamped` query is broken and silently
       suppressed.** `select count(*) from media_file` with no `mf` alias while
       the WHERE clause says `mf.missing`; raises `sqlite3.Error`, swallowed by
       a bare `contextlib.suppress`. "Stamped but not yet scanned" has never
@@ -78,12 +87,12 @@ decision from the user before it can be done.
 
 ## Tier 3 — correctness
 
-- [ ] **9a. `sanitize()` does not strip backslashes.** `staging.py`
+- [x] **9a. `sanitize()` does not strip backslashes.** `staging.py`
       `r'[<>:"/\|?*\x00-\x1f]'` — inside a character class `\|` escapes the
       pipe, so backslash never joins the set. Verified.
-- [ ] **9b. `[` and `]` survive sanitising**, breaking
+- [x] **9b. `[` and `]` survive sanitising**, breaking
       `downloader.download`'s `glob(stem + ".*")` diagnostic fallback.
-- [ ] **10. `_move_into_place` silently overwrites after 98 collisions**,
+- [x] **10. `_move_into_place` silently overwrites after 98 collisions**,
       despite its docstring saying it never does. `staging.py`.
 - [ ] **11. `Workspace.key` does filesystem I/O in a property** and changes
       its answer if the `.owner` marker changes — silently abandoning a
@@ -91,7 +100,7 @@ decision from the user before it can be done.
 - [ ] **12. beets success is detected by string-matching `"Skipping"`** in
       human-readable output. Stamping and `navidrome.notify()` are both gated
       on the result.
-- [ ] **13. `to_form` accepts operators `to_rules` will reject**, so a
+- [x] **13. `to_form` accepts operators `to_rules` will reject**, so a
       playlist can open as editable and then fail on save with an error about
       a rule the app itself supplied.
 
@@ -130,9 +139,9 @@ decision from the user before it can be done.
 
 ## Cross-cutting
 
-- [ ] **25. Tests.** None existed. Seeded alongside fix 1; the list to grow
+- [x] **25. Tests.** None existed. Seeded alongside fix 1; the list to grow
       is in PLAN.md under *Tests — the real gap*.
-- [ ] **26. CI runs no tests, lint or type check.** A test job must run
+- [x] **26. CI runs no tests, lint or type check.** A test job must run
       before the four-minute QEMU build.
 - [ ] **27. No linter or formatter config exists.**
 - [ ] **28. `app/main.py` is 939 lines**; split into routers.
@@ -154,3 +163,24 @@ merely make it less likely.
 
 Items 3a and 3b cannot be done without a decision. Raised with the user
 separately; record the answer here when it comes.
+
+---
+
+## Before the next deploy — rescue the old quarantine
+
+Fix 1e changed where quarantined files go. Anything resolved *before* it is
+sitting in the running container at `/duplicates-removed`, which is not a
+volume: `docker compose pull && up -d` replaces the container and takes it
+with it. Get it out first, and only then deploy.
+
+```bash
+ssh argyle@alex-pi
+docker exec download-center sh -c 'ls -la /duplicates-removed | head'
+docker cp download-center:/duplicates-removed \
+          /media/argyle/storage/duplicates-rescued
+```
+
+Files land flat, with no record of which album each came from — that is the
+bug — so putting one back is a manual job. After the new image is deployed,
+quarantine goes to `<library>/duplicates-removed/` with the path preserved
+and a row in `state.db`.
