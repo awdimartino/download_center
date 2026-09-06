@@ -81,6 +81,28 @@ def _artist_names(artists: list[dict] | None) -> str:
     return ", ".join(a["name"] for a in (artists or []) if a.get("name"))
 
 
+def _primary_artist(artists: list[dict] | None) -> str:
+    """Just the first credited artist.
+
+    Kept separate from the full credit because the two are wanted for
+    different things, and conflating them cost this project every album with
+    a guest on one track. beets decides an album is a Various Artists release
+    when its tracks do not agree on `artist` - one "Michael Jackson, Paul
+    McCartney" among eight "Michael Jackson" was enough - and then searches
+    MusicBrainz for a compilation, so the real record never appears among the
+    candidates. Verified against Thriller: as staged, five Various Artists
+    candidates and a best distance of 0.41, refused; with this one tag
+    normalised, Michael Jackson - Thriller at 0.01.
+
+    Taken from Spotify's structured list rather than split off the joined
+    string, because "Tyler, The Creator" is one artist with a comma in it.
+    """
+    for artist in artists or []:
+        if artist.get("name"):
+            return artist["name"]
+    return ""
+
+
 def _cover(album: dict) -> str | None:
     images = album.get("images") or []
     return images[0]["url"] if images else None
@@ -94,6 +116,11 @@ def to_track(full: dict) -> dict[str, Any]:
         "isrc": (full.get("external_ids") or {}).get("isrc"),
         "title": full["name"],
         "artist": _artist_names(full.get("artists")),
+        # What goes in the file's artist tag. The full credit above is for
+        # the browser and for the YouTube Music search, where naming the
+        # guest helps find the right recording; the tag has to agree with
+        # this track's siblings or beets reads the album as a compilation.
+        "primary_artist": _primary_artist(full.get("artists")),
         "album_artist": _artist_names(album.get("artists")) or _artist_names(full.get("artists")),
         "album": album.get("name") or full["name"],
         "album_id": album.get("id"),

@@ -270,9 +270,9 @@ def test_free_space_stays_on_the_front(wired, tmp_path, identity):
     assert _check(report, "disk_free")["secondary"] is False
 
 
-def test_the_badge_counts_only_what_is_shown(wired, tmp_path, identity):
-    """A badge that includes hidden rows sends you looking for a number the
-    panel does not display."""
+def test_the_badge_counts_only_what_can_be_acted_on(wired, tmp_path, identity):
+    """Every row is shown, but the status rows are not problems. A badge
+    counting those sends you looking for something that is not wrong."""
     add_track(wired, "bare", tags=None)
     diskaudit._cache[str(tmp_path / "music")] = diskaudit.Audit(
         files=1, stamped=0, missing_track_uuid=["bare.mp3"],
@@ -282,7 +282,7 @@ def test_the_badge_counts_only_what_is_shown(wired, tmp_path, identity):
     shown = [c for s in report["sections"] for c in s["checks"]
              if not c["secondary"] and c["status"] in (health.WARN, health.FAIL)]
     assert report["problems"] == len(shown)
-    assert report["hidden"] > 0
+    assert "hidden" not in report, "the toggle it counted for is gone"
 
 
 def test_the_panel_is_about_a_dozen_rows_not_twenty(wired, tmp_path, identity):
