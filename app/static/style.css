@@ -434,29 +434,6 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   font-size: 14px;
 }
 
-/* --- text that says something rather than doing something ------------------
-   Left at the browser default, prose presents a text I-beam and takes a
-   caret. Under a search box, faint centred text doing that reads as "type
-   here": "Search for an artist, album, or track." was clicked on exactly
-   that assumption and did nothing, because it is a paragraph.
-
-   `cursor: default` on all of it, so none of it claims to be a field.
-   `user-select: none` only on the fixed prose - .empty also carries error
-   messages ("Could not read staging: ..."), and text you might want to
-   paste into a bug report must stay selectable.
-
-   Deliberately not extended to every caption on the page. `.check-label`
-   already carries `cursor: help` and `.pill` sits inside the quarantine
-   summary, which is clickable - a blanket rule would have quietly argued
-   with both. */
-.empty, .panel-note p, .panel-sub, .signin-note, .staging-kind {
-  cursor: default;
-}
-.panel-note p, .panel-sub, .signin-note {
-  -webkit-user-select: none;  /* WebKit still wants the prefix */
-  user-select: none;
-}
-
 /* The line of explanation a panel opens with, and the one action belonging
    to the panel as a whole. The button used to sit inside the paragraph, so
    it landed wherever the text happened to end. */

@@ -184,12 +184,3 @@ def test_the_stylesheet_comments_are_closed():
 
 def test_the_stylesheet_braces_balance():
     assert CSS.count("{") == CSS.count("}")
-
-
-def test_static_prose_does_not_present_itself_as_a_field():
-    """"Search for an artist, album, or track." sits under the search box in
-    faint centred text. At the browser default it takes a text I-beam, so it
-    was clicked as though it were the field, and did nothing."""
-    rule = CSS[CSS.index("text that says something rather than doing something"):]
-    rule = rule[:rule.index("\n}\n", rule.index("cursor: default"))]
-    assert ".empty" in rule and "cursor: default" in rule

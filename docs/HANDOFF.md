@@ -65,10 +65,9 @@ that.
 
 **Deployed:** commit `dc2742a`, container healthy. Verified after the pull:
 the shell is `no-store` and stamps `?v=<hash>` onto its assets, `/static`
-answers `no-cache`, the served `app.js` contains the *Import as-is* button
-and the served CSS the `cursor: default` rule. Sessions are in memory, so a
-restart signs everyone out — a websocket 403 in the log straight after a
-deploy is that, not a fault.
+answers `no-cache`, and the served `app.js` contains the *Import as-is*
+button. Sessions are in memory, so a restart signs everyone out — a
+websocket 403 in the log straight after a deploy is that, not a fault.
 
 **A deploy did not reach the browser before `21ab5b6`** (FIXES item 39).
 Static assets carried no `Cache-Control`, so a fresh shell loaded a stale
