@@ -16,7 +16,6 @@ state goes through Navidrome's HTTP API instead.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import shutil
 import sqlite3
@@ -25,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import diskaudit, navidrome, uuidtags, workspace
+from . import diskaudit, navidrome, uuidtags
 from .config import settings
 
 log = logging.getLogger("download_center.health")
@@ -57,11 +56,18 @@ class Check:
     detail: str = ""
     # Where to look when the number is not what it should be.
     hint: str = ""
+    # Hidden unless the panel is asked to show everything. For the ones that
+    # can recur but rarely do, and for facts that are status rather than
+    # health. Demoted rather than deleted: twenty-one rows was too many to
+    # read, but a row nobody reads is still better than a number nobody can
+    # get at when it finally matters.
+    secondary: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "key": self.key, "label": self.label, "value": self.value,
             "status": self.status, "detail": self.detail, "hint": self.hint,
+            "secondary": self.secondary,
         }
 
 
@@ -117,12 +123,17 @@ def _live_clause(connection: sqlite3.Connection,
 # --- the checks -----------------------------------------------------------
 
 def _identity_section(connection: sqlite3.Connection, live: str,
-                      user_id: str = "") -> Section:
+                      user_id: str = "", audit=None) -> Section:
     """Whether every track still has a stable identity.
 
     This is the load-bearing one. A track without the UUID tag falls back to
     an identity derived from album/disc/track/title, which changes the moment
     anything retags the file - taking its stars and play count with it.
+
+    The database and the disk were each asked this twice and answered in two
+    rows apiece. They are the same question, and where they disagree the
+    disk is right - Navidrome's index can be stale, the files cannot. One
+    row each now, taken from the audit when there is one.
     """
     section = Section("Identity")
 
@@ -140,11 +151,19 @@ def _identity_section(connection: sqlite3.Connection, live: str,
            and lower(mf.suffix) in ({_UNTAGGABLE_SQL})""")
 
     unstamped = total - stamped - untaggable
+    source = "in Navidrome's index"
+    if audit is not None:
+        # The disk is the authority. A file stamped but not yet re-read by
+        # Navidrome is not an unstamped file, and reporting it as one sends
+        # you looking for something that is already done.
+        unstamped = len(audit.missing_track_uuid)
+        source = "read from the files themselves"
     section.add(Check(
         "unstamped", "Tracks with no UUID", unstamped,
         OK if unstamped == 0 else FAIL,
         f"{stamped} of {total - untaggable} taggable tracks carry one"
-        + (f", {untaggable} cannot hold tags" if untaggable else ""),
+        + (f", {untaggable} cannot hold tags" if untaggable else "")
+        + f" ({source})",
         "Run the stamper, then a full scan - stamping preserves mtime, so an "
         "incremental scan will not notice the new tags.",
     ))
@@ -173,10 +192,14 @@ def _identity_section(connection: sqlite3.Connection, live: str,
               from media_file mf where {live}
                and json_extract(mf.tags, '{UUID_TAG}') is not null
              group by u having count(*) > 1)""")
+    if audit is not None:
+        collisions = len(audit.duplicate_uuids)
     section.add(Check(
         "uuid_collisions", "Duplicate UUIDs", collisions,
         OK if collisions == 0 else FAIL,
         "distinct UUIDs claimed by more than one file",
+        "A copied tag rather than a generated one. Both files collapse into "
+        "a single track in Navidrome.",
     ))
 
     return section
@@ -206,7 +229,7 @@ def _library_section(connection: sqlite3.Connection, live: str,
         section.add(Check(
             f"library_{row['id']}", row["name"], total,
             OK if percent == 100 else WARN,
-            f"{percent}% stamped",
+            f"{percent}% stamped", secondary=True,
         ))
 
     if "missing" in _columns(connection, "media_file"):
@@ -230,7 +253,9 @@ def _library_section(connection: sqlite3.Connection, live: str,
     if "last_scan_at" in columns:
         row = connection.execute(
             "select max(last_scan_at) from library").fetchone()
-        section.add(Check("last_scan", "Last scan", row[0] or "never", INFO))
+        # Status, not health. Behind the toggle.
+        section.add(Check("last_scan", "Last scan", row[0] or "never", INFO,
+                          secondary=True))
 
     return section
 
@@ -240,24 +265,11 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
     section = Section("Metadata")
     columns = _columns(connection, "media_file")
 
-    unknown_album = _scalar(connection, f"""
-        select count(*) from media_file mf
-         where {live} and (album is null or album = ''
-                           or album like '%Unknown Album%')""")
-    section.add(Check(
-        "no_album", "Tracks with no album", unknown_album,
-        OK if unknown_album == 0 else INFO,
-        hint="These land in the Unknown Album fallback folder.",
-    ))
-
-    no_track = _scalar(connection, f"""
-        select count(*) from media_file mf
-         where {live} and (track_number is null or track_number = 0)""")
-    section.add(Check(
-        "no_track_number", "Tracks numbered zero", no_track,
-        OK if no_track == 0 else INFO,
-        hint="Usually a single filed as though it were a whole album.",
-    ))
+    # "Tracks with no album" and "Tracks numbered zero" used to live here.
+    # Both were pure noise: informational, never acted on, and between them
+    # 1,127 non-zero numbers teaching you that a non-zero number here means
+    # nothing. A panel of things-that-should-be-zero cannot afford rows that
+    # never will be.
 
     if "rg_track_gain" in columns:
         total = _scalar(connection,
@@ -289,47 +301,39 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
     return section
 
 
-def _staging_section(space=None) -> Section:
-    """What is waiting for a human.
+def _duplicates_check(connection: sqlite3.Connection, identity) -> Check | None:
+    """How many groups of copies are waiting to be looked at.
 
-    The staging tree is the queue: beets moves out everything it can match, so
-    whatever is left is by definition something it refused. There is no
-    separate list of pending work to fall out of sync.
+    Measured at 0.22s against a 6,500-track library, which is cheap enough to
+    run here rather than approximating it in SQL - and an approximation would
+    disagree with the number the Duplicates tab shows, which is worse than
+    not having one.
+
+    It also earns the attention dot on the menu button: without this the dot
+    could not know about duplicates until you had opened that tab, which is
+    exactly the moment you no longer need telling.
     """
-    section = Section("Staging")
+    if identity is None:
+        return None
+    # Imported here rather than at module scope: duplicates imports ledger,
+    # and health is imported by main before the ledger is connected.
+    from . import duplicates
 
-    def survey(directory: Path) -> tuple[int, float | None]:
-        if not directory.exists():
-            return 0, None
-        entries = [p for p in directory.iterdir() if not p.name.startswith(".")]
-        oldest = min((p.stat().st_mtime for p in entries), default=None)
-        return len(entries), oldest
+    try:
+        groups = duplicates.find(connection, identity)
+    except Exception as exc:
+        log.warning("could not count duplicates for the health panel: %s", exc)
+        return None
 
-    if space is None:
-        return Section("Staging", [Check(
-            "staging_unknown", "Staging", "—", INFO,
-            "sign in to see what is waiting")])
-    albums, albums_oldest = survey(space.albums_dir)
-    singles, singles_oldest = survey(space.singles_dir)
-
-    section.add(Check(
-        "staging_albums", "Albums awaiting attention", albums,
-        OK if albums == 0 else WARN))
-    section.add(Check(
-        "staging_singles", "Singles awaiting attention", singles,
-        OK if singles == 0 else WARN))
-
-    oldest = min([t for t in (albums_oldest, singles_oldest) if t], default=None)
-    if oldest:
-        days = (time.time() - oldest) / 86400
-        section.add(Check(
-            "staging_age", "Oldest item", f"{days:.0f} days",
-            OK if days < 7 else WARN,
-            hint="Anything sitting here for a week is not going to import "
-                 "itself.",
-        ))
-
-    return section
+    confident = sum(1 for group in groups if group.confident)
+    return Check(
+        "duplicate_groups", "Duplicate recordings to review", len(groups),
+        OK if not groups else WARN,
+        f"{confident} share a MusicBrainz id and can be resolved in one go"
+        if confident else "grouped by recording id, or by title and length",
+        "The Duplicates tab. Nothing is deleted - the copy you drop moves to "
+        "duplicates-removed/ inside its own library.",
+    )
 
 
 def _merge_audits(audits: list) -> Any:
@@ -369,16 +373,14 @@ def _disk_section(audit) -> Section:
         return section
 
     age = (time.time() - audit.taken_at) / 3600
+    # A count of files is a fact, not a health check. The UUID rows that used
+    # to be here are merged into Identity, where the same question is asked
+    # once instead of twice.
     section.add(Check(
         "disk_files", "Audio files", audit.files, INFO,
         f"read {age:.0f}h ago in {audit.seconds:.0f}s"
         + (f", {audit.untaggable} untaggable" if audit.untaggable else ""),
-    ))
-    section.add(Check(
-        "disk_unstamped", "Files with no UUID", len(audit.missing_track_uuid),
-        OK if not audit.missing_track_uuid else FAIL,
-        "; ".join(audit.missing_track_uuid[:3]),
-        "Run the stamper over the library, then a full scan.",
+        secondary=True,
     ))
     section.add(Check(
         "disk_split_albums", "Directories with two album UUIDs",
@@ -387,6 +389,9 @@ def _disk_section(audit) -> Section:
         "; ".join(audit.split_albums[:3]),
         "One directory is one album. Two UUIDs means Navidrome shows it "
         "twice, however tidy the folder is.",
+        # An artefact of a migration that is finished. It can recur, but
+        # rarely, so it waits behind the toggle rather than taking a row.
+        secondary=True,
     ))
     section.add(Check(
         "disk_spanning_albums", "Album UUIDs spread across directories",
@@ -396,13 +401,7 @@ def _disk_section(audit) -> Section:
         "The reverse of a split album: unrelated tracks fused into one "
         "record. Happens when files are stamped together and filed apart "
         "afterwards. `stamp.resplit` gives each directory its own again.",
-    ))
-    section.add(Check(
-        "disk_duplicate_uuids", "UUIDs on more than one file",
-        len(audit.duplicate_uuids),
-        OK if not audit.duplicate_uuids else FAIL,
-        hint="A copied tag rather than a generated one. Both files collapse "
-             "into a single track.",
+        secondary=True,
     ))
     section.add(Check(
         "disk_unreadable", "Unreadable files", len(audit.unreadable),
@@ -438,7 +437,9 @@ def _system_section(started_at: float) -> Section:
     section = Section("System")
 
     uptime = time.time() - started_at
-    section.add(Check("uptime", "Uptime", _duration(uptime), INFO))
+    # Status, not health.
+    section.add(Check("uptime", "Uptime", _duration(uptime), INFO,
+                      secondary=True))
 
     target = settings.music_dir if settings.music_dir.exists() else Path(".")
     usage = shutil.disk_usage(target)
@@ -475,18 +476,12 @@ def report(started_at: float,
     sections: list[Section] = []
     error = None
     libraries = libraries or []
-    space = None
     user_id = getattr(identity, "user_id", "") or ""
-    if identity is not None:
-        with contextlib.suppress(ValueError):
-            # Reporting only. An unmounted library should not blank the
-            # whole panel - the disk and database sections still say
-            # something useful, and the Staging tab is where that shows up.
-            space = workspace.for_session(identity, require_library=False)
     roots = [Path(lib["path"]) for lib in libraries]
     audits = [a for a in (diskaudit.cached(r) for r in roots) if a]
     audit = _merge_audits(audits)
     indexed_stamped: int | None = None
+    duplicates_check: Check | None = None
 
     try:
         connection = _connect()
@@ -499,7 +494,7 @@ def report(started_at: float,
             # needs a SQLite built with JSON1. One section failing should
             # cost that section, not the whole panel.
             builders = (
-                lambda c, l: _identity_section(c, l, user_id),
+                lambda c, l: _identity_section(c, l, user_id, audit),
                 lambda c, l: _library_section(c, l, libraries),
                 lambda c, l: _metadata_section(c, l),
             )
@@ -526,21 +521,33 @@ def report(started_at: float,
                 log.warning("could not count stamped tracks in the index, so "
                             "the stale-index check is unavailable: %s", exc)
 
+            duplicates_check = _duplicates_check(connection, identity)
+
     sections.append(_disk_section(audit))
     stale = _stale_index_check(indexed_stamped, audit)
     if stale and sections:
         sections[0].add(stale)
 
-    sections.append(_staging_section(space))
+    # The Staging section is gone. It reported two counts and an age for
+    # something the Staging tab shows in full, with names and sizes and a
+    # button - a summary of a screen one tap away is not worth a row here.
+    if duplicates_check is not None and sections:
+        sections[1].add(duplicates_check)
+
     sections.append(_system_section(started_at))
 
+    # Counted over the primary rows only. A badge that includes things the
+    # panel does not show sends you looking for a number that is not there.
     problems = sum(
         1 for section in sections for check in section.checks
-        if check.status in (WARN, FAIL)
+        if check.status in (WARN, FAIL) and not check.secondary
     )
+    hidden = sum(1 for section in sections for check in section.checks
+                 if check.secondary)
     return {
         "sections": [section.as_dict() for section in sections],
         "problems": problems,
+        "hidden": hidden,
         "navidrome_error": error,
         "generated_at": time.time(),
     }

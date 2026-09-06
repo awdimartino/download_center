@@ -1237,3 +1237,20 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
      to give way. */
   #current-view { font-size: 14px; }
 }
+
+/* --- health: the demoted rows ---------------------------------------------
+   Shown only behind the toggle, and quieter when they are: they are the ones
+   that can recur but rarely do, plus facts that are status rather than
+   health. Dimmed so the eye still lands on the rows that need acting on. */
+
+.check.secondary .check-label,
+.check.secondary .check-value { color: var(--muted); }
+.check.secondary .check-detail { color: var(--faint); }
+
+.show-everything {
+  width: 100%;
+  margin-top: var(--s-3);
+  justify-content: center;
+  color: var(--muted);
+}
+.show-everything:hover { color: var(--text); }
