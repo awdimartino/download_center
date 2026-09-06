@@ -184,3 +184,60 @@ def test_the_stylesheet_comments_are_closed():
 
 def test_the_stylesheet_braces_balance():
     assert CSS.count("{") == CSS.count("}")
+
+
+# --- the design tokens ------------------------------------------------------
+# The panels were built over months and each one decided for itself what a
+# small font was, what a gap was, and what colour a quiet label should be.
+# Thirteen font sizes and six weights were in use, most of them half a pixel
+# from a neighbour - a difference nobody can see as a decision, and all of
+# what "the formatting is all over the place" meant. These keep it from
+# happening again the next time a panel is added in a hurry.
+
+TOKENS = CSS[:CSS.index("* { box-sizing: border-box; }")]
+RULES = CSS[CSS.index("* { box-sizing: border-box; }"):]
+# Prose mentions px and hex constantly; only declarations count.
+RULE_BODY = re.sub(r'/\*.*?\*/', '', RULES, flags=re.S)
+
+
+def test_every_font_size_comes_from_the_scale():
+    loose = re.findall(r'font-size:\s*([\d.]+px)', RULE_BODY)
+    assert loose == [], "use var(--t-*), or add a step to the scale"
+
+
+def test_every_font_weight_comes_from_the_scale():
+    loose = re.findall(r'font-weight:\s*(\d+)', RULE_BODY)
+    assert loose == [], "use var(--w-*)"
+
+
+def test_spacing_comes_from_the_scale():
+    """`env(safe-area-inset-*)` fallbacks are exempt: `0px` there is the
+    fallback value, not a measurement anyone chose."""
+    loose = []
+    for match in re.finditer(r'(?:padding|margin|gap)[a-z-]*:[^;]*;', RULE_BODY):
+        declaration = match.group(0)
+        if "env(safe-area-inset" in declaration:
+            continue
+        if re.search(r'(?<![-\w])\d+px', declaration.split(":", 1)[1]):
+            loose.append(declaration.strip())
+    assert loose == [], "use var(--s-*)"
+
+
+def test_colours_are_named_in_one_place():
+    """A hex outside :root is a colour nothing else can reuse and nothing
+    names. #fff and #000 are allowed: they are mixing endpoints in
+    color-mix(), not colours in their own right."""
+    # Not followed by a hyphen or another word character, or `#add-form`
+    # reads as a colour - "add" is three hex digits.
+    loose = [h for h in re.findall(r'#[0-9a-fA-F]{3,8}(?![-\w])', RULE_BODY)
+             if h.lower() not in ("#fff", "#000")]
+    assert loose == [], "add it to :root and use var(--name)"
+
+
+def test_fields_are_large_enough_not_to_zoom_ios():
+    """Below 16px, iOS Safari zooms the page when a field takes focus and
+    does not zoom back. The user reads this on a phone."""
+    assert "--t-field: 16px" in TOKENS
+    field_rule = RULE_BODY[RULE_BODY.index("input:not([type=\"radio\"])"):]
+    field_rule = field_rule[:field_rule.index("}")]
+    assert "var(--t-field)" in field_rule
