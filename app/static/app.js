@@ -319,9 +319,12 @@ document.getElementById("settings-toggle").addEventListener("click", async () =>
   settingsNote.textContent = "";
   const values = await fetch("/api/settings").then((r) => r.json());
   const secrets = ["spotify_client_secret", "navidrome_password"];
+  // A non-admin is sent nothing but `editable: false` - these settings hold
+  // the service credentials and decide where every library lives, so there
+  // is nothing here for them to see and something to leak.
   Object.entries(values).forEach(([key, value]) => {
     const field = settingsForm.elements[key];
-    if (field && !secrets.includes(key)) field.value = value;
+    if (field && !secrets.includes(key)) field.value = value ?? "";
   });
   // Secrets are never sent back, only whether one is set.
   secrets.forEach((key) => {

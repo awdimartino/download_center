@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 from . import workspace
-from .config import settings
 
 # Characters Windows forbids in a filename, plus control characters.
 # The backslash is escaped: inside a character class `\|` escapes the pipe

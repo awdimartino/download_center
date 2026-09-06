@@ -159,6 +159,27 @@ def library_root(space: workspace.Workspace) -> Path:
     return space.library_path
 
 
+def _library_size(space: workspace.Workspace) -> int:
+    """How many items beets has indexed for this person.
+
+    The authority on whether an import actually filed anything. Returns -1
+    when the database cannot be read, which never compares greater than a
+    previous count, so an unreadable database reads as "nothing imported"
+    rather than as a spurious success.
+    """
+    library_db = space.beets_library
+    if not library_db.exists():
+        return 0
+    try:
+        connection = sqlite3.connect(f"file:{library_db}?mode=ro", uri=True,
+                                     timeout=10)
+        with connection:
+            return connection.execute("select count(*) from items").fetchone()[0]
+    except sqlite3.Error as exc:
+        log.warning("could not count the beets library: %s", exc)
+        return -1
+
+
 def filed_since(space: workspace.Workspace, moment: float) -> list[Path]:
     """Paths beets added to the library after `moment`.
 
@@ -236,16 +257,24 @@ def _import_paths(space: workspace.Workspace,
             continue
         # Singles are files; album imports are whole directories.
         singleton = path.is_file()
+        before = _library_size(space)
         ok, output = _run(space, path, singleton)
         if not ok:
             failed.append(f"{path.name}: {output.splitlines()[-1] if output else 'failed'}")
             log.warning("beets import failed for %s: %s", path.name, output)
-        elif "Skipping" in output:
-            skipped += 1
-            log.info("beets skipped %s (no confident match)", path.name)
-        else:
+            continue
+        # Asked of beets' own database rather than of its console output.
+        # This used to test `"Skipping" in output`, which is a human-readable
+        # message that changes between versions and matches any path with the
+        # word in it. Stamping and the Navidrome scan are both gated on the
+        # answer, so getting it wrong silently switched off identity tagging
+        # for the import.
+        if _library_size(space) > before:
             imported += 1
             log.info("beets imported %s", path.name)
+        else:
+            skipped += 1
+            log.info("beets skipped %s (no confident match)", path.name)
 
     _prune_empty(space)
 

@@ -83,10 +83,37 @@ def sign_out(session_id: str) -> None:
         _sessions.pop(session_id, None)
 
 
+# When expired sessions were last swept out, so it happens on a timer rather
+# than on every request.
+_last_sweep = 0.0
+SWEEP_SECONDS = 300
+
+
+def _sweep_locked() -> None:
+    """Drop expired sessions. Caller holds the lock.
+
+    A session was only ever removed when somebody presented that exact
+    cookie, so one that simply stopped being used stayed in the dict for the
+    life of the process - holding a live Navidrome bearer token for a
+    fortnight past its usefulness.
+    """
+    global _last_sweep
+    now = time.time()
+    if now - _last_sweep < SWEEP_SECONDS:
+        return
+    _last_sweep = now
+    stale = [sid for sid, s in _sessions.items() if s.expired]
+    for sid in stale:
+        del _sessions[sid]
+    if stale:
+        log.info("dropped %d expired session(s)", len(stale))
+
+
 def get(session_id: str | None) -> Session | None:
     if not session_id:
         return None
     with _lock:
+        _sweep_locked()
         session = _sessions.get(session_id)
         if session is None:
             return None

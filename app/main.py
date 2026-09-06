@@ -7,7 +7,7 @@ import contextlib
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +76,7 @@ def _evict_old_jobs(owner: str) -> None:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def new_job(url: str, space: workspace.Workspace) -> dict[str, Any]:
@@ -366,7 +366,8 @@ async def require_session(request: Request, call_next):
 
 
 @app.post("/api/auth/login")
-async def sign_in(body: LoginRequest, response: Response) -> dict[str, Any]:
+async def sign_in(request: Request, body: LoginRequest,
+                  response: Response) -> dict[str, Any]:
     try:
         session = await asyncio.to_thread(
             auth.sign_in, body.username, body.password)
@@ -381,8 +382,12 @@ async def sign_in(body: LoginRequest, response: Response) -> dict[str, Any]:
             status_code=502,
             detail=f"Could not reach Navidrome: {exc}"[:200]) from exc
 
+    # Secure only when the request actually arrived over TLS. Setting it
+    # unconditionally would stop the cookie being stored at all on the plain
+    # HTTP this is normally served over on a LAN.
     response.set_cookie(
         auth.COOKIE, session.id, httponly=True, samesite="lax",
+        secure=request.url.scheme == "https",
         max_age=auth.LIFETIME_SECONDS,
     )
     return session.as_dict()
@@ -440,6 +445,14 @@ async def _resolve_job(job: dict[str, Any], url: str,
     """Resolve a link off the event loop, then announce the result."""
     try:
         kind, title, tracks = await asyncio.to_thread(_resolve, url)
+    except asyncio.CancelledError:
+        # Cancelled while resolving. Without this the job sat at "resolving"
+        # for the life of the process, with no task behind it and no way to
+        # tell it apart from one still working.
+        job.update(status="cancelled", error=None)
+        RUNNING.pop(job["id"], None)
+        await push_job(job)
+        raise
     except (spotify.ResolveError, generic.ResolveError) as exc:
         job.update(status="failed", error=str(exc))
         log.warning("resolve failed for %s: %s", url, exc)
@@ -467,6 +480,9 @@ async def _resolve_job(job: dict[str, Any], url: str,
         await push_job(job)
         await _run(job, space)
         return
+    # Only reached when resolving failed: _run owns the entry from here on,
+    # and clears it in its own finally.
+    RUNNING.pop(job["id"], None)
     await push_job(job)
 
 
@@ -533,7 +549,11 @@ async def create_job(
 
     job = new_job(url, space)
     await push_job(job)
-    asyncio.create_task(_resolve_job(job, url, space))
+    # Tracked from the moment it exists, not from when downloading starts.
+    # Resolving a large playlist takes a while, and cancelling during it used
+    # to report 409 "that job is not running" because RUNNING was only
+    # populated once _run was reached.
+    RUNNING[job["id"]] = asyncio.create_task(_resolve_job(job, url, space))
     return {"id": job["id"]}
 
 
@@ -621,10 +641,14 @@ async def retry_job(
     for item in retryable:
         item.update(status="pending", error=None, progress=0, attempts=0)
 
+    try:
+        space = workspace.for_session(session.identity, job.get("library_id"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     job.update(status="queued", error=None)
     await push_job(job)
-    asyncio.create_task(_run(
-        job, workspace.for_session(session.identity, job.get("library_id"))))
+    asyncio.create_task(_run(job, space))
     return {"retrying": len(retryable)}
 
 
@@ -639,6 +663,9 @@ class SettingsUpdate(BaseModel):
     navidrome_user: str | None = None
     navidrome_password: str | None = None
     staging_sweep_minutes: int | None = None
+    # Listed in config.EDITABLE and returned by GET, so it has to be settable
+    # or the two disagree about what "editable" means.
+    beets_enabled: bool | None = None
 
 
 # Values the browser must never be sent back. Reported as a boolean instead,
@@ -650,8 +677,18 @@ SECRETS = ("spotify_client_secret", "navidrome_password")
 async def get_settings(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
+    """These settings belong to the installation, so only an admin sees them.
+
+    Secrets were already masked, but the rest was not: any signed-in account
+    got the Navidrome service URL and username and the Spotify client id.
+    The form is disabled for them anyway, so there was nothing to show and
+    something to leak.
+    """
+    if not session.identity.is_admin:
+        return {"editable": False}
+
     values = {key: getattr(settings, key) for key in config.EDITABLE}
-    values["editable"] = session.identity.is_admin
+    values["editable"] = True
     for key in SECRETS:
         values[key] = ""
         values[f"{key}_set"] = bool(getattr(settings, key))

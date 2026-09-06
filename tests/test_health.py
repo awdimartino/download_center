@@ -13,7 +13,6 @@ mocked the connection would have passed against the broken query.
 
 from __future__ import annotations
 
-import sqlite3
 
 import pytest
 
@@ -158,3 +157,27 @@ def test_a_report_still_renders_when_navidrome_is_unreachable(tmp_path,
 
     assert report["navidrome_error"]
     assert report["sections"], "the disk and system sections do not need it"
+
+
+# --- scoping and counting details -----------------------------------------
+
+def test_orphan_annotations_are_this_persons_only(wired, tmp_path, identity):
+    """It used to count every user's, so a non-admin saw a number they could
+    neither explain nor act on."""
+    annotate(wired, "u-alex", "vanished-1", starred=1)
+    annotate(wired, "u-kelly", "vanished-2", starred=1)
+    annotate(wired, "u-kelly", "vanished-3", starred=1)
+
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    assert _find(report, "orphan_annotations")["value"] == 1
+
+
+def test_a_zero_db_replaygain_counts_as_measured(wired, tmp_path, identity):
+    """0 dB is exactly what an already-normalised track measures at. Testing
+    `!= 0` reported it as never measured."""
+    add_track(wired, "normalised", rg_track_gain=0.0, tags=UUID_JSON)
+    add_track(wired, "quiet", rg_track_gain=-6.2, tags=UUID_JSON)
+    add_track(wired, "unmeasured", rg_track_gain=None, tags=UUID_JSON)
+
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    assert _find(report, "no_replaygain")["value"] == 1

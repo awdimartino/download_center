@@ -33,11 +33,14 @@ from pathlib import Path
 
 try:
     from mutagen import File as MutagenFile
-    from mutagen.flac import FLAC
+    # Imported to fail fast with a sentence a person can act on, rather than
+    # with a traceback from the middle of a run. Not all are referenced below;
+    # that is the point of importing them here.
+    from mutagen.flac import FLAC  # noqa: F401
     from mutagen.id3 import ID3, TXXX
-    from mutagen.mp3 import MP3
+    from mutagen.mp3 import MP3  # noqa: F401
     from mutagen.mp4 import MP4
-    from mutagen.oggvorbis import OggVorbis
+    from mutagen.oggvorbis import OggVorbis  # noqa: F401
 except ImportError:
     sys.exit("mutagen is required:  pip3 install --user mutagen")
 

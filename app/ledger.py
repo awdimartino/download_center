@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -176,7 +176,7 @@ def already_downloaded(source_id: str, isrc: str | None,
 def record(item: dict[str, Any], file_path: str | None,
            library_id: int) -> None:
     assert _conn is not None, "ledger not connected"
-    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    stamp = datetime.now(UTC).isoformat(timespec="seconds")
     with _lock:
         _conn.execute(
             "INSERT OR REPLACE INTO ledger"
@@ -222,7 +222,7 @@ def count(library_id: int | None = None) -> int:
 def dismiss_duplicate(group_key: str, note: str = "") -> None:
     """Remember that a duplicate group was looked at and left alone."""
     assert _conn is not None, "ledger not connected"
-    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    stamp = datetime.now(UTC).isoformat(timespec="seconds")
     with _lock:
         _conn.execute(
             "INSERT OR REPLACE INTO duplicate_dismissed"
@@ -258,7 +258,7 @@ def record_quarantine(group_key: str, copy: Any, keeper: Any,
     is really at `target`.
     """
     assert _conn is not None, "ledger not connected"
-    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    stamp = datetime.now(UTC).isoformat(timespec="seconds")
     with _lock:
         _conn.execute(
             "INSERT INTO duplicate_quarantined"
@@ -287,12 +287,14 @@ def quarantined(limit: int = 200,
     keys = ("id", "group_key", "track_id", "library_id", "title", "artist",
             "album", "source_path", "target_path", "keeper_id", "keeper_path",
             "decided_by", "moved_at", "restored_at")
-    return [dict(zip(keys, row)) for row in rows]
+    # strict: the column list and the SELECT above have to stay in step, and
+    # a silent truncation here would shift every field one to the left.
+    return [dict(zip(keys, row, strict=True)) for row in rows]
 
 
 def mark_restored(entry_id: int) -> None:
     assert _conn is not None, "ledger not connected"
-    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    stamp = datetime.now(UTC).isoformat(timespec="seconds")
     with _lock:
         _conn.execute(
             "UPDATE duplicate_quarantined SET restored_at = ? WHERE id = ?",

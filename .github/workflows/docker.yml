@@ -34,6 +34,13 @@ jobs:
         # otherwise only surfaces as a container that will not start.
         run: python -m compileall -q app tools
 
+      - name: Lint
+        # Narrow on purpose - undefined names, unused imports, bugbear. Its
+        # first run found `Any` used in three annotations in config.py that
+        # was never imported, which only survived because
+        # `from __future__ import annotations` defers evaluation.
+        run: python -m ruff check .
+
       - run: python -m pytest
 
   publish:

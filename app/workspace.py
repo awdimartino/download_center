@@ -21,7 +21,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import CONFIG_DIR, settings
@@ -49,25 +49,27 @@ class Workspace:
     library_name: str
     library_path: Path
 
-    @property
-    def key(self) -> str:
-        """The directory name for this workspace.
+    # Resolved once, when the workspace is built, and never again.
+    #
+    # This was a property that read the `.owner` marker off disk on every
+    # access - and `staging`, `beets_dir`, `albums_dir` and the rest all go
+    # through it, so a single request stat'ed the same file a dozen times.
+    # Worse, the answer could change underneath a live object: if the marker
+    # on the legacy directory were edited or removed mid-flight, the same
+    # Workspace would start reporting a different directory and silently
+    # abandon its staging area and beets index. That is precisely the failure
+    # the pre-library-id fallback exists to prevent.
+    key: str = field(init=False, default="")
 
-        A workspace is a person *and* a library, because the beets config it
-        owns hard-codes one destination - so the name carries the library id.
-        The id and not the name: a library can be renamed, and a workspace
-        that renames itself abandons its index and everything staged in it.
-
-        A directory already claiming this exact pair keeps its name, which is
-        what stops an installation from before libraries were part of the key
-        being orphaned the moment a second library appears.
-        """
+    def __post_init__(self) -> None:
         canonical = f"{slug(self.username)}-{self.library_id}"
         plain = slug(self.username)
+        resolved = canonical
         if plain != canonical and _claimed_by(
                 settings.output_dir / plain, self.username, self.library_path):
-            return plain
-        return canonical
+            resolved = plain
+        # frozen=True, so this is how a computed field gets set.
+        object.__setattr__(self, "key", resolved)
 
     @property
     def staging(self) -> Path:

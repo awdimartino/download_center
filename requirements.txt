@@ -7,3 +7,9 @@ mutagen==1.47.0
 rapidfuzz==3.14.6
 beets==2.13.1
 requests==2.34.2
+
+# Imported directly by app/workspace.py to read a beets config back. It also
+# arrives transitively via beets, which is why this was missing and still
+# worked - but the import is guarded by except Exception, so losing it would
+# have degraded silently into filing music at the wrong root.
+PyYAML==6.0.3

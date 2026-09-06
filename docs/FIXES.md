@@ -97,10 +97,10 @@ decision from the user before it can be done.
       `downloader.download`'s `glob(stem + ".*")` diagnostic fallback.
 - [x] **10. `_move_into_place` silently overwrites after 98 collisions**,
       despite its docstring saying it never does. `staging.py`.
-- [ ] **11. `Workspace.key` does filesystem I/O in a property** and changes
+- [x] **11. `Workspace.key` does filesystem I/O in a property** and changes
       its answer if the `.owner` marker changes — silently abandoning a
       staging area and beets index, the exact failure it exists to prevent.
-- [ ] **12. beets success is detected by string-matching `"Skipping"`** in
+- [x] **12. beets success is detected by string-matching `"Skipping"`** in
       human-readable output. Stamping and `navidrome.notify()` are both gated
       on the result.
 - [x] **13. `to_form` accepts operators `to_rules` will reject**, so a
@@ -109,34 +109,34 @@ decision from the user before it can be done.
 
 ## Tier 4 — smaller
 
-- [ ] **14. `GET /api/settings` is not admin-gated** and returns
+- [x] **14. `GET /api/settings` is not admin-gated** and returns
       `navidrome_url`, `navidrome_user` and `spotify_client_id` to any signed-in
       account.
-- [ ] **15. Sessions are never pruned.** `auth._sessions` evicts only on
+- [x] **15. Sessions are never pruned.** `auth._sessions` evicts only on
       presentation of that exact cookie; expired identities hold live
       Navidrome bearer tokens for a fortnight.
-- [ ] **16. `EDITABLE` includes `beets_enabled`; `SettingsUpdate` does not.**
+- [x] **16. `EDITABLE` includes `beets_enabled`; `SettingsUpdate` does not.**
       Returned by GET, unsettable by PUT. Currently inert — no form control.
-- [ ] **17. `config.save()` rewrites `config.toml` with only `EDITABLE`
+- [x] **17. `config.save()` rewrites `config.toml` with only `EDITABLE`
       keys**, dropping any hand-set `staging_quiet_seconds` (which has no env
       override either).
-- [ ] **18. `pyyaml` is imported but not in `requirements.txt`.** Arrives
+- [x] **18. `pyyaml` is imported but not in `requirements.txt`.** Arrives
       transitively via beets; the `except Exception` around it degrades an
       ImportError into filing music at the wrong root.
-- [ ] **19. `tagger._fetch_cover` uses `urllib.request.urlopen`** on an
+- [x] **19. `tagger._fetch_cover` uses `urllib.request.urlopen`** on an
       untrusted URL, which honours `file://` and `ftp://`.
-- [ ] **20. Cancelling during the resolve phase returns 409.**
+- [x] **20. Cancelling during the resolve phase returns 409.**
       `RUNNING[job_id]` is not set until `_run`, but the job spends its whole
       resolve phase in `_resolve_job`.
-- [ ] **20b. `retry_job` lets `workspace.for_session`'s `ValueError` escape
+- [x] **20b. `retry_job` lets `workspace.for_session`'s `ValueError` escape
       as a 500** where `delete_job` maps it to 400.
-- [ ] **21. `orphan_annotations` is scoped to neither user nor library.**
+- [x] **21. `orphan_annotations` is scoped to neither user nor library.**
       Documented in ARCHITECTURE.md as of 2026-09-06 rather than fixed.
-- [ ] **22. `rg_track_gain != 0` counts a legitimate 0 dB gain as
+- [x] **22. `rg_track_gain != 0` counts a legitimate 0 dB gain as
       unmeasured.** `health.py`.
 - [x] **23. `/api/search?limit=` is unbounded** and passed straight to
       Spotify; over 50 returns a 400 surfaced as a 502.
-- [ ] **24. No `secure` flag on the session cookie**, and sign-in posts a
+- [x] **24. No `secure` flag on the session cookie**, and sign-in posts a
       Navidrome password over plain HTTP. Defensible on a LAN; documented in
       the README as of 2026-09-06. Revisit if this is ever exposed.
 
@@ -146,7 +146,7 @@ decision from the user before it can be done.
       is in PLAN.md under *Tests — the real gap*.
 - [x] **26. CI runs no tests, lint or type check.** A test job must run
       before the four-minute QEMU build.
-- [ ] **27. No linter or formatter config exists.**
+- [x] **27. No linter or formatter config exists.**
 - [ ] **28. `app/main.py` is 939 lines**; split into routers.
 - [ ] **29. `app/static/app.js` is 1,215 lines in one global scope.** The
       burger rewrite is the natural moment to split it per panel.

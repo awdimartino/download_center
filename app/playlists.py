@@ -35,7 +35,7 @@ saved by somebody else would match a different set of songs.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
 from typing import Any
 
 from . import navidrome

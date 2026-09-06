@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from . import uuidtags
-from .config import settings
 
 log = logging.getLogger(__name__)
 

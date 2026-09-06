@@ -90,7 +90,7 @@ def reindex(space: workspace.Workspace, root: Path, apply: bool) -> int:
         return result.returncode
 
     print("\nIndexed. Check the count matches what is on disk:")
-    print(f"  python -m beets stats")
+    print("  python -m beets stats")
     return 0
 
 
