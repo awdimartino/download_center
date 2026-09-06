@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
+import hashlib
 import logging
 import time
 import uuid
@@ -13,7 +15,7 @@ from typing import Any
 
 from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
                      WebSocket, WebSocketDisconnect)
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1325,16 +1327,69 @@ async def websocket(ws: WebSocket) -> None:
         await broker.unregister(ws)
 
 
+ASSETS = ("app.js", "style.css")
+
+
+@functools.lru_cache(maxsize=1)
+def asset_version() -> str:
+    """A token that changes when the assets do.
+
+    Appended to their URLs, so a new deploy asks for a URL the browser has
+    never seen and cannot have a stale copy of. The headers below say to
+    revalidate, but a browser already holding a heuristically-fresh copy does
+    not ask - it has no reason to - so headers alone cannot rescue a browser
+    that is already wrong. A new URL can.
+
+    Computed once: the files cannot change inside a running container.
+    """
+    digest = hashlib.sha256()
+    for name in ASSETS:
+        digest.update((STATIC_DIR / name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
 @app.get("/")
-async def index() -> FileResponse:
+async def index() -> HTMLResponse:
     # Never cached. The shell decides whether to show the sign-in form, so a
     # browser holding yesterday's copy carries on as though the application
     # still had no accounts - and never asks for the new one, because it has
-    # no reason to. The assets it references are revalidated normally.
-    return FileResponse(
-        STATIC_DIR / "index.html",
+    # no reason to. It is also what carries the asset version, so it has to
+    # be the one document that is always fetched fresh.
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    for name in ASSETS:
+        html = html.replace(f"/static/{name}", f"/static/{name}?v={asset_version()}")
+    return HTMLResponse(
+        html,
         headers={"Cache-Control": "no-store, must-revalidate"},
     )
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class RevalidatedStatic(StaticFiles):
+    """Assets a browser must check with us before reusing.
+
+    Starlette sends an ETag and a Last-Modified but no Cache-Control, and a
+    response carrying no Cache-Control is *heuristically* cacheable: the
+    browser invents a freshness lifetime of its own, conventionally a
+    fraction of the file's age, and does not ask again until it expires.
+    Safari's is long enough to matter.
+
+    So a deploy served a fresh index.html - which is `no-store` - beside an
+    app.js the browser saw no reason to re-fetch. The shell said one thing
+    and the code behind it did another: the *Import as-is* button was in the
+    file the container served and absent from the page in front of the user.
+    This is why "hard-refresh and try again" kept appearing in the notes.
+
+    `no-cache` does not mean "do not store" - it means "ask first". An
+    unchanged file still answers 304 against the ETag and costs a round trip
+    on a LAN, which is the right price for never shipping half a deploy.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        response = super().file_response(*args, **kwargs)
+        # Set on whatever comes back, because a 304 is built inside the call
+        # above and carries its own copy of these headers.
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", RevalidatedStatic(directory=STATIC_DIR), name="static")
