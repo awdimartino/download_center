@@ -51,6 +51,9 @@ sofa.
 
 Nothing. The playlist editor shipped and is deployed.
 
+See also [ARCHITECTURE.md](ARCHITECTURE.md) for how the code works and
+[HANDOFF.md](HANDOFF.md) for picking this up in a new conversation.
+
 ---
 
 ## Next
@@ -84,7 +87,38 @@ one account. Kelly has 3,089 plays. Snapshots cover both users uniformly and
 depend on nothing external. Use Last.fm to backfill, snapshots as the
 ongoing truth.
 
-### 2. Health tab — cut it down
+### 2. Last.fm backfill — one time only
+
+Snapshots start history from tonight. Last.fm already holds the part that
+came before, with genuine per-scrobble timestamps, and importing it once
+gives the stats something to say on day one instead of in a month.
+
+**Why the matching should work.** Last.fm stores the artist and track name
+the scrobbler sent — it does not resolve them to a MusicBrainz entity. Those
+strings came from the tags on these files. So both sides of the match are
+our own metadata, which is a far easier problem than matching against a
+third party's catalogue.
+
+**Design**
+
+- Run once, by hand, per user. Not a background job.
+- Fetch the full scrobble history from Last.fm's API, then match each
+  scrobble to a track UUID by normalised artist and title, with duration as
+  a tie-breaker where several tracks match.
+- **Report before writing.** Matched, ambiguous and unmatched counts, with
+  a sample of each. A backfill that quietly matched 60% would poison every
+  statistic built on it afterwards.
+- Store scrobbles with their real timestamps, in the same table shape as
+  snapshot-derived plays but flagged as imported — so a later question can
+  ask about either source, and the join between them is visible rather than
+  assumed.
+- Idempotent: running it twice must not double anyone's history.
+
+Only alex's account is connected to Last.fm. Kelly's 3,089 plays have no
+history to import, which is the argument for snapshots carrying the ongoing
+record for both.
+
+### 3. Health tab — cut it down
 
 Decided: **keep only what can be acted on.** There are 21 checks in six
 sections today, several asking the same question twice — once of Navidrome's
@@ -120,7 +154,7 @@ Roughly seven rows instead of twenty-one. "Demote" means behind a
 Explicitly **not** cut: the Browse and Staging tabs. The problem with health
 was too many checks, not the wrong idea.
 
-### 3. Navigation — burger, both sizes
+### 4. Navigation — burger, both sizes
 
 Decided: **one pattern everywhere.** A menu button opening a full overlay,
 identical on phone and desktop. Costs two taps per navigation; buys room to
@@ -234,6 +268,9 @@ Not code — things waiting in the library itself.
 
 Why things are the way they are, so they do not get re-litigated.
 
+- **2026-09-06 — Last.fm backfill is a one-time manual import.** It has the
+  history snapshots cannot reconstruct; snapshots have the accuracy and the
+  coverage of both users. Neither replaces the other.
 - **2026-09-06 — Burger navigation, both sizes.** One layout beats two, and
   six tabs is already the ceiling on a phone.
 - **2026-09-06 — Health shows only what can be acted on.** Too many checks
