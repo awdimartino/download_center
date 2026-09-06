@@ -59,7 +59,7 @@ Local Python is `.venv/Scripts/python.exe` — `python` is not on PATH.
 
 ## Where things stand
 
-**Deployed:** commit `f4a0346`, container healthy, deployed 2026-09-06.
+**Deployed:** commit `a4154c1`, container healthy, deployed 2026-09-06.
 `state.db` is backed up beside itself before every migration
 (`state.db.bak-2026-09-06`, `state.db.bak-pre-tier2`). The ledger migration
 was dry-run against a copy of the real database and preserved all 825 rows.
@@ -85,6 +85,12 @@ boundaries".
 split or spanning albums. 6,623 plays recorded since 2025-11-27 across 2,477
 tracks (alex 3,534; kelly 3,089).
 
+**Do this soon:** run a **full** Navidrome scan. 49 mp3s are stamped on
+disk but their UUID is not in Navidrome's index, so their plays are filed
+against nothing and will be missing from every later statistic. Stamping
+preserves mtime, so only a full scan re-reads them. (One `.wav` with 6 plays
+can never be tracked - the format cannot hold the tag.)
+
 **Waiting:** 199 duplicate groups, 15 staging items, ReplayGain at 56%,
 ~62 GB reclaimable from `music_old` / `tagged_old` /
 `music_backup_2026-09-04`, 30 broken `.m4a`, and Kelly has never signed in.
@@ -95,8 +101,10 @@ tracks (alex 3,534; kelly 3,089).
 
 The agreed order is in PLAN.md. In short:
 
-1. **Play-count snapshots.** The only time-sensitive item — Navidrome keeps
-   a cumulative count and one date, so history not captured is lost.
+1. ~~**Play-count snapshots.**~~ Shipped 2026-09-06. Baseline taken that
+   evening: 2,429 track/user rows, alex 3,479 plays and kelly 3,089. Real
+   deltas start the following day. `GET /api/playcounts` says whether it is
+   still running.
 2. **Last.fm backfill.** One-time, fuzzy-matched. See below.
 3. **Health tab cut down** to roughly seven actionable rows.
 4. ~~**Burger navigation**, replacing tabs on both phone and desktop.~~
