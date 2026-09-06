@@ -59,7 +59,7 @@ Local Python is `.venv/Scripts/python.exe` — `python` is not on PATH.
 
 ## Where things stand
 
-**Deployed:** commit `fabfdd9`, container healthy, deployed 2026-09-06.
+**Deployed:** commit `020a253`, container healthy, deployed 2026-09-06.
 `state.db` is backed up beside itself before every migration
 (`state.db.bak-2026-09-06`, `state.db.bak-pre-tier2`). The ledger migration
 was dry-run against a copy of the real database and preserved all 825 rows.
@@ -68,9 +68,18 @@ was dry-run against a copy of the real database and preserved all 825 rows.
 compile, ruff and pytest before it builds. See [FIXES.md](FIXES.md) - the
 only items left open are the two refactors, which are not bugs.
 
-**Navidrome 0.58.5.** Two libraries: `Music Library` (id 1, `/music`) and
-`Kelly` (id 2, `/kelly`). Users: `alex` → library 1, `kelly` → library 2,
-`admin` → both. Note `alex` is *not* an admin account.
+**Navidrome 0.58.5.** Three libraries: `Music Library` (id 1, `/music`),
+`Kelly` (id 2, `/kelly`) and `Test` (id 5, `/test`, added 2026-09-06 for
+trying the per-user flow without touching real music). Users: `alex` →
+library 1, `kelly` → library 2, `test` → library 5, `admin` → all three.
+Note `alex` is *not* an admin account.
+
+**Adding a library means two mounts, not one.** Navidrome and
+download-center each need a bind mount at the same path — Navidrome reads
+it, this writes to it. Miss the second and the app now refuses with a
+message naming the path; before 2026-09-06 it filed the music inside the
+container and lost it on the next pull. See ARCHITECTURE.md, "Container
+boundaries".
 
 **Library:** ~6,266 live tracks, 100% UUID-stamped, 0 duplicate UUIDs, 0
 split or spanning albums. 6,623 plays recorded since 2025-11-27 across 2,477
