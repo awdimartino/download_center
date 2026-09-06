@@ -267,7 +267,44 @@ def plan(username: str, user_id: str, played: list[tuple[str, str, int]],
                  for (day, track_uuid), plays in sorted(per_day.items())],
         "ambiguous_examples": ambiguous_examples,
         "unmatched_examples": unmatched_examples.most_common(10),
+        # The whole set, for auditing. "Not in the library" is a claim worth
+        # being able to check by hand, and a bare list of names does not
+        # support that - what tells you whether a miss is real is whether
+        # something close to it is sitting there unmatched.
+        "unmatched_all": unmatched_examples,
     }
+
+
+def audit_unmatched(planned: dict[str, Any],
+                    index: dict[tuple[str, str], list[str]],
+                    limit: int = 4000) -> list[dict[str, Any]]:
+    """For every scrobble that matched nothing, the closest thing in the
+    library and how close it is.
+
+    This is what makes "not in the library" checkable. A name on its own
+    cannot be judged; a name beside the nearest thing here can. A high score
+    means the matcher missed something it should have caught - a different
+    apostrophe, a remaster suffix, a translated title - and a low one means
+    the track really is absent.
+    """
+    from rapidfuzz import fuzz, process
+
+    keys = list(index)
+    haystack = [f"{artist} {title}" for artist, title in keys]
+
+    out = []
+    for label, count in planned["unmatched_all"].most_common(limit):
+        artist, _, title = label.partition(" - ")
+        needle = f"{normalise(artist)} {normalise(title)}"
+        best = process.extractOne(needle, haystack, scorer=fuzz.token_set_ratio)
+        nearest, score = (keys[best[2]], best[1]) if best else (("", ""), 0)
+        out.append({
+            "scrobbles": count,
+            "scrobbled": label,
+            "nearest": f"{nearest[0]} - {nearest[1]}" if nearest[0] else "",
+            "score": round(score),
+        })
+    return out
 
 
 def write(planned: dict[str, Any]) -> int:
@@ -323,6 +360,10 @@ def main() -> int:
                         help="write the matched rows; otherwise report only")
     parser.add_argument("--lastfm-user", default=None,
                         help="override the Last.fm name (normally derived)")
+    parser.add_argument("--audit", metavar="FILE", default=None,
+                        help="write every unmatched scrobble beside the "
+                             "closest thing in the library, for checking by "
+                             "hand whether a miss is real")
     args = parser.parse_args()
 
     ledger.connect(settings.ledger_path)

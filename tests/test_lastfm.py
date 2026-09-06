@@ -203,3 +203,43 @@ def test_rows_are_labelled_with_the_navidrome_name(monkeypatch):
     planned = lastfm.plan("alex", "u-alex",
                           [("Radiohead", "Let Down", 1771070400)], index, None)
     assert planned["username"] == "alex"
+
+
+# --- auditing the misses ----------------------------------------------------
+
+def test_a_near_miss_is_surfaced_with_its_score():
+    """"Not in the library" is a claim that has to be checkable. A high score
+    means the matcher missed something it should have caught; a low one means
+    the track really is absent."""
+    index = _index([("Radiohead", "Let Down", ["uuid-a"])])
+    planned = lastfm.plan("alex", "u-alex",
+                          [("Radiohead", "Let Down (Remastered)", 1771070400)],
+                          index, None)
+    assert planned["unmatched"] == 1
+
+    audit = lastfm.audit_unmatched(planned, index)
+    assert len(audit) == 1
+    assert audit[0]["scrobbled"] == "Radiohead - Let Down (Remastered)"
+    # Shown normalised: that is what the matcher actually compared, which is
+    # the useful thing to see when judging why a match was missed.
+    assert "let down" in audit[0]["nearest"]
+    assert audit[0]["score"] >= 85, "a remaster suffix should read as close"
+
+
+def test_a_genuine_absence_scores_low():
+    index = _index([("Radiohead", "Let Down", ["uuid-a"])])
+    planned = lastfm.plan("alex", "u-alex",
+                          [("Some Other Band", "Unrelated Song", 1771070400)],
+                          index, None)
+    audit = lastfm.audit_unmatched(planned, index)
+    assert audit[0]["score"] < 85
+
+
+def test_the_audit_is_ordered_by_how_often_it_was_scrobbled():
+    index = _index([("Radiohead", "Let Down", ["uuid-a"])])
+    played = ([("Band A", "Rare", 1771070400)]
+              + [("Band B", "Often", 1771070400 + n) for n in range(5)])
+    planned = lastfm.plan("alex", "u-alex", played, index, None)
+    audit = lastfm.audit_unmatched(planned, index)
+    assert audit[0]["scrobbled"] == "Band B - Often"
+    assert audit[0]["scrobbles"] == 5
