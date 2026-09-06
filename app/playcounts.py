@@ -204,6 +204,16 @@ def take(when: str | None = None) -> dict[str, Any]:
             "INSERT OR REPLACE INTO play_anomaly"
             " (noticed_on, track_uuid, user_id, was, became)"
             " VALUES (?, ?, ?, ?, ?)", anomalies)
+        # Recorded whether or not anything changed. A day when nobody
+        # listened produces no snapshot rows, and without this the day never
+        # counts as done - so the job repeats it every half hour and the
+        # status never catches up.
+        store.execute(
+            "INSERT OR REPLACE INTO play_snapshot_run"
+            " (day, taken_at, tracked, changed, anomalies)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (day, datetime.now(UTC).isoformat(timespec="seconds"),
+             len(current), len(changed), len(anomalies)))
         store.commit()
 
     result = {
@@ -226,9 +236,14 @@ def take(when: str | None = None) -> dict[str, Any]:
 
 
 def taken_on(day: str) -> bool:
-    """Whether a snapshot already exists for that day."""
+    """Whether a snapshot was *run* for that day.
+
+    Asked of the run log, not of the rows. Only changed counts are stored,
+    so a quiet day writes nothing at all - and answering this from
+    play_snapshot would call such a day incomplete for ever.
+    """
     row = ledger.connection().execute(
-        "SELECT 1 FROM play_snapshot WHERE taken_on = ? LIMIT 1",
+        "SELECT 1 FROM play_snapshot_run WHERE day = ? LIMIT 1",
         (day,)).fetchone()
     return row is not None
 
@@ -261,6 +276,10 @@ def status() -> dict[str, Any]:
             "first_day": one("SELECT MIN(taken_on) FROM play_snapshot"),
             "last_day": one("SELECT MAX(taken_on) FROM play_snapshot"),
             "anomalies": one("SELECT COUNT(*) FROM play_anomaly"),
+            # Days the job actually ran, which is not the same as days that
+            # produced rows.
+            "days_run": one("SELECT COUNT(*) FROM play_snapshot_run"),
+            "last_run": one("SELECT MAX(day) FROM play_snapshot_run"),
         },
         "imported": [
             {"source": source, "rows": rows, "plays": plays,
