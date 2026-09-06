@@ -142,6 +142,26 @@ Only alex's account is connected to Last.fm. Kelly's 3,089 plays have no
 history to import, which is the argument for snapshots carrying the ongoing
 record for both.
 
+**Run 2026-09-06.** 49,524 scrobbles fetched, back to 2022-09-18:
+
+| | | |
+|---|---|---|
+| matched to one track | 33,615 | 68% of all scrobbles |
+| ambiguous | 2,585 | the same artist+title on several files |
+| not in the library | 13,321 | music alex does not own; unmatchable by any method |
+| already covered by snapshots | 3 | correctly skipped |
+
+31,490 day/track rows written, covering 1,285 days. The number that matters
+is not 68% but **93%** - of scrobbles for music actually in the library,
+33,615 of 36,200 matched cleanly. The 27% "unmatched" are tracks that were
+never here.
+
+The 2,585 ambiguous are duplicates: resolving the 199 duplicate groups would
+convert most of them, since one artist+title would then mean one file.
+
+Undo, if it is ever wanted:
+`DELETE FROM play_imported WHERE source = 'lastfm'`.
+
 ### 3. Health tab — cut it down
 
 Decided: **keep only what can be acted on.** There are 21 checks in six

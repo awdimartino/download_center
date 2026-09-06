@@ -194,3 +194,12 @@ def test_it_gives_up_eventually(monkeypatch):
 
     with pytest.raises(lastfm.LastfmError, match="attempts"):
         lastfm._call("user.getRecentTracks", api_key="k")
+
+
+def test_rows_are_labelled_with_the_navidrome_name(monkeypatch):
+    """A snapshot row saying "alex" beside an imported row saying
+    "argyle_nz" for the same user_id reads like two different listeners."""
+    index = _index([("Radiohead", "Let Down", ["uuid-a"])])
+    planned = lastfm.plan("alex", "u-alex",
+                          [("Radiohead", "Let Down", 1771070400)], index, None)
+    assert planned["username"] == "alex"

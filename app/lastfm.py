@@ -219,6 +219,11 @@ def plan(username: str, user_id: str, played: list[tuple[str, str, int]],
          before: str | None) -> dict[str, Any]:
     """Work out what would be written, without writing any of it.
 
+    `username` is the *Navidrome* account name, not the Last.fm one. Rows are
+    joined on user_id either way, but a snapshot row saying "alex" beside an
+    imported row saying "argyle_nz" for the same person reads like two
+    different listeners.
+
     `before` is the first day snapshots cover. Scrobbles from that day
     onwards are dropped: the nightly snapshots already count them, and
     importing both would double every play on the handover day.
@@ -333,6 +338,7 @@ def main() -> int:
         index = library_index(connection)
 
     name = args.lastfm_user or username_for(session_key, api_key, secret)
+    print(f"Navidrome account: {args.user}")
     print(f"Last.fm account: {name}")
     print(f"library:         {len(index)} distinct artist/title pairs")
 
@@ -347,7 +353,9 @@ def main() -> int:
     # them would double every play on the handover day.
     first_snapshot = ledger.connection().execute(
         "select min(taken_on) from play_snapshot").fetchone()[0]
-    planned = plan(name, user_id, played, index, first_snapshot)
+    # Stored under the Navidrome name so both sources label one person the
+    # same way; the Last.fm name is reported above and nowhere else.
+    planned = plan(args.user, user_id, played, index, first_snapshot)
 
     print()
     print(f"scrobbles fetched          : {planned['scrobbles']}")
