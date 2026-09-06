@@ -1161,6 +1161,13 @@ playlistEditor.addEventListener("submit", async (event) => {
       });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not save.");
+    // The editor is now editing the thing it just made. Without this it
+    // still believed it was creating, so a second Save made a second
+    // playlist, and a third made a third.
+    if (!editingId && data.id) {
+      editingId = data.id;
+      plDelete.hidden = false;
+    }
     // The count comes back from Navidrome, which evaluated the rules on
     // save. It is the number the playlist will show there, because it is
     // the number that thing computed - not a second guess made here.

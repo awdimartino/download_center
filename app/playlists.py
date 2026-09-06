@@ -231,7 +231,17 @@ def to_rules(form: dict[str, Any]) -> dict[str, Any]:
         if operator not in {o["name"] for o in OPERATORS[spec.kind]}:
             raise ValueError(
                 f"{spec.label} cannot be asked {operator!r}.")
-        built.append({operator: {name: _coerce(spec, row.get("value"))}})
+        value = _coerce(spec, row.get("value"))
+        # An empty value is not a filter. "Title contains ''" matches every
+        # track in the library, which is the same accident as saving with no
+        # conditions at all - and that is already refused, so refuse this
+        # for the same reason rather than quietly building a playlist of
+        # everything.
+        if value == "":
+            raise ValueError(
+                f"{spec.label} has no value, so it would match every track. "
+                "Fill it in or remove the condition.")
+        built.append({operator: {name: value}})
 
     rules: dict[str, Any] = {match: built}
 
@@ -352,9 +362,22 @@ def save(identity: navidrome.Identity, name: str, form: dict[str, Any],
         "rules": to_rules(form),
     }
     saved = navidrome.save_playlist(identity, body, playlist_id)
+
+    # The id is what tells the editor it is now editing rather than still
+    # creating, so a create that cannot report one turns the next Save into
+    # a second playlist. Navidrome does return it; this is the fallback for
+    # when it does not, because the cost of being wrong is silent and the
+    # cost of asking again is one request.
+    new_id = saved.get("id") or playlist_id
+    if not new_id:
+        log.warning("Navidrome returned no id for %r; looking it up", name)
+        matches = [p for p in mine(identity) if p["name"] == name]
+        if matches:
+            new_id = matches[0]["id"]
+
     log.info("%s saved smart playlist %r", identity.username, name)
     return {
-        "id": saved.get("id") or playlist_id,
+        "id": new_id,
         "name": saved.get("name") or name,
         # Navidrome evaluates the rules on save, so the count it returns is
         # the answer to "what does this match?" - computed by the thing that
