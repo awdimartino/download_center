@@ -19,9 +19,32 @@ function duration(ms) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
+// Every banner in the application, raised the same way and closable. They
+// used to be plain text set on a paragraph, which meant one could only be
+// got rid of by doing something else that happened to overwrite it - so a
+// message about a thing you had already dealt with sat there indefinitely.
+//
+// `tone` is the class: "error", "warn" or "notice". Passing an empty message
+// clears the banner, which is how most callers reset one.
+function setBanner(node, message, tone) {
+  if (!node) return;
+  if (!message) {
+    node.replaceChildren();
+    node.hidden = true;
+    return;
+  }
+  node.className = tone || node.dataset.tone || "warn";
+  const close = el("button", "banner-close", "×");
+  close.type = "button";
+  close.title = "Dismiss";
+  close.setAttribute("aria-label", "Dismiss");
+  close.addEventListener("click", () => setBanner(node, ""));
+  node.replaceChildren(el("span", "banner-text", message), close);
+  node.hidden = false;
+}
+
 function showError(message) {
-  errorEl.textContent = message;
-  errorEl.hidden = !message;
+  setBanner(errorEl, message, "error");
 }
 
 function el(tag, className, text) {
@@ -271,7 +294,7 @@ function connect() {
       started = false;
       if (healthTimer) clearInterval(healthTimer);
       healthTimer = null;
-      warnEl.hidden = true;
+      setBanner(warnEl, "");
       showError("");
       showSignin(true);
       return;
@@ -362,7 +385,7 @@ settingsForm.addEventListener("submit", async (event) => {
   if (response.ok) {
     settingsNote.textContent = "Saved.";
     settingsForm.elements.spotify_client_secret.value = "";
-    warnEl.hidden = true;
+    setBanner(warnEl, "");
   } else {
     const body = await response.json().catch(() => ({}));
     settingsNote.textContent = body.detail || "Could not save.";
@@ -379,11 +402,12 @@ async function checkSpotify() {
     const response = await fetch("/api/status");
     if (!response.ok) return;
     const status = await response.json();
-    warnEl.hidden = Boolean(status.spotify_configured);
-    if (!status.spotify_configured) {
-      warnEl.textContent =
-        "Spotify credentials are not configured. Add them in Settings.";
-    }
+    setBanner(
+      warnEl,
+      status.spotify_configured
+        ? ""
+        : "Spotify credentials are not configured. Add them in Settings.",
+      "warn");
   } catch {
     /* the queue will report its own errors; a missing banner is not one */
   }
@@ -618,18 +642,33 @@ function albumCard(card) {
 // The tag replaces itself with a download button rather than re-running the
 // view, so the answer is immediate and this does not need to know whether it
 // is inside a search grid or an album listing.
-function heldTag(item, queueLabel) {
-  const tag = el("button", "held", queueLabel === "Get" ? "have" : "already have");
-  tag.type = "button";
-  tag.title = "Already downloaded into your library. Click to forget it, so "
-            + "it can be downloaded again. No file is touched.";
-  tag.addEventListener("click", async (event) => {
+// Held state and the action on it are two things, and they used to be one
+// control. A card showed "already have" *and* a Download button, so the tag
+// shoved Download out of line wherever it appeared; the tag was also secretly
+// the forget button; and forgetting replaced it with a second Download, which
+// is why a forgotten track offered two of them and could be queued twice.
+//
+// Now: a marker that says what is true, pinned left so nothing else moves,
+// and a labelled button for the one action.
+function heldMarker() {
+  const marker = el("span", "held", "in library");
+  marker.title = "Already downloaded. It will be skipped rather than "
+               + "fetched again.";
+  return marker;
+}
+
+function forgetButton(item, onForgotten) {
+  const button = el("button", "ghost forget", "Forget");
+  button.title = "Stop counting this as already downloaded, so it can be "
+               + "fetched again. No file is touched.";
+  button.addEventListener("click", async (event) => {
     event.stopPropagation();
     if (!confirm(
       `Forget "${item.name}"?\n\n`
       + "It stops counting as already downloaded, so it can be fetched "
       + "again.\nNothing on disk is touched.")) return;
     showError("");
+    button.disabled = true;
     try {
       const response = await fetch("/api/ledger/forget", {
         method: "POST",
@@ -639,14 +678,28 @@ function heldTag(item, queueLabel) {
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         showError(body.detail || `Request failed (${response.status})`);
+        button.disabled = false;
         return;
       }
-      tag.replaceWith(queueButton(item.url, queueLabel));
+      onForgotten();
     } catch {
       showError("Could not reach the server.");
+      button.disabled = false;
     }
   });
-  return tag;
+  return button;
+}
+
+// The held marker and its Forget button, as one removable unit: forgetting
+// takes both away and leaves the download button that was already there,
+// exactly where it was.
+function heldControls(item, actions) {
+  const marker = heldMarker();
+  const forget = forgetButton(item, () => {
+    marker.remove();
+    forget.remove();
+  });
+  actions.prepend(marker, forget);
 }
 
 function trackCard(card) {
@@ -659,8 +712,8 @@ function trackCard(card) {
     el("div", "card-sub dim", `${card.album || ""}${card.year ? ` \u00b7 ${card.year}` : ""}`)
   );
   const actions = el("div", "card-actions");
-  if (card.held) actions.append(heldTag(card, "Download"));
   actions.append(queueButton(card.url, "Download"));
+  if (card.held) heldControls(card, actions);
   body.append(actions);
   node.append(body);
   return node;
@@ -694,6 +747,12 @@ async function runSearch() {
   // Guards against a slow earlier request landing after a newer one.
   const token = ++searchToken;
   crumbEl.hidden = true;
+  // Results are always a card grid, so this belongs here rather than on the
+  // submit handler. openAlbum takes the class off for its detail view, and
+  // Back comes through runSearch without passing the form: every card then
+  // laid out at its natural width, which is a cover image the size of the
+  // screen. It looked like a rendering bug and was a missing class.
+  resultsEl.classList.add("grid");
   setBrowse([], "Searching\u2026");
   try {
     const data = await fetch(
@@ -742,9 +801,13 @@ async function openAlbum(id) {
       el("span", "track-name", track.name),
       el("span", "track-dur", duration(track.duration_ms))
     );
-    row.append(track.held
-      ? heldTag(track, "Get")
-      : queueButton(track.url, "Get"));
+    // Same shape as a card: the Get button always sits in the last column,
+    // and being held adds a marker and a Forget beside it rather than
+    // standing in for it.
+    const actions = el("div", "track-actions");
+    actions.append(queueButton(track.url, "Get"));
+    if (track.held) heldControls(track, actions);
+    row.append(actions);
     list.append(row);
   });
 
@@ -764,7 +827,6 @@ async function openArtist(id) {
 
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  resultsEl.classList.add("grid");
   runSearch();
 });
 
@@ -857,11 +919,7 @@ const OPERATION_LABELS = {
 // something else happened to clear it - which for an import that reported
 // "already running" was easily never.
 function setNote(id, message, tone) {
-  const node = document.getElementById(id);
-  if (!node) return;
-  node.textContent = message;
-  node.className = tone || "warn";
-  node.hidden = !message;
+  setBanner(document.getElementById(id), message, tone);
 }
 
 function importSummary(result) {
@@ -971,40 +1029,23 @@ function renderCheck(check) {
   return row;
 }
 
-// Whether the demoted rows are showing. Kept across reloads of the panel so
-// the five-minute poll does not fold it back up while you are reading it.
-let showEverything = false;
-let lastHealth = null;
-
 function renderHealth(report) {
-  lastHealth = report;
-  healthError.textContent = report.navidrome_error
-    ? `Navidrome database unreadable: ${report.navidrome_error}`
-    : "";
-  healthError.hidden = !report.navidrome_error;
+  setBanner(healthError, report.navidrome_error
+    ? `Navidrome database unreadable: ${report.navidrome_error}` : "", "warn");
 
+  // Every row, always. The toggle hid the status rows behind a click that
+  // had to be made on every visit to see the same panel, which is a worse
+  // trade than a slightly longer list. `secondary` still dims a row and
+  // still keeps it out of the badge: it says "this is status, not something
+  // to act on", which is a different question from whether to show it.
   const blocks = [];
   report.sections.forEach((section) => {
-    const rows = section.checks.filter((c) => showEverything || !c.secondary);
-    // A section with nothing left to show is a heading over empty space.
-    if (!rows.length) return;
+    if (!section.checks.length) return;
     const block = el("section", "check-group");
     block.append(el("h2", "section-head", section.title));
-    block.append(...rows.map(renderCheck));
+    block.append(...section.checks.map(renderCheck));
     blocks.push(block);
   });
-
-  if (report.hidden) {
-    const more = el("button", "ghost show-everything",
-      showEverything
-        ? "Show less"
-        : `Show everything (${report.hidden} more)`);
-    more.addEventListener("click", () => {
-      showEverything = !showEverything;
-      renderHealth(lastHealth);
-    });
-    blocks.push(more);
-  }
 
   healthEl.replaceChildren(...blocks);
   healthEmpty.hidden = blocks.length > 0;
@@ -1144,7 +1185,7 @@ function renderGroup(group) {
 // from the list either way, whether or not anything had happened.
 function reportResolution(payload) {
   if (!payload || payload.quarantined === undefined) {
-    dupeResult.hidden = true;
+    setBanner(dupeResult, "");
     return;
   }
   const moved = payload.quarantined || [];
@@ -1160,9 +1201,7 @@ function reportResolution(payload) {
   }
   if (failed.length) parts.push(`Could not move: ${failed.join("; ")}`);
   if (!moved.length && !failed.length) parts.push("Nothing was moved.");
-  dupeResult.textContent = parts.join(" ");
-  dupeResult.className = failed.length ? "warn" : "notice";
-  dupeResult.hidden = false;
+  setBanner(dupeResult, parts.join(" "), failed.length ? "warn" : "notice");
 }
 
 async function postDupe(path, body) {
@@ -1196,10 +1235,13 @@ function renderDupes(payload) {
 
   setBadge(dupeBadge, dupeGroups.length);
 
-  dupeNote.textContent = payload.confident
-    ? `${payload.confident} group(s) share a MusicBrainz recording id and can be resolved in one go.`
-    : "";
-  dupeNote.hidden = !payload.confident;
+  setBanner(
+    dupeNote,
+    payload.confident
+      ? `${payload.confident} group(s) share a MusicBrainz recording id and `
+        + "can be resolved in one go."
+      : "",
+    "warn");
 }
 
 // --- what has already been set aside -------------------------------------
@@ -1297,11 +1339,12 @@ document.getElementById("dupe-auto").addEventListener("click", async (event) => 
     // Reported rather than discarded: a run that resolved nothing and a run
     // that resolved everything used to look identical from here.
     const failed = result.failed || [];
-    dupeResult.textContent =
-      `Resolved ${result.resolved || 0} group(s).` +
-      (failed.length ? ` ${failed.length} problem(s): ${failed.slice(0, 3).join("; ")}` : "");
-    dupeResult.className = failed.length ? "warn" : "notice";
-    dupeResult.hidden = false;
+    setBanner(
+      dupeResult,
+      `Resolved ${result.resolved || 0} group(s).`
+      + (failed.length
+         ? ` ${failed.length} problem(s): ${failed.slice(0, 3).join("; ")}` : ""),
+      failed.length ? "warn" : "notice");
     await loadDupes();
   } finally {
     button.disabled = false;
@@ -1356,7 +1399,7 @@ async function checkSession() {
 
 signinForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  signinError.hidden = true;
+  setBanner(signinError, "");
   const button = signinForm.querySelector("button");
   button.disabled = true;
   try {
@@ -1370,8 +1413,8 @@ signinForm.addEventListener("submit", async (event) => {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      signinError.textContent = body.detail || `Sign in failed (${response.status})`;
-      signinError.hidden = false;
+      setBanner(signinError,
+                body.detail || `Sign in failed (${response.status})`, "error");
       return;
     }
     signinForm.reset();
@@ -1409,8 +1452,7 @@ let vocabulary = null;
 let editingId = null;
 
 function showPlaylistError(message) {
-  playlistError.textContent = message;
-  playlistError.hidden = !message;
+  setBanner(playlistError, message, "warn");
 }
 
 function fieldSpec(name) {

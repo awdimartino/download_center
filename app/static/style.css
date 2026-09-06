@@ -398,12 +398,37 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 /* --- banners -------------------------------------------------------------- */
 
 .error, .warn, .notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
   margin: var(--s-3) 0 0;
   padding: var(--s-3) var(--s-4);
   border: 1px solid transparent;
   border-left-width: 3px;
   border-radius: var(--r-md);
   font-size: 13px;
+}
+.banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Every banner closes. Inherits the banner's colour rather than picking one,
+   so it reads as part of the message it dismisses. */
+.banner-close {
+  flex-shrink: 0;
+  min-height: 22px;
+  width: 22px;
+  margin: -2px -4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  opacity: .55;
+  font-size: 16px;
+  line-height: 1;
+}
+.banner-close:hover, .banner-close:focus-visible {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  opacity: 1;
 }
 .error {
   background: var(--tint-bad);
@@ -634,7 +659,10 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: var(--s-4);
-  margin-bottom: var(--s-4);
+  /* Both margins. It had only the lower one, so the box sat flush against
+     the paragraph explaining it while every other panel stood clear of its
+     note - the same value as #staging, #dupes and #health above. */
+  margin: var(--s-4) 0;
   padding: var(--s-5);
   background: var(--panel);
   border: 1px solid var(--line);
@@ -727,36 +755,47 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   display: flex;
   gap: var(--s-1);
   align-items: center;
+  /* Right-aligned so the download button lands in the same place on every
+     card, held or not. It used to be shoved along by the "already have" tag
+     appearing beside it, so no two cards in a grid agreed on where their
+     buttons were. */
+  justify-content: flex-end;
   flex-wrap: wrap;
   margin-top: auto;
   padding-top: var(--s-3);
 }
 .card-actions .ghost { min-height: 30px; padding: 0 10px; font-size: 12px; }
 
-/* A button now, not a label: clicking it forgets the ledger row so the track
-   can be fetched again. Styled to stay the quiet tag it was - the affordance
-   is the hover, because this is a rare action and it should not compete with
-   the download button beside it. */
+/* A marker, not a control. It was a button that looked like a label and
+   forgot the ledger row when clicked - an action nobody could find, sitting
+   on top of a word that only meant to state a fact. The action is the
+   Forget button beside it now, and this says what is true and nothing else.
+   `margin-right: auto` pins it to the far left of the actions row so the
+   buttons stay where they are. */
 .held {
+  margin-right: auto;
   font-size: 10.5px;
   font-weight: 600;
   color: var(--ok);
   text-transform: uppercase;
   letter-spacing: .06em;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
   padding: 2px var(--s-2);
-  font-family: inherit;
-  cursor: pointer;
-  transition: background .14s ease, border-color .14s ease, color .14s ease;
+  white-space: nowrap;
 }
-.held:hover, .held:focus-visible {
-  background: var(--tint-warn);
-  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+
+/* Quiet on purpose: it is rare, and it must not compete with Download. */
+.ghost.forget { color: var(--muted); }
+.ghost.forget:hover, .ghost.forget:focus-visible {
   color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
 }
-.held:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.track-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-shrink: 0;
+}
 
 .detail { display: flex; gap: var(--s-5); margin-top: var(--s-4); flex-wrap: wrap; }
 .detail-body { display: flex; flex-direction: column; gap: var(--s-1); align-items: flex-start; }
@@ -1267,11 +1306,3 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
 .check.secondary .check-label,
 .check.secondary .check-value { color: var(--muted); }
 .check.secondary .check-detail { color: var(--faint); }
-
-.show-everything {
-  width: 100%;
-  margin-top: var(--s-3);
-  justify-content: center;
-  color: var(--muted);
-}
-.show-everything:hover { color: var(--text); }
