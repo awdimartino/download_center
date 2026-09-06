@@ -71,6 +71,19 @@ decision from the user before it can be done.
       Same shape as 1e. `workspace.require_mounted` refuses it now, on by
       default; read-only callers pass `require_library=False`.
 
+- [x] **31. Deleting a running job orphaned its downloads, and the orphans
+      starved every later job.** Found 2026-09-06 in production, on the test
+      account. `delete_job` popped the job from memory and `rmtree`'d its
+      scratch directory without cancelling the task, so yt-dlp recreated the
+      directory underneath itself, every rename failed with ENOENT, and the
+      worker retried its whole backoff for ever.
+      Two bugs compounding: the missing cancel was old, but making the
+      download gate process-wide (item 7a, same day) turned "this job is
+      wedged" into "every later job of every user is wedged" — which shows
+      up as a queue stuck at `running` with nothing in the log to explain
+      it. `delete_job` now cancels and *awaits* the unwind before deleting
+      anything, bounded by `STOP_TIMEOUT`.
+
 ## Tier 2 — the app stalls under ordinary use
 
 - [x] **5. Long blocking work inside request handlers, behind process-wide
