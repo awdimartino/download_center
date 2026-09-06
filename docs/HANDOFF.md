@@ -63,7 +63,11 @@ that.
 
 ## Where things stand
 
-**Deployed:** commit `3bd33d5`, container healthy.
+**Deployed:** commit `8fe62e3`, container healthy, image pulled 2026-09-06
+20:44 UTC. Verified after the pull: the new markup is served, the *Import
+as-is* button is in `app.js`, and `POST /api/staging/import-as-is` answers
+401 rather than 404. Sessions are in memory, so the restart signed everyone
+out — a websocket 403 in the log right after a deploy is that, not a fault.
 
 **Navidrome 0.58.5.** Three libraries: `Music Library` (id 1, `/music`),
 `Kelly` (id 2, `/kelly`), `Test` (id 5, `/test`). Users: `alex` → 1,
@@ -83,7 +87,13 @@ has flagged missing — harmless, and excluded from every query that matters.
 local midnight (`play_day_timezone = America/New_York`) targeting the last
 complete day. `GET /api/playcounts` reports whether it is up to date.
 
-**Waiting:** 199 duplicate groups, ~15 staging items, ReplayGain at ~56%,
+**Staging, as of the deploy:** alex 14 albums + 1 single, kelly 3 singles,
+test 1 single — `Radiohead - Let Down.mp3`, the file the escape hatch was
+diagnosed on. Every one of them has an *Import as-is* button now, and gains
+a reason on the row after the next sweep (≤30 min; the notes are in memory,
+so a restart clears them until it runs again).
+
+**Waiting:** 199 duplicate groups, ReplayGain at ~56%,
 ~62 GB reclaimable from `music_old` / `tagged_old` /
 `music_backup_2026-09-04`, 30 broken `.m4a`, and Kelly has never signed in.
 
