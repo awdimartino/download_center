@@ -485,3 +485,81 @@ def test_status_is_up_to_date_after_a_quiet_day(wired):
     status = playcounts.status()
     assert status["up_to_date"] is True
     assert status["snapshots"]["days_run"] == 1
+
+
+# --- reading it back in the browser -----------------------------------------
+# The snapshots ran for weeks with nothing able to display them, which from
+# the outside was indistinguishable from nothing being collected at all.
+
+def test_top_tracks_are_named_from_navidrome(wired):
+    """Snapshots are keyed by UUID and nothing else - that is what makes a
+    count survive retagging - which also makes the stored rows unreadable
+    without asking Navidrome what each one is called."""
+    add_track(wired, "t1", tags=UUID_A, title="Let Down", artist="Radiohead")
+    played(wired, "t1", ALEX, 1)
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 9)
+    playcounts.take("2026-03-02")
+
+    top = playcounts.top_tracks("2026-03-02", "2026-03-02", ALEX)
+    assert [(t["title"], t["artist"], t["plays"]) for t in top] == [
+        ("Let Down", "Radiohead", 8)]
+    assert top[0]["known"] is True
+
+
+def test_a_track_that_has_left_the_library_still_counts(wired):
+    """The plays happened. Dropping the row because the file is gone would
+    quietly rewrite history, which is the one thing this module exists to
+    prevent."""
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 1)
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 4)
+    playcounts.take("2026-03-02")
+    sqlite3.connect(wired).execute("delete from media_file").connection.commit()
+
+    top = playcounts.top_tracks("2026-03-02", "2026-03-02", ALEX)
+    assert top[0]["plays"] == 3
+    assert top[0]["known"] is False
+    assert "no longer in the library" in top[0]["title"]
+
+
+def test_the_limit_is_honoured(wired):
+    add_track(wired, "t1", tags=UUID_A)
+    add_track(wired, "t2", tags=UUID_B, path="b.mp3")
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 5)
+    played(wired, "t2", ALEX, 9)
+    playcounts.take("2026-03-02")
+
+    assert len(playcounts.top_tracks("2026-03-02", "2026-03-02", ALEX, 1)) == 1
+
+
+def test_coverage_is_one_persons_own_history(wired):
+    """status() answers for the installation, which is right for a health
+    check and wrong for a panel: one account's imported Last.fm history is
+    not another account's to read."""
+    ledger.connection().execute(
+        "insert into play_imported (track_uuid, user_id, username, day, plays,"
+        " source) values ('uuid-a', ?, 'alex', '2024-01-01', 40, 'lastfm')",
+        (ALEX,))
+    ledger.connection().commit()
+
+    mine = playcounts.coverage(ALEX)
+    theirs = playcounts.coverage(KELLY)
+
+    assert mine["imported_plays"] == 40
+    assert mine["imported_sources"] == ["lastfm"]
+    assert theirs["imported_plays"] == 0
+    assert theirs["imported_sources"] == []
+
+
+def test_coverage_still_reports_the_job_globally(wired):
+    """Whether the nightly run happened is a fact about the collector, not
+    about the person reading it."""
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 3)
+    playcounts.take("2026-03-01")
+
+    for who in (ALEX, KELLY):
+        assert playcounts.coverage(who)["days_run"] == 1

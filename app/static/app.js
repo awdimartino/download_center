@@ -535,6 +535,7 @@ function showView(view) {
   if (view === "health") loadHealth();
   if (view === "dupes") loadDupes();
   if (view === "playlists") loadPlaylists();
+  if (view === "listening") loadListening();
   if (view === "settings") loadSettings();
 }
 
@@ -837,6 +838,7 @@ searchForm.addEventListener("submit", (event) => {
 const stagingEl = document.getElementById("staging");
 const stagingEmpty = document.getElementById("staging-empty");
 const stagingBadge = document.getElementById("staging-badge");
+const stagingNext = document.getElementById("staging-next");
 
 // Files it under the tags it already has. Beets is configured never to
 // guess, which is right, and used to be a dead end: what it would not place
@@ -888,10 +890,47 @@ function stagingRow(entry) {
   return row;
 }
 
+// When the server said the next sweep is due, and the ticker that keeps the
+// countdown honest. Read once per load and counted down locally rather than
+// polled: the number only has to be roughly right, and asking every second
+// for a value that changes by one second is a poor trade on a phone.
+let nextSweepAt = null;
+let sweepMinutes = 0;
+
+function renderNextSweep() {
+  if (stagingNext.hidden && !nextSweepAt && !sweepMinutes) return;
+  if (!sweepMinutes) {
+    stagingNext.textContent = "Automatic importing is off — "
+      + "nothing here will be filed until you ask.";
+    stagingNext.hidden = false;
+    return;
+  }
+  if (!nextSweepAt) {
+    stagingNext.textContent = "Beets is sweeping now.";
+    stagingNext.hidden = false;
+    return;
+  }
+  const left = Math.max(0, Math.round((nextSweepAt * 1000 - Date.now()) / 1000));
+  const shown = left >= 60
+    ? `${Math.floor(left / 60)}m ${String(left % 60).padStart(2, "0")}s`
+    : `${left}s`;
+  stagingNext.textContent = `Beets sweeps every ${sweepMinutes} minutes; `
+    + `next in ${shown}.`;
+  stagingNext.hidden = false;
+}
+
+// Ticks regardless of which panel is showing. One text node a second is
+// nothing, and starting and stopping it per view is more moving parts than
+// the saving is worth.
+setInterval(renderNextSweep, 1000);
+
 async function loadStaging() {
   try {
     const data = await fetch("/api/staging").then((r) => r.json());
     const entries = data.entries || [];
+    nextSweepAt = data.next_sweep || null;
+    sweepMinutes = data.sweep_minutes || 0;
+    renderNextSweep();
     stagingEl.replaceChildren(...entries.map(stagingRow));
     stagingEmpty.textContent = entries.length
       ? "" : `Nothing waiting in ${data.staging || "staging"}.`;
@@ -1004,6 +1043,104 @@ async function startOperation(name, path, body) {
 
 document.getElementById("staging-import").addEventListener("click", () => {
   startOperation("import", "/api/staging/import");
+});
+
+/* --- listening -----------------------------------------------------------
+   The snapshots have been running since before there was anywhere to read
+   them, which made four years of imported history and a nightly job look
+   from the outside exactly like nothing happening at all. This is that
+   record, and the first thing it shows is what has been captured - because
+   the number that matters most is still "is this collecting or not". */
+
+const listeningEl = document.getElementById("listening");
+const listeningEmpty = document.getElementById("listening-empty");
+const listeningError = document.getElementById("listening-error");
+const listeningCoverage = document.getElementById("listening-coverage");
+let listeningDays = 3650;
+
+function stat(label, value, detail) {
+  const box = el("div", "stat");
+  box.append(el("div", "stat-label", label), el("div", "stat-value", value));
+  if (detail) box.append(el("div", "stat-detail", detail));
+  return box;
+}
+
+function coverage(cover, window) {
+  const boxes = [stat(
+    "Plays in view", window.plays.toLocaleString(),
+    `${window.start} to ${window.end}`)];
+
+  if (cover.imported_plays) {
+    boxes.push(stat(
+      "Imported history", cover.imported_plays.toLocaleString(),
+      `${(cover.imported_sources || []).join(", ")}, from ${cover.imported_from}`));
+  }
+  boxes.push(stat(
+    "Nightly snapshots", (cover.days_run || 0).toLocaleString(),
+    cover.last_run ? `last ${cover.last_run}` : "none yet"));
+  // The one that is a health question rather than a statistic: a nightly job
+  // that quietly stopped looks exactly like one that ran and found nothing.
+  boxes.push(stat(
+    "Up to date", cover.up_to_date ? "yes" : "no",
+    cover.up_to_date ? `through ${cover.awaiting}` : `waiting on ${cover.awaiting}`));
+
+  listeningCoverage.replaceChildren(...boxes);
+}
+
+function listeningRow(track, rank, most) {
+  const row = el("div", `listen-row${track.known ? "" : " gone"}`);
+  const bar = el("div", "listen-bar");
+  const fill = el("div", "listen-bar-fill");
+  // Proportional to the top row, so the shape of the list is readable
+  // without reading any of the numbers.
+  fill.style.width = `${Math.max(2, Math.round(100 * track.plays / most))}%`;
+  bar.append(fill);
+  row.append(
+    el("span", "listen-rank", String(rank)),
+    el("span", "listen-title", track.title),
+    el("span", "listen-artist", track.artist || ""),
+    bar,
+    el("span", "listen-plays", track.plays.toLocaleString())
+  );
+  if (!track.known) {
+    row.title = "Played, but no longer in the library. The count is kept "
+              + "against the track's identity, not its file.";
+  }
+  return row;
+}
+
+async function loadListening() {
+  try {
+    const data = await fetch(
+      `/api/playcounts/top?days=${listeningDays}&limit=50`
+    ).then((r) => r.json());
+    if (data.detail) {
+      setBanner(listeningError, data.detail, "warn");
+      return;
+    }
+    setBanner(listeningError, "");
+    const tracks = data.tracks || [];
+    coverage(data.coverage || {}, data);
+
+    const most = tracks.length ? tracks[0].plays : 1;
+    listeningEl.replaceChildren(
+      ...tracks.map((track, index) => listeningRow(track, index + 1, most)));
+    listeningEmpty.textContent = tracks.length
+      ? "" : "Nothing played in this window yet.";
+    listeningEmpty.hidden = tracks.length > 0;
+  } catch (err) {
+    listeningEmpty.hidden = false;
+    listeningEmpty.textContent = `Could not read play counts: ${err.message}`;
+  }
+}
+
+document.querySelectorAll(".listen-range .range").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll(".listen-range .range")
+      .forEach((other) => other.classList.toggle("active", other === button));
+    listeningDays = Number(button.dataset.days);
+    loadListening();
+  });
 });
 
 // --- health ---------------------------------------------------------------
