@@ -91,8 +91,8 @@ The agreed order is in PLAN.md. In short:
 2. **Last.fm backfill.** One-time, fuzzy-matched. See below.
 3. **Health tab cut down** to roughly seven actionable rows.
 4. **Burger navigation**, replacing tabs on both phone and desktop.
-5. ~~**Tests and a CI step that runs them.**~~ Done 2026-09-06: 114 tests,
-   and CI runs them before the image is built. Grow the suite as you go.
+5. ~~**Tests and a CI step that runs them.**~~ Done 2026-09-06: 164 tests,
+   plus ruff, all gating the image build. Grow the suite as you go.
 
 The review backlog is clear, so this list is now the plan again. Note that
 `app/static/app.js` still wants splitting (FIXES.md item 29) - the burger
@@ -109,7 +109,7 @@ rewrite is the natural moment, so do it there rather than separately.
   but it has never been saved against the live server. Offered but not yet
   done: create one throwaway playlist through the service account exercising
   every field, confirm, delete.
-- ~~**No tests exist.**~~ 114 now, heaviest on `duplicates.py`. It moves
+- ~~**No tests exist.**~~ 164 now, heaviest on `duplicates.py`. It moves
   files irreversibly, so it is tested hardest. The frontend has no test
   coverage at all - verify Duplicates and Browse in Safari by hand.
 - ~~**CI does not run tests, lint or type checks.**~~ A test job now gates
