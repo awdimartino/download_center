@@ -59,7 +59,7 @@ Local Python is `.venv/Scripts/python.exe` — `python` is not on PATH.
 
 ## Where things stand
 
-**Deployed:** commit `020a253`, container healthy, deployed 2026-09-06.
+**Deployed:** commit `8366766`, container healthy, deployed 2026-09-06.
 `state.db` is backed up beside itself before every migration
 (`state.db.bak-2026-09-06`, `state.db.bak-pre-tier2`). The ledger migration
 was dry-run against a copy of the real database and preserved all 825 rows.
@@ -99,7 +99,10 @@ The agreed order is in PLAN.md. In short:
    a cumulative count and one date, so history not captured is lost.
 2. **Last.fm backfill.** One-time, fuzzy-matched. See below.
 3. **Health tab cut down** to roughly seven actionable rows.
-4. **Burger navigation**, replacing tabs on both phone and desktop.
+4. ~~**Burger navigation**, replacing tabs on both phone and desktop.~~
+   Shipped 2026-09-06. One overlay at every width; the bottom bar and its
+   three iOS workarounds are gone. **Not yet verified in Safari** - node is
+   unavailable in the dev environment, so it shipped on a static check only.
 5. ~~**Tests and a CI step that runs them.**~~ Done 2026-09-06: 164 tests,
    plus ruff, all gating the image build. Grow the suite as you go.
 
