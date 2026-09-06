@@ -43,12 +43,42 @@
   --tint-warn: color-mix(in srgb, var(--warn) 12%, transparent);
   --tint-bad: color-mix(in srgb, var(--bad) 12%, transparent);
 
+  /* Text colours for the filled buttons, which need a dark ink rather than
+     var(--text). They were three hex values written inline, so nothing said
+     they belonged together or which surface each went on. */
+  --on-accent: #071320;
+  --on-ok: #04180d;
+  --on-warn: #1a1204;
+
+  --s-0: 2px;
   --s-1: 4px;
   --s-2: 8px;
   --s-3: 12px;
   --s-4: 16px;
   --s-5: 24px;
   --s-6: 32px;
+
+  /* Type. Thirteen distinct sizes were in use - 10.5, 11.5, 12, 12.5, 13,
+     13.5, 14, 15, 16, 17, 18, 20 and 21 - most of them a half-pixel apart
+     from a neighbour, which is not a decision anyone can see and is exactly
+     what "inconsistent" looks like from a foot away. Six steps, each
+     distinguishable from the next.
+
+     --t-field is its own thing at 16px: below that, iOS Safari zooms the
+     page when a field takes focus, and the page never zooms back. */
+  --t-xs: 11px;
+  --t-sm: 12.5px;
+  --t-md: 13.5px;
+  --t-lg: 15px;
+  --t-xl: 17px;
+  --t-2xl: 21px;
+  --t-field: 16px;
+
+  /* Three weights, from six. 400/500/550/600/650/700 were doing the work of
+     "quiet", "normal" and "this is the number you came for". */
+  --w-normal: 500;
+  --w-medium: 600;
+  --w-bold: 650;
 
   --r-sm: 6px;
   --r-md: 9px;
@@ -96,10 +126,10 @@ button {
   border: 1px solid transparent;
   border-radius: var(--r-md);
   background: var(--accent);
-  color: #071320;
+  color: var(--on-accent);
   font: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
@@ -118,8 +148,8 @@ button:disabled { opacity: .4; cursor: default; background: var(--accent); }
   background: var(--panel-2);
   border-color: var(--line);
   color: var(--text);
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--t-sm);
+  font-weight: var(--w-normal);
 }
 .ghost:hover { background: var(--panel-3); border-color: var(--faint); }
 .ghost:active { background: var(--panel-2); }
@@ -134,8 +164,8 @@ button:disabled { opacity: .4; cursor: default; background: var(--accent); }
 .ghost.primary {
   background: var(--ok);
   border-color: var(--ok);
-  color: #04180d;
-  font-weight: 600;
+  color: var(--on-ok);
+  font-weight: var(--w-medium);
 }
 .ghost.primary:hover { background: color-mix(in srgb, var(--ok) 86%, #fff); border-color: transparent; }
 
@@ -147,29 +177,40 @@ button:disabled { opacity: .4; cursor: default; background: var(--accent); }
   background: none;
   border-color: transparent;
   color: var(--faint);
-  font-size: 17px;
-  font-weight: 400;
+  font-size: var(--t-xl);
+  font-weight: var(--w-normal);
 }
 .remove:hover { background: var(--tint-bad); color: var(--bad); }
 
 /* --- text fields ---------------------------------------------------------- */
 
-/* Text fields only. A radio given a 38px box and 12px of side padding keeps
-   its native glyph but silently inflates the row it sits in, which is what
-   was stretching every duplicate copy line. */
-input:not([type="radio"]):not([type="checkbox"]) {
+/* One field, whatever it is made of. A select was 34px tall on --panel-2
+   and an input 38px on --panel, so a playlist condition row - which puts
+   two selects and an input side by side - showed three fields of two
+   heights and two colours, and read as three different kinds of control.
+
+   Text fields only, for the radio: given a 38px box and 12px of side
+   padding it keeps its native glyph but silently inflates the row it sits
+   in, which is what was stretching every duplicate copy line. */
+input:not([type="radio"]):not([type="checkbox"]),
+select {
   min-height: 38px;
   padding: 0 var(--s-3);
-  background: var(--panel);
+  background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  /* Never below 16px: iOS Safari zooms the page when a smaller field takes
+     focus, and does not zoom back out afterwards. */
+  font-size: var(--t-field);
 }
+select { cursor: pointer; }
 input::placeholder { color: var(--faint); }
-input:not([type="radio"]):not([type="checkbox"]):hover { border-color: var(--panel-3); }
-input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+input:not([type="radio"]):not([type="checkbox"]):hover,
+select:hover { border-color: var(--panel-3); }
+input:focus-visible,
+select:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
 
 input[type="radio"], input[type="checkbox"] {
   width: 17px;
@@ -199,15 +240,15 @@ header {
   border-bottom: 1px solid var(--line);
 }
 
-h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+h1 { font-size: var(--t-xl); margin: 0; font-weight: var(--w-bold); letter-spacing: .2px; }
 
 .conn {
   margin-left: auto;
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
   text-transform: uppercase;
   letter-spacing: .09em;
-  padding: 3px 9px;
+  padding: var(--s-0) var(--s-2);
   border-radius: 999px;
   border: 1px solid var(--line);
   color: var(--faint);
@@ -215,7 +256,7 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
 .conn.online { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 38%, transparent); background: var(--tint-ok); }
 .conn.offline { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 38%, transparent); background: var(--tint-bad); }
 
-.whoami { font-size: 12.5px; color: var(--muted); }
+.whoami { font-size: var(--t-sm); color: var(--muted); }
 
 main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
@@ -280,7 +321,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   box-shadow: 0 0 0 2px var(--bg);
 }
 
-#current-view { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+#current-view { font-size: var(--t-xl); margin: 0; font-weight: var(--w-bold); letter-spacing: .2px; }
 
 /* --- the menu overlay ----------------------------------------------------- */
 
@@ -343,20 +384,20 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
      a desktop, which is the parity the two layouts never had. */
   min-height: 46px;
   padding: 0 var(--s-3);
-  margin-bottom: 2px;
+  margin-bottom: var(--s-0);
   background: none;
   border-color: transparent;
   border-radius: var(--r-md);
   color: var(--muted);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--t-md);
+  font-weight: var(--w-normal);
   text-align: left;
 }
 .nav-item:hover { background: var(--panel-2); color: var(--text); }
 .nav-item.active {
   background: var(--panel-3);
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--w-medium);
 }
 .nav-item.active:hover { background: var(--panel-3); }
 
@@ -383,13 +424,13 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
    which is what the old five-across bar needed and kept getting wrong. */
 .nav-item .badge {
   min-width: 17px;
-  padding: 0 5px;
+  padding: 0 var(--s-1);
   border: 0;
   border-radius: 999px;
   background: var(--warn);
-  color: #1a1204;
-  font-size: 10.5px;
-  font-weight: 700;
+  color: var(--on-warn);
+  font-size: var(--t-xs);
+  font-weight: var(--w-bold);
   line-height: 17px;
   letter-spacing: 0;
   text-transform: none;
@@ -406,7 +447,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border: 1px solid transparent;
   border-left-width: 3px;
   border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: var(--t-md);
 }
 .banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
@@ -416,14 +457,14 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   flex-shrink: 0;
   min-height: 22px;
   width: 22px;
-  margin: -2px -4px 0 0;
+  margin: calc(var(--s-0) * -1) calc(var(--s-1) * -1) 0 0;
   padding: 0;
   border: 0;
   border-radius: var(--r-sm);
   background: none;
   color: inherit;
   opacity: .55;
-  font-size: 16px;
+  font-size: var(--t-xl);
   line-height: 1;
 }
 .banner-close:hover, .banner-close:focus-visible {
@@ -456,7 +497,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   color: var(--faint);
   text-align: center;
   padding: var(--s-6) 0;
-  font-size: 14px;
+  font-size: var(--t-md);
 }
 
 /* The line of explanation a panel opens with, and the one action belonging
@@ -477,7 +518,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   min-width: 15rem;
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--t-md);
   line-height: 1.5;
 }
 .panel-note button { flex-shrink: 0; }
@@ -495,8 +536,8 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 #quarantine > summary {
   padding: var(--s-3) var(--s-4);
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
   color: var(--muted);
   display: flex;
   align-items: center;
@@ -505,14 +546,14 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 #quarantine > summary:hover { color: var(--text); }
 #quarantine[open] > summary { border-bottom: 1px solid var(--line-soft); }
 .pill {
-  font-weight: 500;
-  font-size: 11.5px;
+  font-weight: var(--w-normal);
+  font-size: var(--t-xs);
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
 .panel-sub {
   margin: var(--s-3) var(--s-4);
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   color: var(--faint);
 }
 
@@ -523,13 +564,13 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   align-items: baseline;
   padding: var(--s-2) var(--s-4);
   border-top: 1px solid var(--line-soft);
-  font-size: 12.5px;
+  font-size: var(--t-sm);
 }
-.quarantined-name { font-weight: 550; overflow-wrap: anywhere; }
+.quarantined-name { font-weight: var(--w-medium); overflow-wrap: anywhere; }
 .quarantined-album { color: var(--muted); }
 .quarantined-path {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--t-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -539,7 +580,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 .quarantined-size { font-variant-numeric: tabular-nums; color: var(--faint); }
 .quarantined-note {
   grid-column: 1 / -1;
-  font-size: 11.5px;
+  font-size: var(--t-xs);
   color: var(--warn);
 }
 /* Recorded as set aside, but not where it was put. */
@@ -568,18 +609,18 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 }
 .job-head:hover { background: var(--panel-2); }
 
-.job-title { flex: 1; font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.job-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.job-title { flex: 1; font-weight: var(--w-medium); font-size: var(--t-md); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-meta { color: var(--muted); font-size: var(--t-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .badge {
   display: inline-block;
-  padding: 3px 8px;
+  padding: var(--s-0) var(--s-2);
   border-radius: var(--r-sm);
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
   letter-spacing: .07em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -600,7 +641,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   align-items: center;
   gap: var(--s-3);
   padding: var(--s-2) var(--s-4);
-  font-size: 13px;
+  font-size: var(--t-md);
   border-bottom: 1px solid var(--line-soft);
 }
 .track:last-child { border-bottom: 0; }
@@ -612,8 +653,8 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   width: 74px;
   flex-shrink: 0;
   color: var(--faint);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
   letter-spacing: .07em;
   text-transform: uppercase;
   text-align: right;
@@ -623,7 +664,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   padding: var(--s-3) var(--s-4);
   border-top: 1px solid var(--line);
   color: var(--bad);
-  font-size: 13px;
+  font-size: var(--t-md);
 }
 
 .track.active { background: var(--tint-accent); }
@@ -674,12 +715,11 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: var(--t-xs);
+  font-weight: var(--w-normal);
   letter-spacing: .02em;
   color: var(--muted);
 }
-#settings input { min-height: 34px; background: var(--panel-2); font-size: 13px; }
 
 .settings-actions {
   grid-column: 1 / -1;
@@ -690,7 +730,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   padding-top: var(--s-4);
   border-top: 1px solid var(--line-soft);
 }
-#settings-note { font-size: 12.5px; color: var(--muted); }
+#settings-note { font-size: var(--t-sm); color: var(--muted); }
 
 /* --- browse --------------------------------------------------------------- */
 
@@ -701,8 +741,8 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
    each other - which is how they read when each carried its own border. */
 .kinds {
   display: flex;
-  gap: 2px;
-  padding: 3px;
+  gap: var(--s-0);
+  padding: var(--s-0);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -714,14 +754,14 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border-color: transparent;
   border-radius: var(--r-sm);
   color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--t-sm);
+  font-weight: var(--w-normal);
 }
 .kind:hover { background: var(--panel-2); color: var(--text); }
 .kind.active { background: var(--panel-3); color: var(--text); }
 
 .crumb { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-4) 0 0; }
-.crumb-text { color: var(--muted); font-size: 13px; }
+.crumb-text { color: var(--muted); font-size: var(--t-md); }
 
 .grid {
   display: grid;
@@ -746,9 +786,9 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 .art.round { border-radius: 50%; margin: var(--s-3) auto 0; width: 68%; }
 .art.large { width: 168px; flex-shrink: 0; border-radius: var(--r-md); aspect-ratio: 1; }
 
-.card-body { padding: var(--s-3); display: flex; flex-direction: column; gap: 3px; flex: 1; }
-.card-title { font-weight: 600; font-size: 13px; line-height: 1.35; }
-.card-sub { font-size: 12px; color: var(--muted); }
+.card-body { padding: var(--s-3); display: flex; flex-direction: column; gap: var(--s-0); flex: 1; }
+.card-title { font-weight: var(--w-medium); font-size: var(--t-md); line-height: 1.35; }
+.card-sub { font-size: var(--t-sm); color: var(--muted); }
 .card-sub.dim { color: var(--faint); }
 
 .card-actions {
@@ -764,7 +804,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   margin-top: auto;
   padding-top: var(--s-3);
 }
-.card-actions .ghost { min-height: 30px; padding: 0 10px; font-size: 12px; }
+.card-actions .ghost { min-height: 30px; padding: 0 var(--s-3); font-size: var(--t-sm); }
 
 /* A marker, not a control. It was a button that looked like a label and
    forgot the ledger row when clicked - an action nobody could find, sitting
@@ -774,12 +814,12 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
    buttons stay where they are. */
 .held {
   margin-right: auto;
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
   color: var(--ok);
   text-transform: uppercase;
   letter-spacing: .06em;
-  padding: 2px var(--s-2);
+  padding: var(--s-0) var(--s-2);
   white-space: nowrap;
 }
 
@@ -799,7 +839,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
 .detail { display: flex; gap: var(--s-5); margin-top: var(--s-4); flex-wrap: wrap; }
 .detail-body { display: flex; flex-direction: column; gap: var(--s-1); align-items: flex-start; }
-.detail-title { font-size: 20px; font-weight: 650; }
+.detail-title { font-size: var(--t-2xl); font-weight: var(--w-bold); }
 .detail-body .ghost { margin-top: var(--s-2); }
 
 .tracklist {
@@ -809,7 +849,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border-radius: var(--r-lg);
   overflow: hidden;
 }
-.tracklist .track .ghost { min-height: 28px; padding: 0 10px; font-size: 11.5px; }
+.tracklist .track .ghost { min-height: 28px; padding: 0 var(--s-3); font-size: var(--t-xs); }
 
 /* --- shared blocks -------------------------------------------------------- */
 
@@ -822,8 +862,8 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
 }
-.stat-value { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.stat-label { font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+.stat-value { font-size: var(--t-2xl); font-weight: var(--w-bold); font-variant-numeric: tabular-nums; }
+.stat-label { font-size: var(--t-xs); font-weight: var(--w-medium); color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
 
 /* The heading of a card, not a heading floating above one - it sits inside
    the border with a rule under it, so the rows beneath are visibly its. */
@@ -834,13 +874,13 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   margin: 0;
   padding: var(--s-3) var(--s-4);
   border-bottom: 1px solid var(--line-soft);
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-bold);
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.section-note { font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--faint); }
+.section-note { font-size: var(--t-sm); font-weight: var(--w-normal); text-transform: none; letter-spacing: 0; color: var(--faint); }
 
 /* --- staging -------------------------------------------------------------- */
 
@@ -865,10 +905,10 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 .staging-item:last-child { border-bottom: 0; }
 .staging-item.unsettled { background: var(--tint-warn); }
 
-.staging-kind { font-size: 10.5px; font-weight: 600; letter-spacing: .07em; color: var(--faint); text-transform: uppercase; }
-.staging-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
-.staging-meta { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.staging-note { font-size: 11.5px; font-weight: 600; color: var(--warn); }
+.staging-kind { font-size: var(--t-xs); font-weight: var(--w-medium); letter-spacing: .07em; color: var(--faint); text-transform: uppercase; }
+.staging-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-md); }
+.staging-meta { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.staging-note { font-size: var(--t-xs); font-weight: var(--w-medium); color: var(--warn); }
 
 /* The fourth column the grid above already allows for: why it is still here,
    and the one thing to do about it. */
@@ -907,12 +947,12 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 .check.fail { border-left-color: var(--bad); background: var(--tint-bad); }
 .check.info { border-left-color: color-mix(in srgb, var(--info) 55%, transparent); }
 
-.check-label { cursor: help; font-size: 13.5px; }
-.check-value { font-variant-numeric: tabular-nums; font-weight: 650; text-align: right; }
-.check.ok .check-value { color: var(--faint); font-weight: 500; }
+.check-label { cursor: help; font-size: var(--t-md); }
+.check-value { font-variant-numeric: tabular-nums; font-weight: var(--w-bold); text-align: right; }
+.check.ok .check-value { color: var(--faint); font-weight: var(--w-normal); }
 .check.fail .check-value { color: var(--bad); }
 .check.warn .check-value { color: var(--warn); }
-.check-detail { font-size: 12.5px; color: var(--faint); }
+.check-detail { font-size: var(--t-sm); color: var(--faint); }
 
 /* --- duplicates ----------------------------------------------------------- */
 
@@ -933,9 +973,9 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   align-items: baseline;
   margin-bottom: var(--s-3);
 }
-.dupe-title { font-weight: 650; font-size: 14px; }
-.dupe-reason { font-size: 12.5px; color: var(--muted); }
-.dupe-why { font-size: 12.5px; font-weight: 500; color: var(--ok); }
+.dupe-title { font-weight: var(--w-bold); font-size: var(--t-md); }
+.dupe-reason { font-size: var(--t-sm); color: var(--muted); }
+.dupe-why { font-size: var(--t-sm); font-weight: var(--w-normal); color: var(--ok); }
 
 /* Shown when the copies in a group are not titled the same - matching
    normalises "feat." clauses away, so two different collaborations can land
@@ -947,7 +987,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border-radius: var(--r-sm);
   background: var(--tint-warn);
   color: color-mix(in srgb, var(--warn) 80%, #fff);
-  font-size: 12.5px;
+  font-size: var(--t-sm);
 }
 
 .dupe-copy {
@@ -960,7 +1000,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border: 1px solid transparent;
   border-radius: var(--r-md);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--t-md);
   transition: background .14s ease;
 }
 .dupe-copy:hover { background: var(--panel-2); }
@@ -972,7 +1012,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
 /* The field the decision actually turns on, so it leads the row. */
 .dupe-copy-title {
-  font-weight: 550;
+  font-weight: var(--w-medium);
   overflow-wrap: anywhere;
 }
 .dupe-copy-title.differs { color: var(--warn); }
@@ -981,7 +1021,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 .dupe-album { color: var(--muted); }
 .dupe-path {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--t-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1000,19 +1040,6 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
 /* --- smart playlists ------------------------------------------------------ */
 
-select {
-  min-height: 34px;
-  padding: 0 var(--s-2);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-select:hover { border-color: var(--panel-3); }
-select:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
 
 #playlist-editor {
   margin-top: var(--s-4);
@@ -1028,8 +1055,8 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: var(--t-xs);
+  font-weight: var(--w-normal);
   color: var(--muted);
 }
 .pl-name { flex: 1 1 14rem; }
@@ -1040,7 +1067,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   align-items: center;
   gap: var(--s-2);
   margin: var(--s-5) 0 var(--s-3);
-  font-size: 13px;
+  font-size: var(--t-md);
   color: var(--muted);
 }
 
@@ -1049,7 +1076,10 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
    content is not from a fixed list. */
 .pl-condition {
   display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(9rem, 1fr) minmax(7rem, 1.2fr) auto;
+  /* Widened with the fields: 16px text needs more room than the 13px it
+     replaced, and a select too narrow for its longest option truncates the
+     one word that says what the rule does. */
+  grid-template-columns: minmax(9rem, 1fr) minmax(10rem, 1fr) minmax(8rem, 1.2fr) auto;
   gap: var(--s-2);
   align-items: center;
   margin-bottom: var(--s-2);
@@ -1081,8 +1111,8 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: var(--t-xs);
+  font-weight: var(--w-normal);
   color: var(--muted);
 }
 .pl-sort input { max-width: 9rem; }
@@ -1092,7 +1122,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   align-items: center;
   gap: var(--s-2);
   margin-top: var(--s-4);
-  font-size: 13px;
+  font-size: var(--t-md);
   color: var(--muted);
   cursor: pointer;
 }
@@ -1106,14 +1136,18 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   border-top: 1px solid var(--line-soft);
 }
 #pl-delete { margin-left: auto; }
-#pl-note { font-size: 12.5px; color: var(--ok); }
+#pl-note { font-size: var(--t-sm); color: var(--ok); }
 
+/* A card like a job card, because that is what it is. It used to carry an
+   accent stripe down its left edge - the only list item in the application
+   with one, and the reason this panel read as belonging to a different
+   program. The stripe means "status" everywhere else it appears, on the
+   health rows, where it is earned. */
 .playlist {
   margin-top: var(--s-3);
   padding: var(--s-4);
   background: var(--panel);
   border: 1px solid var(--line);
-  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
   border-radius: var(--r-lg);
 }
 
@@ -1123,15 +1157,15 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   gap: var(--s-3);
   flex-wrap: wrap;
 }
-.playlist-name { font-weight: 650; font-size: 14px; }
-.playlist-count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.playlist-comment { margin-top: var(--s-1); font-size: 12.5px; color: var(--muted); }
+.playlist-name { font-weight: var(--w-bold); font-size: var(--t-md); }
+.playlist-count { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.playlist-comment { margin-top: var(--s-1); font-size: var(--t-sm); color: var(--muted); }
 
 /* The rule in words. The point of the card: what this playlist collects,
    without opening it. */
 .playlist-rule {
   margin-top: var(--s-2);
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   color: var(--text);
   line-height: 1.5;
 }
@@ -1165,18 +1199,17 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   gap: var(--s-3);
 }
 
-.signin h1 { margin: 0; font-size: 18px; }
-.signin-note { margin: calc(var(--s-2) * -1) 0 var(--s-2); font-size: 13px; color: var(--muted); }
+.signin h1 { margin: 0; font-size: var(--t-xl); }
+.signin-note { margin: calc(var(--s-2) * -1) 0 var(--s-2); font-size: var(--t-md); color: var(--muted); }
 .signin label {
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: var(--t-xs);
+  font-weight: var(--w-normal);
   letter-spacing: .02em;
   color: var(--muted);
 }
-.signin input { background: var(--panel-2); }
 .signin button { margin-top: var(--s-2); min-height: 40px; }
 
 /* --- narrow screens -------------------------------------------------------
@@ -1201,7 +1234,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
 
   header { gap: var(--s-2); padding: var(--s-2) var(--s-3); }
   header { padding-top: calc(var(--s-2) + env(safe-area-inset-top, 0px)); }
-  #current-view { font-size: 15px; white-space: nowrap; }
+  #current-view { font-size: var(--t-lg); white-space: nowrap; }
 
   /* Full width on a phone: a drawer that leaves a sliver of the page behind
      it invites a mis-tap on whatever is under that sliver. */
@@ -1209,7 +1242,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
 
   /* Comfortably past the touch minimum, and roomier than the desktop rows
      because this is the primary way to move around on a phone. */
-  .nav-item { min-height: 52px; font-size: 15px; }
+  .nav-item { min-height: 52px; font-size: var(--t-lg); }
 
 
   /* One thing per row, full width, thumb-sized. */
@@ -1232,8 +1265,8 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
     gap: var(--s-1) var(--s-3);
     padding: var(--s-3);
   }
-  .check-value { font-size: 16px; }
-  .check-detail { grid-column: 1 / -1; font-size: 12px; }
+  .check-value { font-size: var(--t-xl); }
+  .check-detail { grid-column: 1 / -1; font-size: var(--t-sm); }
 
   .dupe { padding: var(--s-3); }
   .dupe-copy { grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-3); padding: var(--s-2); margin: 0; }
@@ -1243,7 +1276,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   .quarantined-note { grid-column: 1; }
   /* Otherwise the star falls into the radio column and hangs under it. */
   .dupe-star { justify-self: start; }
-  .dupe-path { direction: ltr; font-size: 11.5px; }
+  .dupe-path { direction: ltr; font-size: var(--t-xs); }
   .dupe-actions { flex-direction: column; }
   .dupe-actions button { width: 100%; min-height: 42px; }
 
@@ -1295,7 +1328,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   /* The tab rule that used to live here shrank five labels to fit across the
      screen. A vertical menu has no such constraint, so only the title needs
      to give way. */
-  #current-view { font-size: 14px; }
+  #current-view { font-size: var(--t-md); }
 }
 
 /* --- health: the demoted rows ---------------------------------------------
@@ -1312,7 +1345,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
    see. Built from the same pieces as the rest: the stat boxes above the
    duplicates list, the row rhythm of the health checks. */
 
-.stat-detail { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+.stat-detail { font-size: var(--t-xs); color: var(--faint); margin-top: var(--s-0); }
 
 .listen-range { display: flex; gap: var(--s-2); flex-shrink: 0; }
 .range.active {
@@ -1341,10 +1374,10 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
 .listen-row:last-child { border-bottom: 0; }
 .listen-row.gone { opacity: .55; }
 
-.listen-rank { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
-.listen-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.listen-artist { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.listen-plays { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
+.listen-rank { color: var(--faint); font-size: var(--t-sm); font-variant-numeric: tabular-nums; text-align: right; }
+.listen-title { font-size: var(--t-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.listen-artist { font-size: var(--t-sm); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.listen-plays { font-size: var(--t-md); font-weight: var(--w-bold); font-variant-numeric: tabular-nums; text-align: right; }
 
 /* The shape of the list, readable without reading a single number. */
 .listen-bar {
