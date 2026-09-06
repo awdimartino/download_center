@@ -305,8 +305,11 @@ designing:
 
 ### Wrapped-style stats
 
-Blocked on play-count tracking having run for long enough to say anything.
-Sensible once there are a few weeks of snapshots.
+The Listening panel is the first half: coverage, and the most played tracks
+over a window, scoped to the signed-in account. What is missing is the
+*shape* of a year - months, discoveries, streaks - which needs more
+snapshots than exist yet. The imported Last.fm history covers the years
+before, so anything periodised over 2022-2026 can be built today.
 
 ---
 

@@ -156,7 +156,12 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
 - **`matcher.py`** picks the YouTube Music recording corresponding to a
   Spotify track, scored on title, artist and duration.
 - **`downloader.py`** fetches with yt-dlp and converts to MP3.
-- **`tagger.py`** writes Spotify metadata as seed data for beets.
+- **`tagger.py`** writes Spotify metadata as seed data for beets. The
+  `artist` tag is the track's **primary** artist, not the full credit:
+  beets reads an album whose tracks disagree on `artist` as a Various
+  Artists release and searches MusicBrainz for a compilation, so one guest
+  appearance made the real record unfindable. The full credit stays in the
+  job for the browser and the YouTube Music search.
 - **`staging.py`** assembles albums in `.incomplete/` and *renames* them into
   place — a rename, so beets never sees a half-written album. `settled`
   requires a folder to be quiet for `staging_quiet_seconds` before import.
@@ -194,7 +199,12 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
   migrates stars and ratings onto the keeper, and *quarantines* losers to
   `duplicates-removed/`. Nothing is deleted.
 - **`playcounts.py`** — nightly snapshots of Navidrome's cumulative play
-  counts, so listening history stops being unrecoverable. Keyed by track
+  counts, so listening history stops being unrecoverable. Read back by the
+  Listening panel, which resolves each stored UUID to a title through
+  Navidrome's index; a track that has left the library still counts, because
+  the plays happened. `coverage()` is per person, `status()` is per
+  installation, and the difference matters - one account's imported history
+  is not another's to read. Keyed by track
   UUID, storing only what changed, with a run log so a quiet day still
   counts as captured. `play_imported` holds the Last.fm backfill beside it.
 - **`playlists.py`** — smart playlist rules. Translates between Navidrome's
@@ -339,6 +349,12 @@ Each of these cost real time or caused a real bug.
   document that is always fetched fresh.
 
 **CSS**
+- Every size, weight, gap and colour comes from a token in `:root`. Four
+  tests fail the build on a raw px font-size, a bare weight, a raw gap or a
+  hex outside `:root` - the panels were built over months and each decided
+  for itself what "small" meant, ending at thirteen font sizes.
+- **Form fields must be at least 16px.** Below that, iOS Safari zooms the
+  page when one takes focus, and does not zoom back.
 - `[hidden]` is a user-agent rule and loses to any class setting `display`.
   Stated once, `!important`, at the top of the stylesheet.
 - `overflow-x: hidden` on `html`/`body` makes them scroll containers, which

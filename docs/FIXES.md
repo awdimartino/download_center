@@ -223,6 +223,57 @@ decision from the user before it can be done.
       reports into its own panel (`#staging-op`, `#health-op`) rather than the
       page-wide one.
 
+- [x] **40. Every album with a guest on one track was refused.** Reported as
+      "beets is very often failing to find the right match, even with very
+      popular albums". It was not beets. Spotify credits featured artists on
+      the track, so a downloaded Thriller carried "Michael Jackson" on eight
+      files and "Michael Jackson, Paul McCartney" on the third; beets reads
+      an album whose tracks disagree on `artist` as a Various Artists release
+      (`autotag/match.py`, `va_likely`) and searches MusicBrainz for a
+      compilation, so the real record never appears among the candidates.
+      Measured both ways against the staged album: as staged, five Various
+      Artists candidates and a best distance of 0.41, refused; with that one
+      tag normalised, `Michael Jackson - Thriller` at 0.01, filed. The tag
+      now carries the primary artist, taken from Spotify's structured list
+      rather than split off the joined string - "Tyler, The Creator" is one
+      artist with a comma in it.
+      The backlog was normalised in place by a throwaway script, narrowly:
+      only where the track artist is the album artist with names appended.
+      A first pass was written more broadly and a dry run caught it - it
+      would have flattened Japanese doujin albums whose album artist is the
+      circle and whose track artists are the individual vocalists.
+
+- [x] **41. The staging sweep never ran on a day of deploys.** The loop slept
+      the whole interval before its first pass, so every restart bought
+      staging another fifteen minutes of nothing, and each deploy landed
+      inside the previous wait. Ninety seconds after startup now.
+
+- [x] **42. Four bugs in Browse and the queue buttons**, from testing.
+      Massive images after Back (the grid class was added by the submit
+      handler, and Back does not pass the form); "already have" shoving the
+      download button along, hiding the forget action inside a label, and
+      leaving two download buttons behind after forgetting - one control
+      doing three jobs. Now a marker, an explicit Forget, and a download
+      button that never moves.
+
+- [x] **43. Banners could not be dismissed.** Text set on a paragraph, so one
+      went away only when something else happened to overwrite it. One helper
+      raises all of them now, with a close button.
+
+- [x] **44. Thirteen font sizes, six weights, ten raw spacing values.**
+      "Formatting is all over the place." Six type steps, three weights, one
+      spacing scale, button inks named in `:root`. Fields were the worst of
+      it - a select 34px on one grey and an input 38px on another, side by
+      side in a playlist condition row - and are one rule now, at 16px,
+      because below that iOS Safari zooms the page on focus and does not zoom
+      back. Four tests fail the build if any of it drifts back.
+
+- [x] **45. The health panel hid half of itself behind a toggle**, which had
+      to be clicked again on every visit. Every row shows; `secondary` still
+      dims and still stays out of the badge. Last scan was Navidrome's raw
+      nanosecond timestamp in a five-rem numeric column; it is an age now,
+      with the timestamp in the detail.
+
 - [x] **39. Deploys did not reach the browser.** Reported by the user
       immediately after the escape hatch shipped: no *Import as-is* button,
       though the container was serving an `app.js` that contained one.
