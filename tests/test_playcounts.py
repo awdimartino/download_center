@@ -303,10 +303,10 @@ def test_utc_never_needs_a_timezone_database(monkeypatch):
     assert playcounts.zone() is not None
 
 
-def test_a_snapshot_in_the_small_hours_closes_yesterday(monkeypatch):
-    """It records a cumulative total at the moment it runs, and just after
-    midnight that total is everything up to the end of yesterday. Labelling
-    it with today's date shifted every delta a day late."""
+def test_a_snapshot_describes_yesterday_not_today(monkeypatch):
+    """A snapshot is a total at the moment it runs, so the only day it can
+    describe in full is the one before it. Labelling it today shifted every
+    delta a day late."""
     import app.playcounts as pc
 
     class FakeDatetime(pc.datetime):
@@ -315,21 +315,29 @@ def test_a_snapshot_in_the_small_hours_closes_yesterday(monkeypatch):
             return pc.datetime(2026, 3, 10, 0, 5, tzinfo=tz)
 
     monkeypatch.setattr(pc, "datetime", FakeDatetime)
-    assert pc.closing_day() == "2026-03-09"
+    assert pc.last_complete_day() == "2026-03-09"
     assert pc.today() == "2026-03-10"
 
 
-def test_a_snapshot_later_in_the_day_belongs_to_today(monkeypatch):
-    """A restart at noon is a partial reading of today, not of yesterday."""
+def test_the_target_day_does_not_move_during_a_day(monkeypatch):
+    """The earlier version aimed at "yesterday if it is still early". A
+    restart in the afternoon then wrote a partial reading of today under
+    today's label, marked the day done, and the run after midnight skipped
+    it - leaving the day permanently half-closed with nothing to say so."""
     import app.playcounts as pc
 
-    class FakeDatetime(pc.datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return pc.datetime(2026, 3, 10, 12, 0, tzinfo=tz)
+    seen = set()
+    for hour in (0, 3, 4, 12, 23):
+        class FakeDatetime(pc.datetime):
+            @classmethod
+            def now(cls, tz=None, _h=hour):
+                return pc.datetime(2026, 3, 10, _h, 30, tzinfo=tz)
 
-    monkeypatch.setattr(pc, "datetime", FakeDatetime)
-    assert pc.closing_day() == "2026-03-10"
+        monkeypatch.setattr(pc, "datetime", FakeDatetime)
+        seen.add(pc.last_complete_day())
+
+    assert seen == {"2026-03-09"}, (
+        f"the target must be stable across the day, got {seen}")
 
 
 # --- imported history sits beside the snapshots ----------------------------

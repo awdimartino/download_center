@@ -52,10 +52,6 @@ log = logging.getLogger("download_center.playcounts")
 # media_file.tags, so it can be read in the same query.
 UUID_TAG = "$.navidrome_uuid[0].value"
 
-# Before this hour, a snapshot is understood to be closing yesterday rather
-# than reporting today. The loop fires within half an hour of midnight, so
-# the window is generous; a manual run at noon is a reading of today.
-CLOSING_HOUR = 4
 
 
 def zone() -> tzinfo:
@@ -85,24 +81,21 @@ def today() -> str:
     return datetime.now(zone()).strftime("%Y-%m-%d")
 
 
-def closing_day() -> str:
-    """The day a snapshot taken *now* actually closes.
+def last_complete_day() -> str:
+    """The most recent day that has actually finished.
 
-    A snapshot records a cumulative total at the moment it runs. Run shortly
-    after midnight, that total is everything up to the end of *yesterday* -
-    so yesterday is the day it describes.
+    A snapshot records a cumulative total at the moment it runs, so the only
+    day it can describe in full is the one before it. Labelling it with
+    today's date was an off-by-one that attributed every delta a day late.
 
-    Labelling it with today's date was an off-by-one: every delta came out
-    attributed a day late. Caught while only the baseline existed; three
-    months of data later it would have been very hard to see.
+    Yesterday, always - not "yesterday if it is still early". That version
+    had an edge the loop fell straight into: a restart at four in the
+    afternoon wrote a *partial* reading of today under today's label, and
+    because the day was then marked done, the run after midnight skipped it.
+    The day was left permanently half-closed and nothing said so. Aiming at
+    yesterday means the target only changes when a day genuinely ends.
     """
-    now = datetime.now(zone())
-    # Anything captured in the small hours is closing the previous day. Later
-    # in the day - a restart, a manual run - it is a partial reading of today
-    # and belongs to today.
-    if now.hour < CLOSING_HOUR:
-        return (now - timedelta(days=1)).strftime("%Y-%m-%d")
-    return now.strftime("%Y-%m-%d")
+    return (datetime.now(zone()) - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 # --- reading what Navidrome currently believes -----------------------------
@@ -177,7 +170,7 @@ def take(when: str | None = None) -> dict[str, Any]:
     Idempotent for a given day: the primary key is (day, track, user), so
     running it twice replaces rather than duplicates.
     """
-    day = when or closing_day()
+    day = when or last_complete_day()
     try:
         source = navidrome.open_db()
     except navidrome.Unavailable as exc:
