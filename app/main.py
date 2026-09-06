@@ -783,6 +783,20 @@ async def dismiss_duplicate(
     return {"dismissed": request.key}
 
 
+@app.get("/api/duplicates/quarantined")
+async def list_quarantined(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """What has been set aside. Read-only, deliberately.
+
+    Walks the quarantine directory of each library this person can see and
+    joins the ledger onto it, so a file with no record and a record with no
+    file both show up rather than neither.
+    """
+    return await asyncio.to_thread(
+        duplicates.quarantine_survey, session.identity)
+
+
 @app.post("/api/duplicates/auto")
 async def auto_resolve_duplicates(
     apply: bool = False,

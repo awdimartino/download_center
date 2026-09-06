@@ -844,6 +844,9 @@ async function postDupe(path, body) {
     }
     reportResolution(payload);
     await loadDupes();
+    // Keep the set-aside list honest if it is open, since a resolve is
+    // exactly the thing that adds to it.
+    if (quarantineEl.open) await loadQuarantine();
   } catch {
     showError("Could not reach the server.");
   }
@@ -863,6 +866,74 @@ function renderDupes(payload) {
     : "";
   dupeNote.hidden = !payload.confident;
 }
+
+// --- what has already been set aside -------------------------------------
+// Read-only. It exists because "nothing is deleted" is a claim you should be
+// able to check, and until now the only way to check it was to ssh in.
+
+const quarantineEl = document.getElementById("quarantine");
+const quarantineList = document.getElementById("quarantine-list");
+const quarantineEmpty = document.getElementById("quarantine-empty");
+const quarantineCount = document.getElementById("quarantine-count");
+
+function bytes(n) {
+  if (!n) return "";
+  return n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${(n / 1e6).toFixed(0)} MB`;
+}
+
+function quarantineRow(entry) {
+  const row = el("div", `quarantined${entry.present ? "" : " gone"}`);
+  const named = entry.artist || entry.title;
+
+  row.append(
+    el("span", "quarantined-name",
+       named ? `${entry.artist} — ${entry.title}` : entry.name),
+    el("span", "quarantined-album", entry.album || "—"),
+    el("span", "quarantined-path", entry.was || entry.path),
+    el("span", "quarantined-size", bytes(entry.size))
+  );
+
+  const notes = [];
+  if (!entry.present) notes.push("file no longer there");
+  // A file with no ledger row was set aside before the record was kept, or
+  // moved here by hand. Worth saying so rather than showing a blank line.
+  if (!entry.recorded) notes.push("no record of who removed it");
+  if (entry.decided_by) notes.push(`removed by ${entry.decided_by}`);
+  if (notes.length) row.append(el("span", "quarantined-note", notes.join(" · ")));
+  if (entry.kept) row.title = `Kept instead: ${entry.kept}`;
+  return row;
+}
+
+async function loadQuarantine() {
+  try {
+    const data = await fetch("/api/duplicates/quarantined").then((r) => r.json());
+    const entries = data.entries || [];
+    quarantineList.replaceChildren(...entries.map(quarantineRow));
+
+    quarantineCount.textContent = entries.length
+      ? `${data.total}${data.truncated ? "+" : ""}${data.bytes ? ` · ${bytes(data.bytes)}` : ""}`
+      : "none";
+    quarantineEmpty.hidden = entries.length > 0;
+
+    const caveats = [];
+    if (data.missing) caveats.push(`${data.missing} recorded file(s) are no longer there`);
+    if (data.unrecorded) caveats.push(`${data.unrecorded} predate the removal log`);
+    quarantineEmpty.textContent = entries.length
+      ? "" : "Nothing has been set aside.";
+    if (caveats.length) {
+      quarantineList.append(el("p", "panel-sub", caveats.join(" · ") + "."));
+    }
+  } catch (err) {
+    quarantineEmpty.textContent = `Could not read the quarantine: ${err.message}`;
+    quarantineEmpty.hidden = false;
+  }
+}
+
+// Only when it is opened. It walks a directory, and most visits to this tab
+// are about the list above it.
+quarantineEl.addEventListener("toggle", () => {
+  if (quarantineEl.open) loadQuarantine();
+});
 
 async function loadDupes() {
   try {

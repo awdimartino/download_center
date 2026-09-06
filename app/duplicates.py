@@ -456,6 +456,90 @@ def resolve(group: Group, keeper_id: str,
             "quarantined": moved, "migrated": migrated, "failed": failed}
 
 
+def quarantine_survey(identity: navidrome.Identity,
+                      limit: int = 500) -> dict[str, Any]:
+    """Everything sitting in quarantine, read-only.
+
+    Deliberately reads the *disk* and joins the ledger onto it, rather than
+    listing ledger rows. The two can disagree, and each way round is worth
+    seeing: a file with no record was moved by an older version of this app
+    or by hand, and a record whose file has gone means somebody cleared the
+    directory out. Listing only the rows would show neither.
+
+    Nothing here writes, moves or deletes. Putting a file back is a manual
+    job on purpose - it means deciding what to do about the copy that was
+    kept, and that is not a decision to make from a list.
+    """
+    recorded = {row["target_path"]: row for row in ledger.quarantined(limit=2000)}
+    visible = {lib["id"] for lib in identity.libraries}
+
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    truncated = False
+
+    for library in identity.libraries:
+        root = Path(library["path"]) / QUARANTINE_NAME
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*")):
+            if len(entries) >= limit:
+                truncated = True
+                break
+            if not path.is_file() or path.name == NDIGNORE:
+                continue
+            seen.add(str(path))
+            row = recorded.get(str(path))
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+            entries.append({
+                "path": str(path),
+                "name": path.name,
+                # Where it sat in the library, which is what says which record
+                # it came from - the whole reason the structure is preserved.
+                "was": str(path.relative_to(root)),
+                "library": library["name"],
+                "size": size,
+                "present": True,
+                "title": (row or {}).get("title") or "",
+                "artist": (row or {}).get("artist") or "",
+                "album": (row or {}).get("album") or "",
+                "kept": (row or {}).get("keeper_path") or "",
+                "decided_by": (row or {}).get("decided_by") or "",
+                "moved_at": (row or {}).get("moved_at") or "",
+                # No row means this predates the record being kept, or
+                # somebody moved it here themselves.
+                "recorded": row is not None,
+            })
+
+    # Rows whose file is no longer where it was put. Worth showing: it is the
+    # difference between "set aside" and "actually gone".
+    for target, row in recorded.items():
+        if target in seen or row["library_id"] not in visible:
+            continue
+        if row["restored_at"]:
+            continue
+        entries.append({
+            "path": target, "name": Path(target).name, "was": "",
+            "library": "", "size": 0, "present": False,
+            "title": row["title"] or "", "artist": row["artist"] or "",
+            "album": row["album"] or "", "kept": row["keeper_path"] or "",
+            "decided_by": row["decided_by"] or "",
+            "moved_at": row["moved_at"] or "", "recorded": True,
+        })
+
+    entries.sort(key=lambda e: (e["moved_at"] or "", e["name"]), reverse=True)
+    return {
+        "entries": entries,
+        "total": len(entries),
+        "bytes": sum(e["size"] for e in entries),
+        "missing": sum(1 for e in entries if not e["present"]),
+        "unrecorded": sum(1 for e in entries if not e["recorded"]),
+        "truncated": truncated,
+    }
+
+
 def auto_resolve(connection: sqlite3.Connection, identity: navidrome.Identity,
                  apply: bool = False) -> dict[str, Any]:
     """Act only on groups a shared MusicBrainz id makes unambiguous."""

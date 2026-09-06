@@ -322,6 +322,69 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 }
 .panel-note button { flex-shrink: 0; }
 
+/* --- set aside ------------------------------------------------------------
+   A read-only ledger of what has already been removed from the library.
+   Collapsed by default: it answers a question you only occasionally ask. */
+
+#quarantine {
+  margin-top: var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+}
+#quarantine > summary {
+  padding: var(--s-3) var(--s-4);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+#quarantine > summary:hover { color: var(--text); }
+#quarantine[open] > summary { border-bottom: 1px solid var(--line-soft); }
+.pill {
+  font-weight: 500;
+  font-size: 11.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.panel-sub {
+  margin: var(--s-3) var(--s-4);
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+.quarantined {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.3fr) 1fr 1.6fr auto;
+  gap: var(--s-3);
+  align-items: baseline;
+  padding: var(--s-2) var(--s-4);
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+}
+.quarantined-name { font-weight: 550; overflow-wrap: anywhere; }
+.quarantined-album { color: var(--muted); }
+.quarantined-path {
+  color: var(--faint);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.quarantined-size { font-variant-numeric: tabular-nums; color: var(--faint); }
+.quarantined-note {
+  grid-column: 1 / -1;
+  font-size: 11.5px;
+  color: var(--warn);
+}
+/* Recorded as set aside, but not where it was put. */
+.quarantined.gone .quarantined-name { color: var(--faint); text-decoration: line-through; }
+
 /* --- queue ---------------------------------------------------------------- */
 
 #add-form { display: flex; gap: var(--s-2); }
@@ -1068,6 +1131,8 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   .dupe-copy { grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-3); padding: var(--s-2); margin: 0; }
   .dupe-copy input { width: 20px; height: 20px; }
   .dupe-copy-title, .dupe-spec, .dupe-album, .dupe-path, .dupe-star { grid-column: 2; }
+  .quarantined { grid-template-columns: 1fr; gap: var(--s-1); padding: var(--s-3) var(--s-4); }
+  .quarantined-note { grid-column: 1; }
   /* Otherwise the star falls into the radio column and hangs under it. */
   .dupe-star { justify-self: start; }
   .dupe-path { direction: ltr; font-size: 11.5px; }

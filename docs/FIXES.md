@@ -37,9 +37,9 @@ decision from the user before it can be done.
       device boundary, so the original was unlinked) and destroyed by the
       next `docker compose pull`. "Nothing is deleted" was false in the
       deployed layout.
-      **Operational follow-up:** anything resolved before this fix is in the
-      running container's `/duplicates-removed` and will be lost on the next
-      deploy. Rescue it first — see the note at the end of this file.
+      **Operational follow-up: waived.** The user does not need the files
+      already in the old `/duplicates-removed`; they go with the next deploy
+      and that is accepted (decided 2026-09-06).
 - [x] **2. Duplicate review UI never shows each copy's title** — only the
       group's first. `normalise()` strips `feat.` clauses, so two different
       collaborations group together and render as identical rows.
@@ -169,21 +169,13 @@ above and in PLAN.md's decisions log.
 
 ---
 
-## Before the next deploy — rescue the old quarantine
+## Set aside — the read-only view
 
-Fix 1e changed where quarantined files go. Anything resolved *before* it is
-sitting in the running container at `/duplicates-removed`, which is not a
-volume: `docker compose pull && up -d` replaces the container and takes it
-with it. Get it out first, and only then deploy.
+`GET /api/duplicates/quarantined` and the collapsible section at the bottom
+of the Duplicates tab list what has already been removed. It walks each
+visible library's `duplicates-removed/` and joins the ledger onto it, so
+both disagreements show: a file with no record (moved by an older version or
+by hand) and a record whose file has gone.
 
-```bash
-ssh argyle@alex-pi
-docker exec download-center sh -c 'ls -la /duplicates-removed | head'
-docker cp download-center:/duplicates-removed \
-          /media/argyle/storage/duplicates-rescued
-```
-
-Files land flat, with no record of which album each came from — that is the
-bug — so putting one back is a manual job. After the new image is deployed,
-quarantine goes to `<library>/duplicates-removed/` with the path preserved
-and a row in `state.db`.
+Read-only on purpose. Putting a copy back means deciding what to do about
+the one that was kept, and that is not a decision to make from a list.

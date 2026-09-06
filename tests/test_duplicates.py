@@ -293,3 +293,84 @@ def test_a_copy_someone_else_starred_outranks_a_better_file():
     ordered = sorted([better, theirs],
                      key=lambda c: duplicates._rank(c, None), reverse=True)
     assert ordered[0].id == "theirs"
+
+
+# --- the read-only view of what was set aside ------------------------------
+
+def test_survey_lists_files_with_the_record_joined_on(tmp_path, state_db,
+                                                      identity):
+    root = tmp_path / "music"
+    source = root / "Artist" / "Album" / "01 Song.mp3"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"audio")
+    duplicates.resolve(
+        _group([_copy("keep", "Artist/Album/01 Song.flac", suffix="flac"),
+                _copy("drop", "Artist/Album/01 Song.mp3", title="Airbag",
+                      artist="Radiohead")]),
+        "keep", identity)
+
+    survey = duplicates.quarantine_survey(identity)
+
+    assert survey["total"] == 1
+    entry = survey["entries"][0]
+    assert entry["title"] == "Airbag"
+    assert entry["artist"] == "Radiohead"
+    assert entry["was"] == str(Path("Artist/Album/01 Song.mp3"))
+    assert entry["present"] is True
+    assert entry["recorded"] is True
+    assert entry["decided_by"] == "alex"
+
+
+def test_survey_reports_a_file_nobody_recorded(tmp_path, state_db, identity):
+    """Set aside by an older version, or moved here by hand. Showing it as an
+    unexplained file beats not showing it at all."""
+    stray = tmp_path / "music" / duplicates.QUARANTINE_NAME / "loose.mp3"
+    stray.parent.mkdir(parents=True)
+    stray.write_bytes(b"audio")
+
+    survey = duplicates.quarantine_survey(identity)
+
+    assert survey["unrecorded"] == 1
+    assert survey["entries"][0]["recorded"] is False
+
+
+def test_survey_reports_a_record_whose_file_has_gone(tmp_path, state_db,
+                                                     identity):
+    """The difference between "set aside" and "actually gone"."""
+    root = tmp_path / "music"
+    source = root / "Artist" / "Album" / "01 Song.mp3"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"audio")
+    duplicates.resolve(
+        _group([_copy("keep", "Artist/Album/01 Song.flac", suffix="flac"),
+                _copy("drop", "Artist/Album/01 Song.mp3")]),
+        "keep", identity)
+
+    moved = ledger.quarantined()[0]["target_path"]
+    Path(moved).unlink()
+
+    survey = duplicates.quarantine_survey(identity)
+    assert survey["missing"] == 1
+    assert survey["entries"][0]["present"] is False
+
+
+def test_survey_ignores_the_ndignore_marker(tmp_path, state_db, identity):
+    duplicates._quarantine_root(tmp_path / "music")
+    assert duplicates.quarantine_survey(identity)["total"] == 0
+
+
+def test_survey_is_empty_when_nothing_has_been_set_aside(tmp_path, state_db,
+                                                         identity):
+    survey = duplicates.quarantine_survey(identity)
+    assert survey == {"entries": [], "total": 0, "bytes": 0, "missing": 0,
+                      "unrecorded": 0, "truncated": False}
+
+
+def test_survey_does_not_show_another_librarys_quarantine(tmp_path, state_db,
+                                                          identity):
+    hers = tmp_path / "kelly" / duplicates.QUARANTINE_NAME / "song.mp3"
+    hers.parent.mkdir(parents=True)
+    hers.write_bytes(b"audio")
+
+    # alex can only see library 1, whose root is tmp_path/music.
+    assert duplicates.quarantine_survey(identity)["total"] == 0
