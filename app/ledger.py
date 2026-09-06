@@ -131,6 +131,20 @@ CREATE TABLE IF NOT EXISTS play_imported (
 );
 CREATE INDEX IF NOT EXISTS idx_imported_day ON play_imported(day);
 
+-- That a day was captured, separately from whether anything changed on it.
+-- Only changed counts go into play_snapshot, so a day when nobody listened
+-- writes no rows at all - and asking "is this day done?" of that table
+-- answers no, for ever. The nightly job then re-ran every half hour and the
+-- status read permanently out of date. A quiet day is a real answer and
+-- needs somewhere to be recorded.
+CREATE TABLE IF NOT EXISTS play_snapshot_run (
+    day        TEXT PRIMARY KEY,
+    taken_at   TEXT NOT NULL,
+    tracked    INTEGER NOT NULL,
+    changed    INTEGER NOT NULL,
+    anomalies  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS play_anomaly (
     noticed_on  TEXT NOT NULL,
     track_uuid  TEXT NOT NULL,

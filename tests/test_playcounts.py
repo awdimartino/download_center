@@ -441,3 +441,47 @@ def test_status_with_nothing_recorded_yet(wired):
     assert status["snapshots"]["days"] == 0
     assert status["imported"] == []
     assert status["up_to_date"] is False
+
+
+# --- a day when nobody listened ---------------------------------------------
+
+def test_a_day_with_no_changes_still_counts_as_taken(wired):
+    """Only changed counts are stored, so a quiet day writes no rows at all.
+    Asking play_snapshot whether the day is done then answers no for ever:
+    the nightly job repeated it every half hour and the status never caught
+    up. Found in production the day after this shipped."""
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 5)
+    playcounts.take("2026-03-01")
+
+    result = playcounts.take("2026-03-02")
+    assert result["changed"] == 0
+
+    assert playcounts.taken_on("2026-03-02") is True, (
+        "a quiet day is a real answer, not an incomplete one")
+    rows = ledger.connection().execute(
+        "select count(*) from play_snapshot where taken_on = '2026-03-02'"
+    ).fetchone()[0]
+    assert rows == 0, "and it should still not have written a snapshot row"
+
+
+def test_the_run_log_records_what_happened(wired):
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 7)
+    playcounts.take("2026-03-01")
+
+    row = ledger.connection().execute(
+        "select day, tracked, changed, anomalies from play_snapshot_run"
+    ).fetchone()
+    assert row == ("2026-03-01", 1, 1, 0)
+
+
+def test_status_is_up_to_date_after_a_quiet_day(wired):
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 5)
+    playcounts.take()
+    playcounts.take()          # nothing changed since
+
+    status = playcounts.status()
+    assert status["up_to_date"] is True
+    assert status["snapshots"]["days_run"] == 1
