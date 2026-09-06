@@ -59,7 +59,10 @@ Local Python is `.venv/Scripts/python.exe` — `python` is not on PATH.
 
 ## Where things stand
 
-**Deployed:** commit `9f1bbb8`, container healthy.
+**Deployed:** commit `53b47ba`, container healthy, deployed 2026-09-06.
+`state.db` backed up beside itself as `state.db.bak-2026-09-06` before the
+ledger migration; the migration was dry-run against a copy of the real
+database first and preserved all 825 rows.
 
 **Navidrome 0.58.5.** Two libraries: `Music Library` (id 1, `/music`) and
 `Kelly` (id 2, `/kelly`). Users: `alex` → library 1, `kelly` → library 2,
@@ -84,7 +87,12 @@ The agreed order is in PLAN.md. In short:
 2. **Last.fm backfill.** One-time, fuzzy-matched. See below.
 3. **Health tab cut down** to roughly seven actionable rows.
 4. **Burger navigation**, replacing tabs on both phone and desktop.
-5. **Tests and a CI step that runs them.** There are none today.
+5. ~~**Tests and a CI step that runs them.**~~ Done 2026-09-06: 114 tests,
+   and CI runs them before the image is built. Grow the suite as you go.
+
+Ahead of all of these: the open items in [FIXES.md](FIXES.md). Tier 1 is
+closed; Tier 2 (blocking work in request handlers, websocket cost, per-job
+concurrency, `matcher` swallowing every exception) is next.
 
 ---
 
@@ -97,12 +105,12 @@ The agreed order is in PLAN.md. In short:
   but it has never been saved against the live server. Offered but not yet
   done: create one throwaway playlist through the service account exercising
   every field, confirm, delete.
-- **No tests exist.** `duplicates.py` moves files irreversibly and has been
-  reviewed once, not three times. Every check run while building the
-  playlist editor lived in a scratchpad and is gone.
-- **CI does not run tests, lint or type checks** — it only builds the image.
-  Bugs reach the user before they reach a test. That is literally how the
-  duplicate-save bug was found.
+- ~~**No tests exist.**~~ 114 now, heaviest on `duplicates.py`. It moves
+  files irreversibly, so it is tested hardest. The frontend has no test
+  coverage at all - verify Duplicates and Browse in Safari by hand.
+- ~~**CI does not run tests, lint or type checks.**~~ A test job now gates
+  the build; pull requests get the tests without the QEMU build. No linter
+  or type check yet - FIXES.md item 27.
 
 ---
 
