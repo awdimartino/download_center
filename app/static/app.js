@@ -406,6 +406,46 @@ function albumCard(card) {
   return node;
 }
 
+// "Already have" is the ledger's word, not the filesystem's - beets moved
+// the file out of staging, so that table is the only thing that knows. When
+// the file later leaves the library nothing notices, and the track becomes
+// permanently unfetchable with no way to say otherwise. Clicking the tag is
+// the way back.
+//
+// The tag replaces itself with a download button rather than re-running the
+// view, so the answer is immediate and this does not need to know whether it
+// is inside a search grid or an album listing.
+function heldTag(item, queueLabel) {
+  const tag = el("button", "held", queueLabel === "Get" ? "have" : "already have");
+  tag.type = "button";
+  tag.title = "Already downloaded into your library. Click to forget it, so "
+            + "it can be downloaded again. No file is touched.";
+  tag.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if (!confirm(
+      `Forget "${item.name}"?\n\n`
+      + "It stops counting as already downloaded, so it can be fetched "
+      + "again.\nNothing on disk is touched.")) return;
+    showError("");
+    try {
+      const response = await fetch("/api/ledger/forget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_id: item.id }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        showError(body.detail || `Request failed (${response.status})`);
+        return;
+      }
+      tag.replaceWith(queueButton(item.url, queueLabel));
+    } catch {
+      showError("Could not reach the server.");
+    }
+  });
+  return tag;
+}
+
 function trackCard(card) {
   const node = el("div", "card");
   node.append(cover(card.cover));
@@ -416,7 +456,7 @@ function trackCard(card) {
     el("div", "card-sub dim", `${card.album || ""}${card.year ? ` \u00b7 ${card.year}` : ""}`)
   );
   const actions = el("div", "card-actions");
-  if (card.held) actions.append(el("span", "held", "already have"));
+  if (card.held) actions.append(heldTag(card, "Download"));
   actions.append(queueButton(card.url, "Download"));
   body.append(actions);
   node.append(body);
@@ -500,7 +540,7 @@ async function openAlbum(id) {
       el("span", "track-dur", duration(track.duration_ms))
     );
     row.append(track.held
-      ? el("span", "held", "have")
+      ? heldTag(track, "Get")
       : queueButton(track.url, "Get"));
     list.append(row);
   });

@@ -38,10 +38,18 @@ Knowing which store owns a fact is most of understanding this codebase.
 | `config/beets/<workspace>/library.db` | Beets' index of one person's filed music | One per workspace |
 | The audio files | `navidrome_uuid`, MusicBrainz ids, all tags | The truth. Everything else is a cache |
 
-`state.db` has exactly two tables — `ledger` (source_id, isrc, title,
-artist, album, file_path, completed_at) and `duplicate_dismissed`
-(group_key, note, decided_at). It deliberately holds no user table, no
-library table and no copy of anything Navidrome knows.
+`state.db` has three tables. `ledger` (source_id, **library_id**, isrc,
+title, artist, album, file_path, completed_at), keyed on the pair — the
+question is "is this recording already in this collection", and a collection
+is a library, so two accounts sharing one library share the answer and two
+libraries do not. `duplicate_dismissed` (group_key, note, decided_at) holds
+"keep both" decisions. `duplicate_quarantined` records every file the
+duplicates flow set aside — source, target, keeper, who decided — because
+"nothing is deleted" is only useful if the file can be found again.
+
+It deliberately holds no user table, no library table and no copy of
+anything Navidrome knows. `library_id` is a foreign key in spirit only:
+Navidrome owns what a library *is*.
 
 ---
 

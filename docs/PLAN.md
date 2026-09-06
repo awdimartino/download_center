@@ -321,6 +321,18 @@ Not code — things waiting in the library itself.
 
 Why things are the way they are, so they do not get re-litigated.
 
+- **2026-09-06 — The ledger is scoped to a library, not to a person.** The
+  question it answers is "is this recording already in this collection", and
+  a collection is a library. Two accounts writing into one library share the
+  answer, so an administrator does not re-fetch what somebody else filed
+  there; two libraries do not, so Kelly's first download is not silently
+  skipped because alex owns the record. Rows written before the column
+  existed are attributed to library 1, which is where they all went.
+- **2026-09-06 — Forgetting a ledger row is explicit, not automatic.** The
+  ledger is the only record that a track was fetched, so a file leaving the
+  library makes it permanently unfetchable. The "already have" tag in Browse
+  clears the row. Resolving a duplicate deliberately does *not*: it keeps a
+  copy, so the track is still held.
 - **2026-09-06 — Last.fm backfill is a one-time manual import.** It has the
   history snapshots cannot reconstruct; snapshots have the accuracy and the
   coverage of both users. Neither replaces the other.

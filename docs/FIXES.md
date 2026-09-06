@@ -43,12 +43,15 @@ decision from the user before it can be done.
 - [x] **2. Duplicate review UI never shows each copy's title** — only the
       group's first. `normalise()` strips `feat.` clauses, so two different
       collaborations group together and render as identical rows.
-- [?] **3a. The ledger is global, not per-user.** `app/ledger.py` has no user
-      or library column, so a track one account downloaded is skipped for
-      everyone. Contradicts PLAN rule 2. **Needs a decision — see
-      "Per-user questions" below.**
-- [?] **3b. No path ever removes a ledger row.** A quarantined or deleted
-      track can never be re-downloaded. Same decision.
+- [x] **3a. The ledger is global, not per-user.** Now keyed on
+      `(source_id, library_id)`. Decided 2026-09-06: scoped to a **library**,
+      not to a person — the question is "is this recording already in this
+      collection", and a collection is a library. Existing rows backfilled to
+      library 1, which is where they were all downloaded.
+- [x] **3b. No path ever removes a ledger row.** `ledger.forget()`, exposed
+      as `POST /api/ledger/forget` and reachable by clicking the "already
+      have" tag in Browse. Deliberately *not* automatic on duplicate
+      resolution: that keeps a copy, so the track is still held.
 - [x] **4. `health.py` `indexed_stamped` query is broken and silently
       suppressed.** `select count(*) from media_file` with no `mf` alias while
       the WHERE clause says `mf.missing`; raises `sqlite3.Error`, swallowed by
@@ -131,7 +134,7 @@ decision from the user before it can be done.
       Documented in ARCHITECTURE.md as of 2026-09-06 rather than fixed.
 - [ ] **22. `rg_track_gain != 0` counts a legitimate 0 dB gain as
       unmeasured.** `health.py`.
-- [ ] **23. `/api/search?limit=` is unbounded** and passed straight to
+- [x] **23. `/api/search?limit=` is unbounded** and passed straight to
       Spotify; over 50 returns a 400 surfaced as a 502.
 - [ ] **24. No `secure` flag on the session cookie**, and sign-in posts a
       Navidrome password over plain HTTP. Defensible on a LAN; documented in
@@ -161,8 +164,8 @@ merely make it less likely.
 
 ## Per-user questions
 
-Items 3a and 3b cannot be done without a decision. Raised with the user
-separately; record the answer here when it comes.
+Answered 2026-09-06. Both items are done; the answers are recorded on them
+above and in PLAN.md's decisions log.
 
 ---
 

@@ -309,8 +309,9 @@ your cookies in Netscape format and drop them here; yt-dlp will use them.
 **Already-downloaded tracks are skipped silently.** Matching is on Spotify ID
 *and* ISRC, so the same recording issued under a different ID still counts as
 held. Re-queue an album you already have and it finishes in under a second.
-Note that the ledger is currently shared across accounts rather than per-user,
-so a track one person has downloaded is skipped for everyone.
+Scoped to the library the download would go into, so two people do not
+share one answer. Clicking the "already have" tag in Browse forgets a
+track, so it can be fetched again if the file has since left the library.
 
 **Wrong matches fail rather than download.** Candidates are scored on runtime
 against Spotify's exact duration, title and artist similarity, and penalised

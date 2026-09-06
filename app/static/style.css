@@ -535,7 +535,30 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 }
 .card-actions .ghost { min-height: 30px; padding: 0 10px; font-size: 12px; }
 
-.held { font-size: 10.5px; font-weight: 600; color: var(--ok); text-transform: uppercase; letter-spacing: .06em; }
+/* A button now, not a label: clicking it forgets the ledger row so the track
+   can be fetched again. Styled to stay the quiet tag it was - the affordance
+   is the hover, because this is a rare action and it should not compete with
+   the download button beside it. */
+.held {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ok);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 2px var(--s-2);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+.held:hover, .held:focus-visible {
+  background: var(--tint-warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+  color: var(--warn);
+}
+.held:focus-visible { outline: none; box-shadow: var(--ring); }
 
 .detail { display: flex; gap: var(--s-5); margin-top: var(--s-4); flex-wrap: wrap; }
 .detail-body { display: flex; flex-direction: column; gap: var(--s-1); align-items: flex-start; }

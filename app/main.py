@@ -587,23 +587,46 @@ async def put_settings(
 
 # --- browsing -------------------------------------------------------------
 
-def _mark_held(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Flag tracks already in the ledger.
+def _mark_held(cards: list[dict[str, Any]],
+               library_id: int) -> list[dict[str, Any]]:
+    """Flag tracks already in this person's library.
 
     Only Spotify ids are checked, not ISRCs: search results do not reliably
     carry one, and a per-card lookup would be the wrong place to pay for it.
     The worker still does the full check before downloading anything.
+
+    Scoped to the same library the queue would file into, so the badge means
+    the same thing as the skip. Reporting what somebody else holds would say
+    "you have this" about a record in a collection you cannot see.
     """
     for card in cards:
-        card["held"] = ledger.already_downloaded(card["id"], None)
+        card["held"] = ledger.already_downloaded(card["id"], None, library_id)
     return cards
 
 
+def _browsing_library(session: auth.Session) -> int | None:
+    """Which library the Browse tab is reporting against.
+
+    None when the account has none, in which case nothing is marked held
+    rather than everything being marked held against library zero.
+    """
+    try:
+        return workspace.for_session(session.identity).library_id
+    except ValueError:
+        return None
+
+
 @app.get("/api/search")
-async def search(q: str, type: str = "album", limit: int = 24) -> dict[str, Any]:
+async def search(q: str, type: str = "album", limit: int = 24,
+                 session: auth.Session = Depends(current_session),
+                 ) -> dict[str, Any]:
     query = q.strip()
     if not query:
         return {"type": type, "results": []}
+    # Spotify rejects anything over fifty, which arrived as an unexplained
+    # 502. Clamped here so a hand-edited URL is answered rather than blamed
+    # on Spotify.
+    limit = max(1, min(limit, 50))
     try:
         results = await asyncio.to_thread(spotify.browse, query, type, limit)
     except spotify.ResolveError as exc:
@@ -611,22 +634,62 @@ async def search(q: str, type: str = "album", limit: int = 24) -> dict[str, Any]
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Spotify error: {exc}") from exc
 
-    if type == "track":
-        await asyncio.to_thread(_mark_held, results)
+    library_id = _browsing_library(session)
+    if type == "track" and library_id is not None:
+        await asyncio.to_thread(_mark_held, results, library_id)
     return {"type": type, "results": results}
 
 
 @app.get("/api/albums/{album_id}")
-async def album(album_id: str) -> dict[str, Any]:
+async def album(album_id: str,
+                session: auth.Session = Depends(current_session),
+                ) -> dict[str, Any]:
     try:
         detail = await asyncio.to_thread(spotify.album_detail, album_id)
     except spotify.ResolveError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Album not found: {exc}") from exc
-    await asyncio.to_thread(_mark_held, detail["tracks"])
+    library_id = _browsing_library(session)
+    if library_id is not None:
+        await asyncio.to_thread(_mark_held, detail["tracks"], library_id)
+    else:
+        for track in detail["tracks"]:
+            track["held"] = False
     detail["held_count"] = sum(1 for t in detail["tracks"] if t["held"])
     return detail
+
+
+class ForgetRequest(BaseModel):
+    source_id: str
+
+
+@app.post("/api/ledger/forget")
+async def forget_track(
+    request: ForgetRequest,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, bool]:
+    """Let a track be downloaded again.
+
+    The ledger is the only record that a track was ever fetched, because
+    beets moved the file out of staging. So a file that leaves the library -
+    deleted, lost, replaced by hand - leaves the track permanently
+    unfetchable with nothing to say why. Scoped to this person's own
+    library, like every other answer the ledger gives.
+    """
+    try:
+        space = workspace.for_session(session.identity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    forgotten = await asyncio.to_thread(
+        ledger.forget, request.source_id, space.library_id)
+    if not forgotten:
+        raise HTTPException(
+            status_code=404,
+            detail="That track is not recorded as downloaded here.")
+    log.info("%s forgot %s in library %s", session.identity.username,
+             request.source_id, space.library_id)
+    return {"forgotten": True}
 
 
 @app.get("/api/artists/{artist_id}/albums")
@@ -896,12 +959,17 @@ async def staging_import(
 
 
 @app.get("/api/status")
-async def status() -> dict[str, Any]:
+async def status(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    # Scoped like everything else the ledger answers: a count of what this
+    # person's library holds, not of the whole installation.
+    library_id = _browsing_library(session)
     return {
         "spotify_configured": settings.spotify_configured,
         "output_dir": str(settings.output_dir),
         "concurrency": settings.concurrency,
-        "ledger_count": ledger.count(),
+        "ledger_count": ledger.count(library_id),
     }
 
 
