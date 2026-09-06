@@ -124,11 +124,19 @@ class Workspace:
             marker.write_text(wanted, encoding="utf-8")
 
 
-def for_session(identity, library_id: int | None = None) -> Workspace:
+def for_session(identity, library_id: int | None = None, *,
+                require_library: bool = True) -> Workspace:
     """The workspace of whoever is signed in.
 
     Someone with a single library never chooses; someone with several picks
     per job, and anything they did not ask for is refused rather than guessed.
+
+    The library has to be mounted here unless the caller says otherwise.
+    Default-on deliberately: the cost of forgetting it is music written into
+    a container and lost, while the cost of an unnecessary check is a caller
+    passing `require_library=False`. Callers that only need the identity or
+    the staging directory - deleting a job, forgetting a ledger row, marking
+    Browse results - pass it.
     """
     libraries = identity.libraries
     if not libraries:
@@ -144,8 +152,40 @@ def for_session(identity, library_id: int | None = None) -> Workspace:
         if library is None:
             raise ValueError("That library does not belong to this account.")
 
-    return Workspace(identity.username, library["id"], library["name"],
-                     Path(library["path"]))
+    space = Workspace(identity.username, library["id"], library["name"],
+                      Path(library["path"]))
+    if require_library:
+        require_mounted(space)
+    return space
+
+
+def require_mounted(space: Workspace) -> None:
+    """Refuse a workspace whose library is not visible in this container.
+
+    Navidrome reports where a library lives from its own database, and this
+    application is a different container with its own mounts. Add a library
+    to Navidrome and forget the matching bind mount here and the path exists
+    for Navidrome and not for us.
+
+    Nothing used to check. beets would be configured with `directory:
+    /wherever`, create it inside the container's own writable layer, file the
+    music into it, and report success - and the next `docker compose pull`
+    would take the lot. The download appeared to work and the tracks went
+    into the ledger, so nothing ever asked for them again.
+
+    That is the same shape as the duplicates quarantine writing to an
+    unmounted `/duplicates-removed`. A path that resolves is not a path that
+    persists, and the only way to tell from inside is to look.
+    """
+    root = space.library_path
+    if root.is_dir():
+        return
+    raise ValueError(
+        f"The library {space.library_name!r} is at {root} in Navidrome, but "
+        f"that path is not mounted in this container, so anything filed "
+        f"there would be written inside the container and lost on the next "
+        f"restart. Add a bind mount for {root} and restart."
+    )
 
 
 def existing() -> list[Workspace]:

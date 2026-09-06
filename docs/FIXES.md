@@ -58,6 +58,19 @@ decision from the user before it can be done.
       a bare `contextlib.suppress`. "Stamped but not yet scanned" has never
       fired.
 
+## Found later
+
+- [x] **30. A library Navidrome knows about but this container cannot see
+      was written to anyway.** Found 2026-09-06 while adding a Test library.
+      `for_session` built a workspace from Navidrome's recorded path without
+      checking it was mounted here, so beets was configured with a
+      `directory:` that existed only inside the container. It would create
+      it in the writable layer, file the music, report success, and put the
+      tracks in the ledger — so nothing ever asked for them again, and the
+      next `docker compose pull` destroyed them.
+      Same shape as 1e. `workspace.require_mounted` refuses it now, on by
+      default; read-only callers pass `require_library=False`.
+
 ## Tier 2 — the app stalls under ordinary use
 
 - [x] **5. Long blocking work inside request handlers, behind process-wide

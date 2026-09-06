@@ -263,6 +263,35 @@ Each of these cost real time or caused a real bug.
   not the screen bottom. Extend the element's own box past it; a
   same-coloured `box-shadow` is not painted there.
 
+**Container boundaries — a path that resolves is not a path that persists**
+
+This is the shape of two separate bugs, so it is worth stating as one idea.
+Navidrome reports where a library lives from *its* database, and this
+application is a different container with its own mounts. A path can
+therefore be perfectly valid for Navidrome and absent here — and a Linux
+container will happily create a missing directory in its own writable layer
+and let you write to it. Everything succeeds. The next `docker compose pull`
+destroys it.
+
+- **Adding a library to Navidrome means adding a bind mount here too.** Both
+  containers, at the same path, so a library path read from Navidrome's
+  database is directly usable with no mapping to maintain. Without it,
+  `directory:` in that person's beets config names a path that exists only
+  inside the container: beets creates it, files the music into it, reports
+  success, and the tracks go into the ledger so nothing ever asks for them
+  again. `workspace.require_mounted` now refuses this, and `for_session`
+  calls it by default — read-only callers opt out with
+  `require_library=False`.
+- **The duplicates quarantine hit the same trap.** It resolved to
+  `music_dir.parent / "duplicates-removed"`, which is `/duplicates-removed`,
+  which is not a volume. Worse, being on a different filesystem from the
+  library made `shutil.move` a copy-then-unlink, so the original really was
+  removed. It lives at `<library root>/duplicates-removed/` now, on the same
+  filesystem, with a `.ndignore` so the scanner skips it.
+
+The general rule: before writing anything outside `/config` or `/downloads`,
+check that the destination is on a mount, not merely that the path resolves.
+
 **This environment**
 - `python` is not on PATH. Use `.venv/Scripts/python.exe`.
 - Some bash heredocs fail in this harness; write files with the editor tool
