@@ -698,6 +698,147 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border-top: 1px solid var(--line-soft);
 }
 
+/* --- smart playlists ------------------------------------------------------ */
+
+select {
+  min-height: 34px;
+  padding: 0 var(--s-2);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+select:hover { border-color: var(--panel-3); }
+select:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+
+#playlist-editor {
+  margin-top: var(--s-4);
+  padding: var(--s-5);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+}
+
+.pl-head { display: flex; gap: var(--s-3); flex-wrap: wrap; }
+.pl-head label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.pl-name { flex: 1 1 14rem; }
+.pl-comment { flex: 2 1 18rem; }
+
+.pl-match {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: var(--s-5) 0 var(--s-3);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* One condition per row: field, operator, value, and a way to drop it. The
+   value column is the one that grows, because it is the only one whose
+   content is not from a fixed list. */
+.pl-condition {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(9rem, 1fr) minmax(7rem, 1.2fr) auto;
+  gap: var(--s-2);
+  align-items: center;
+  margin-bottom: var(--s-2);
+}
+.pl-condition select, .pl-condition input { width: 100%; }
+.pl-value { display: block; min-width: 0; }
+
+.remove-condition {
+  min-height: 34px;
+  width: 34px;
+  padding: 0;
+  background: none;
+  border-color: transparent;
+  color: var(--faint);
+}
+.remove-condition:hover { background: var(--tint-bad); color: var(--bad); border-color: transparent; }
+
+#pl-add-condition { margin-top: var(--s-1); }
+
+.pl-sort {
+  display: flex;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line-soft);
+}
+.pl-sort label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.pl-sort input { max-width: 9rem; }
+
+.pl-public {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pl-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line-soft);
+}
+#pl-delete { margin-left: auto; }
+#pl-note { font-size: 12.5px; color: var(--ok); }
+
+.playlist {
+  margin-top: var(--s-3);
+  padding: var(--s-4);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: var(--r-lg);
+}
+
+.playlist-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+.playlist-name { font-weight: 650; font-size: 14px; }
+.playlist-count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.playlist-comment { margin-top: var(--s-1); font-size: 12.5px; color: var(--muted); }
+
+/* The rule in words. The point of the card: what this playlist collects,
+   without opening it. */
+.playlist-rule {
+  margin-top: var(--s-2);
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.playlist-rule.dim { color: var(--faint); }
+
+.playlist-actions { display: flex; gap: var(--s-2); margin-top: var(--s-3); }
+
 /* --- sign in -------------------------------------------------------------- */
 
 .signin {
@@ -880,6 +1021,32 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   .dupe-path { direction: ltr; font-size: 11.5px; }
   .dupe-actions { flex-direction: column; }
   .dupe-actions button { width: 100%; min-height: 42px; }
+
+  /* The condition row stacks: field and operator share a line, the value
+     takes its own. Four columns in 360px would leave each one too narrow to
+     read the option you had chosen. */
+  #playlist-editor { padding: var(--s-3); }
+  .pl-condition {
+    grid-template-columns: 1fr 1fr auto;
+    gap: var(--s-2);
+    padding: var(--s-2);
+    margin-bottom: var(--s-3);
+    background: var(--panel-2);
+    border-radius: var(--r-md);
+  }
+  /* Placed explicitly, or the value spanning both columns pushes the
+     remove button onto a third row of its own. Field and operator share the
+     first line with the button; the value gets the second. */
+  .pl-field { grid-column: 1; grid-row: 1; }
+  .pl-operator { grid-column: 2; grid-row: 1; }
+  .remove-condition { grid-column: 3; grid-row: 1; }
+  .pl-value { grid-column: 1 / span 2; grid-row: 2; }
+  .pl-condition select, .pl-condition input { min-height: 40px; }
+  .pl-sort label { flex: 1 1 100%; }
+  .pl-sort input { max-width: none; }
+  .pl-actions { flex-wrap: wrap; }
+  .pl-actions button { flex: 1 1 8rem; min-height: 42px; }
+  .playlist-rule { overflow-wrap: anywhere; }
 
   .staging-item { grid-template-columns: 1fr auto; gap: var(--s-1) var(--s-3); padding: var(--s-3); }
   .staging-name { grid-column: 1 / -1; }

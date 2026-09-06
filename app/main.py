@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, ledger, navidrome
+from . import playlists as smart_playlists
 from . import spotify, staging, worker, workspace
 from . import config
 from . import health as health_checks
@@ -734,6 +735,102 @@ async def auto_resolve_duplicates(
         return await asyncio.to_thread(run)
     except navidrome.Unavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+# --- smart playlists -----------------------------------------------------
+
+class PlaylistRequest(BaseModel):
+    name: str
+    # The flat form the browser works in; translated to Navidrome's nested
+    # rule shape in one place, in app/playlists.py.
+    form: dict[str, Any]
+    comment: str = ""
+    public: bool = False
+
+
+@app.get("/api/playlists")
+async def list_playlists(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """This person's smart playlists, plus what a rule can be made of.
+
+    The vocabulary rides along with the list so the form has everything it
+    needs from one request, and cannot render a field the server would then
+    refuse.
+    """
+    try:
+        found = await asyncio.to_thread(smart_playlists.mine, session.identity)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=_navidrome_error(exc)) from exc
+    return {
+        "playlists": found,
+        "vocabulary": smart_playlists.vocabulary(session.identity),
+    }
+
+
+@app.post("/api/playlists")
+async def create_playlist(
+    request: PlaylistRequest,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    return await _save_playlist(request, session, None)
+
+
+@app.put("/api/playlists/{playlist_id}")
+async def update_playlist(
+    playlist_id: str,
+    request: PlaylistRequest,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    # Ownership is checked by asking Navidrome what this person has rather
+    # than by trusting the id in the path: the API would update somebody
+    # else's playlist just as willingly.
+    owned = await asyncio.to_thread(smart_playlists.mine, session.identity)
+    if not any(p["id"] == playlist_id for p in owned):
+        raise HTTPException(status_code=404,
+                            detail="That is not one of your smart playlists.")
+    return await _save_playlist(request, session, playlist_id)
+
+
+@app.delete("/api/playlists/{playlist_id}")
+async def remove_playlist(
+    playlist_id: str,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, str]:
+    try:
+        await asyncio.to_thread(smart_playlists.remove, session.identity,
+                                playlist_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=_navidrome_error(exc)) from exc
+    return {"deleted": playlist_id}
+
+
+async def _save_playlist(request: PlaylistRequest, session: auth.Session,
+                         playlist_id: str | None) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(
+            smart_playlists.save, session.identity, request.name,
+            request.form, request.comment, request.public, playlist_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=_navidrome_error(exc)) from exc
+
+
+def _navidrome_error(exc: Exception) -> str:
+    """Navidrome's own words where it gave any.
+
+    A rejected rule is the interesting case: this app offers a vocabulary it
+    believes the server accepts, and if that belief is wrong the server's
+    complaint says which field, where a generic message would not.
+    """
+    response = getattr(exc, "response", None)
+    detail = ""
+    if response is not None:
+        detail = (response.text or "").strip()[:300]
+    return f"Navidrome refused that: {detail}" if detail else f"Navidrome is unreachable: {exc}"
 
 
 # --- staging -------------------------------------------------------------

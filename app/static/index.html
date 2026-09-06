@@ -26,6 +26,7 @@
     <button class="tab" data-view="staging" data-short="Staging" type="button">Staging<span id="staging-badge" class="badge" hidden></span></button>
     <button class="tab" data-view="health" data-short="Health" type="button">Health<span id="health-badge" class="badge" hidden></span></button>
     <button class="tab" data-view="dupes" data-short="Dupes" type="button">Duplicates<span id="dupe-badge" class="badge" hidden></span></button>
+    <button class="tab" data-view="playlists" data-short="Lists" type="button">Playlists</button>
   </nav>
   <span id="conn" class="conn offline">connecting</span>
   <span id="whoami" class="whoami"></span>
@@ -113,6 +114,61 @@
     <div id="dupes"></div>
     <p id="dupes-empty" class="empty">Looking for duplicates…</p>
   </section>
+  <section id="view-playlists" hidden>
+    <div class="panel-note">
+      <p>
+        Smart playlists: rules rather than a fixed list of tracks. Navidrome
+        can rename these and play them, but only writes rules from a
+        <code>.nsp</code> file, so this is where they get edited. They match
+        against <em>your</em> stars, ratings and play counts.
+      </p>
+      <button id="playlist-new" class="ghost primary" type="button">New playlist</button>
+    </div>
+    <p id="playlist-error" class="warn" hidden></p>
+
+    <form id="playlist-editor" hidden autocomplete="off">
+      <div class="pl-head">
+        <label class="pl-name">Name<input name="name" type="text" required></label>
+        <label class="pl-comment">Description<input name="comment" type="text"></label>
+      </div>
+
+      <div class="pl-match">
+        Match
+        <select id="pl-match-mode">
+          <option value="all">all</option>
+          <option value="any">any</option>
+        </select>
+        of these conditions:
+      </div>
+      <div id="pl-conditions"></div>
+      <button id="pl-add-condition" class="ghost" type="button">Add condition</button>
+
+      <div class="pl-sort">
+        <label>Sort by<select id="pl-sort"></select></label>
+        <label>Order<select id="pl-direction">
+          <option value="desc">newest / highest first</option>
+          <option value="asc">oldest / lowest first</option>
+        </select></label>
+        <label>Limit<input id="pl-limit" type="number" min="0" step="1"
+                          placeholder="no limit"></label>
+      </div>
+
+      <label class="pl-public">
+        <input id="pl-public" type="checkbox"> Visible to everyone on this server
+      </label>
+
+      <div class="pl-actions">
+        <button type="submit">Save</button>
+        <button id="pl-cancel" class="ghost" type="button">Cancel</button>
+        <button id="pl-delete" class="ghost cancel" type="button" hidden>Delete</button>
+        <span id="pl-note"></span>
+      </div>
+    </form>
+
+    <div id="playlists"></div>
+    <p id="playlists-empty" class="empty">Loading…</p>
+  </section>
+
 </main>
 
 <script src="/static/app.js"></script>
