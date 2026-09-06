@@ -53,7 +53,14 @@ def tag(path: Path, item: dict[str, Any], embed_cover: bool = True) -> None:
         tags = ID3()
 
     tags.add(TIT2(encoding=3, text=item["title"]))
-    tags.add(TPE1(encoding=3, text=item["artist"]))
+    # The primary artist, not the full credit. beets decides an album is a
+    # Various Artists release when its tracks disagree on this tag, and then
+    # searches MusicBrainz for a compilation - so a single guest appearance
+    # made the real record unfindable and the whole album sat in staging.
+    # See spotify._primary_artist. A successful match writes MusicBrainz's
+    # own credit back over this, guest included; only an import as-is keeps
+    # what is written here.
+    tags.add(TPE1(encoding=3, text=item.get("primary_artist") or item["artist"]))
     tags.add(TPE2(encoding=3, text=item["album_artist"]))
     tags.add(TALB(encoding=3, text=item["album"]))
 
