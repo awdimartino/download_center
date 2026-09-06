@@ -199,7 +199,7 @@ data: `play_imported`, and `plays_between` reading it beside the snapshots.
 
 Undo: `DELETE FROM play_imported WHERE source = 'lastfm'`.
 
-### 3. Health tab — cut it down
+### 3. Health tab — cut down, 2026-09-06
 
 Decided: **keep only what can be acted on.** There are 21 checks in six
 sections today, several asking the same question twice — once of Navidrome's
@@ -229,11 +229,27 @@ migration that is finished.
 | Uptime | **cut** | Status, not health |
 | Audit (pending) | **keep as control** | It is a button, not a metric |
 
-Roughly seven rows instead of twenty-one. "Demote" means behind a
-*show everything* toggle rather than deleted — they can recur.
+**Done.** Nine primary rows instead of seventeen, with three behind a
+*show everything* toggle. It ended up close to the table above, with two
+departures worth recording:
 
-Explicitly **not** cut: the Browse and Staging tabs. The problem with health
-was too many checks, not the wrong idea.
+- **"Duplicate recordings to review" was added**, not just kept. It was not
+  on the list, but the menu's attention dot could not know about duplicates
+  until you opened that tab - which is exactly when you no longer need
+  telling. `duplicates.find()` measured 0.22s against this library, cheap
+  enough to run in the panel rather than approximate in SQL. An
+  approximation would have disagreed with the Duplicates tab, which is worse
+  than not having the row.
+- **The stale-index check stayed.** It is not in the table because it did
+  not exist when the table was written - it had never once fired, being
+  broken by a missing SQL alias. It is the only thing that can tell "never
+  stamped" from "stamped but the incremental scan skipped it", and those
+  need opposite responses.
+
+The badge counts only the rows on show; one that included hidden rows would
+send you looking for a number the panel does not display.
+
+---
 
 ### 4. Navigation — burger, both sizes
 
