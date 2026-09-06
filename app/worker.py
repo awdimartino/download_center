@@ -28,6 +28,27 @@ BACKOFF = (2, 8, 30)
 # hundreds of times per file, which is far more than a UI needs.
 PUSH_INTERVAL = 0.5
 
+# One gate for the whole process, not one per job.
+#
+# It used to be created inside run_job, so `concurrency` meant "per job" and
+# three queued playlists ran three times as many downloads at once - each
+# spawning yt-dlp and ffmpeg, on a Raspberry Pi. rate_limit_sleep had the
+# same problem: it paced one job while the others ignored it, which is not
+# what "stay under YouTube's radar" means.
+#
+# Built lazily because the limit is a setting and can change, and because a
+# Semaphore binds to the running loop.
+_gate: asyncio.Semaphore | None = None
+_gate_size: int = 0
+
+
+def gate() -> asyncio.Semaphore:
+    global _gate, _gate_size
+    if _gate is None or _gate_size != settings.concurrency:
+        _gate = asyncio.Semaphore(settings.concurrency)
+        _gate_size = settings.concurrency
+    return _gate
+
 Push = Callable[[dict[str, Any]], Awaitable[None]]
 
 
@@ -62,6 +83,32 @@ async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
     raise downloader.DownloadError(last_error)
 
 
+async def _match_with_retries(item: dict[str, Any]) -> Any:
+    """Find the recording, retrying only when the search itself failed.
+
+    A MatchError means the results were seen and none of them was good
+    enough; asking again returns the same results. A SearchUnavailable means
+    the question never got through - a 429, a dropped connection - and that
+    clears on its own. Treating the two alike meant one rate limit failed
+    every remaining track in the job, permanently, with a message blaming
+    YouTube's catalogue for a problem with the connection.
+    """
+    last: Exception | None = None
+    for attempt in range(1, settings.max_attempts + 1):
+        try:
+            return await asyncio.to_thread(matcher.find, item)
+        except matcher.SearchUnavailable as exc:
+            last = exc
+            if attempt >= settings.max_attempts:
+                break
+            delay = BACKOFF[min(attempt - 1, len(BACKOFF) - 1)]
+            log.warning("search unavailable (%s), retrying in %ds",
+                        str(exc)[:80], delay)
+            _mark(item, "retrying", error=str(exc)[:200])
+            await asyncio.sleep(delay)
+    raise last if last else matcher.SearchUnavailable("search failed")
+
+
 async def _process(item: dict[str, Any], dest: dict[str, Any],
                    gate: asyncio.Semaphore) -> None:
     async with gate:
@@ -74,11 +121,17 @@ async def _process(item: dict[str, Any], dest: dict[str, Any],
         else:
             _mark(item, "matching")
             try:
-                url, score, _parts = await asyncio.to_thread(matcher.find, item)
+                url, score, _parts = await _match_with_retries(item)
             except matcher.MatchError as exc:
                 # Not retried: an identical search returns identical results,
-                # so trying again only burns time.
+                # so trying again only burns time. This is a judgement about
+                # the results, not about reaching YouTube - see
+                # _match_with_retries for the case that is worth another go.
                 _mark(item, "failed", error=str(exc))
+                return
+            except matcher.SearchUnavailable as exc:
+                _mark(item, "failed",
+                      error=f"Could not reach YouTube Music: {exc}"[:200])
                 return
             except Exception as exc:
                 _mark(item, "failed", error=f"Search error: {exc}"[:200])
@@ -151,12 +204,11 @@ async def run_job(job: dict[str, Any], push: Push,
         return
 
     layout = staging.plan(space, job["id"], pending)
-    gate = asyncio.Semaphore(settings.concurrency)
     ticker = asyncio.create_task(_pusher(job, push))
 
     try:
         await asyncio.gather(
-            *(_process(item, layout[item["id"]], gate) for item in pending)
+            *(_process(item, layout[item["id"]], gate()) for item in pending)
         )
     finally:
         ticker.cancel()

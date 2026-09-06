@@ -48,6 +48,32 @@ JOBS: dict[str, dict[str, Any]] = {}
 # The asyncio task driving each active job, so it can be cancelled.
 RUNNING: dict[str, asyncio.Task] = {}
 
+# How many finished jobs to keep per person. They are only history once they
+# have stopped, and every one of them is re-serialised on each GET /api/jobs
+# and held for the life of the process. A few hundred tracks each adds up.
+MAX_FINISHED_JOBS = 40
+
+# How many jobs one person may have in flight. Each resolves and downloads
+# concurrently, and nothing else bounded this: a handful of pasted playlist
+# links was an unbounded pile of tasks on a Raspberry Pi.
+MAX_ACTIVE_JOBS = 5
+
+FINISHED = ("complete", "failed", "partial", "cancelled")
+
+
+def _evict_old_jobs(owner: str) -> None:
+    """Drop this person's oldest finished jobs once there are too many.
+
+    Only finished ones, and never one still running or being cancelled.
+    """
+    theirs = [job for job in JOBS.values() if job.get("owner") == owner
+              and job.get("status") in FINISHED and job["id"] not in RUNNING]
+    if len(theirs) <= MAX_FINISHED_JOBS:
+        return
+    theirs.sort(key=lambda j: j["created_at"])
+    for job in theirs[:len(theirs) - MAX_FINISHED_JOBS]:
+        JOBS.pop(job["id"], None)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -367,6 +393,15 @@ class JobRequest(BaseModel):
     library_id: int | None = None
 
 
+# A resolved job is held in memory, pushed over the websocket on every tick
+# and re-serialised on every GET /api/jobs. Nothing bounded it, so a link to
+# a ten-thousand-track playlist was ten thousand dicts going over the socket
+# twice a second to a phone. Refused with a number rather than truncated
+# silently: quietly downloading the first few hundred of somebody's playlist
+# and calling it complete is worse than saying no.
+MAX_TRACKS_PER_JOB = 500
+
+
 def _resolve(url: str) -> tuple[str, str, list[dict[str, Any]]]:
     """Dispatch a link to whichever resolver handles it."""
     if generic.looks_like_url(url) and "spotify.com" not in url:
@@ -394,6 +429,16 @@ async def _resolve_job(job: dict[str, Any], url: str,
         job.update(status="failed", error=f"Resolve error: {exc}")
         log.exception("unexpected resolve failure for %s", url)
     else:
+        if len(tracks) > MAX_TRACKS_PER_JOB:
+            job.update(
+                status="failed",
+                title=title,
+                error=f"That resolved to {len(tracks)} tracks, more than the "
+                      f"{MAX_TRACKS_PER_JOB} this can queue at once. Queue it "
+                      "in parts - by album, say.")
+            log.warning("refused %s: %d tracks", title, len(tracks))
+            await push_job(job)
+            return
         job.update(
             kind=kind,
             title=title,
@@ -447,6 +492,16 @@ async def create_job(
         space = workspace.for_session(session.identity, request.library_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    active = sum(1 for job in JOBS.values()
+                 if job.get("owner") == session.identity.username
+                 and job.get("status") not in FINISHED)
+    if active >= MAX_ACTIVE_JOBS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You already have {active} downloads going. Let some "
+                   "finish before queuing more.")
+    _evict_old_jobs(session.identity.username)
 
     def prepare() -> None:
         # A single-user installation predates accounts; the first person to

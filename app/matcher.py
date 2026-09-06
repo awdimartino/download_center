@@ -49,20 +49,40 @@ _FEAT = re.compile(r"\s*[\(\[]?\s*(feat|ft|featuring|with)\.?\s+[^\)\]]*[\)\]]?"
 _PUNCT = re.compile(r"[^\w\s]")
 _SPACE = re.compile(r"\s+")
 
-_client: YTMusic | None = None
-_client_lock = threading.Lock()
+_local = threading.local()
 
 
 class MatchError(Exception):
-    """Raised when no candidate clears the confidence floor."""
+    """Raised when no candidate clears the confidence floor.
+
+    A judgement about the results, not about reaching YouTube. The worker
+    does not retry these, on the reasoning that an identical search returns
+    identical results - which is true for a genuine miss and only for that.
+    """
+
+
+class SearchUnavailable(Exception):
+    """YouTube Music could not be asked - rate limited, offline, changed.
+
+    Kept apart from MatchError deliberately. Both used to be the same thing:
+    every exception was swallowed and turned into "No results returned by
+    YouTube Music", which the worker then refused to retry. One 429 and every
+    remaining track in the job failed permanently, blaming the catalogue for
+    a problem with the connection.
+    """
 
 
 def client() -> YTMusic:
-    global _client
-    with _client_lock:
-        if _client is None:
-            _client = YTMusic()
-        return _client
+    """One client per thread.
+
+    ytmusicapi wraps a requests.Session, which is not thread-safe, and
+    downloads run `concurrency` threads deep. A single shared client was
+    borrowing one connection pool across all of them.
+    """
+    existing = getattr(_local, "client", None)
+    if existing is None:
+        existing = _local.client = YTMusic()
+    return existing
 
 
 def normalise(text: str) -> str:
@@ -128,10 +148,16 @@ def score(result: dict[str, Any], track: dict[str, Any]) -> tuple[float, dict[st
 
 
 def _search(query: str, filter_: str | None, limit: int) -> list[dict[str, Any]]:
+    """Ask YouTube Music, distinguishing "nothing found" from "could not ask".
+
+    Every exception used to be swallowed into an empty list, so a rate limit
+    was indistinguishable from an obscure B-side nobody has uploaded. The
+    first is worth retrying in thirty seconds and the second never is.
+    """
     try:
         return client().search(query=query, filter=filter_, limit=limit) or []
-    except Exception:
-        return []
+    except Exception as exc:
+        raise SearchUnavailable(f"{type(exc).__name__}: {exc}"[:200]) from exc
 
 
 def find(track: dict[str, Any]) -> tuple[str, float, dict[str, float]]:
@@ -150,7 +176,18 @@ def find(track: dict[str, Any]) -> tuple[str, float, dict[str, float]]:
     if not scored or scored[0][0] < SCORE_FLOOR:
         # Videos carry weaker metadata, so they are discounted slightly to
         # keep a mediocre video from beating a decent song result.
-        for video in _search(query, "videos", 5):
+        #
+        # A failure here is not fatal when the song search already returned
+        # something: this is a fallback, and losing real candidates because
+        # the optional second query was rate limited would be the same
+        # mistake in miniature.
+        try:
+            videos = _search(query, "videos", 5)
+        except SearchUnavailable:
+            if not scored:
+                raise
+            videos = []
+        for video in videos:
             total, parts = score(video, track)
             scored.append((total * 0.95, parts, video))
         scored.sort(key=lambda row: row[0], reverse=True)
