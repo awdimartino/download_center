@@ -142,25 +142,45 @@ Only alex's account is connected to Last.fm. Kelly's 3,089 plays have no
 history to import, which is the argument for snapshots carrying the ongoing
 record for both.
 
-**Run 2026-09-06.** 49,524 scrobbles fetched, back to 2022-09-18:
+**Run 2026-09-06, then re-run after a hand check.** 49,524 scrobbles back
+to 2022-09-18.
 
-| | | |
+| | first pass | after hand-checking |
 |---|---|---|
-| matched to one track | 33,615 | 68% of all scrobbles |
-| ambiguous | 2,585 | the same artist+title on several files |
-| not in the library | 13,321 | music alex does not own; unmatchable by any method |
-| already covered by snapshots | 3 | correctly skipped |
+| matched | 33,615 | **37,801** |
+| ambiguous | 2,585 | 3,402 |
+| unmatched | 13,321 | 8,318 |
 
-31,490 day/track rows written, covering 1,285 days. The number that matters
-is not 68% but **93%** - of scrobbles for music actually in the library,
-33,615 of 36,200 matched cleanly. The 27% "unmatched" are tracks that were
-never here.
+35,370 day/track rows across 1,294 days. The first pass matched on exact
+normalised artist and title, which missed four thousand plays for reasons
+that all turned out to be spelling rather than substance:
 
-The 2,585 ambiguous are duplicates: resolving the 199 duplicate groups would
-convert most of them, since one artist+title would then mean one file.
+- **Collaboration credits.** Last.fm scrobbles the primary artist; the tag
+  carries the whole credit. "Moe Shop" against "Moe Shop w/ TORIENA".
+- **Accents and curly punctuation.** "Étoiles" against "étoiles",
+  "Mind's Eye" against "Mind’s Eye".
+- **CJK spacing.** "愛して 愛して 愛して" against "愛して愛して愛して".
+- **Bilingual titles.** A tag holding the native and English names together:
+  "驟雨の狭間 rainshower" against a scrobble of "Rainshower".
+- **Romanised artist names**, which needed a hand-curated list rather than a
+  rule: Camellia/かめりあ, Hakushi Hasegawa/長谷川白紙, Kikuo/きくお and thirty
+  more. Eight plausible-looking pairs were deliberately rejected because
+  they are different artists sharing a title - 坂本龍一/salvia palth,
+  Masayoshi Soken/植松伸夫 (two Final Fantasy composers), Yurie Kokubu against
+  a vaporwave producer who samples her.
 
-Undo, if it is ever wanted:
-`DELETE FROM play_imported WHERE source = 'lastfm'`.
+The 8,318 still unmatched are music that is genuinely not in the library.
+The 3,402 ambiguous are duplicates: resolving the 199 duplicate groups would
+convert most of them.
+
+A warning for anyone repeating this: the first audit scored candidates with
+`token_set_ratio`, which returns 100 when one title's tokens are a subset of
+the other's - so a library track called "o" matched "Last Train At 25
+O’clock" perfectly. It flatters the numbers and hides real misses in the
+low band at the same time. Compare on a compacted form and require the
+artist to agree.
+
+Undo: `DELETE FROM play_imported WHERE source = 'lastfm'`.
 
 ### 3. Health tab — cut it down
 
