@@ -19,20 +19,65 @@
 </div>
 
 <header>
-  <h1>Download Center</h1>
-  <nav class="tabs">
-    <button class="tab active" data-view="queue" data-short="Queue" type="button">Queue</button>
-    <button class="tab" data-view="browse" data-short="Browse" type="button">Browse</button>
-    <button class="tab" data-view="staging" data-short="Staging" type="button">Staging<span id="staging-badge" class="badge" hidden></span></button>
-    <button class="tab" data-view="health" data-short="Health" type="button">Health<span id="health-badge" class="badge" hidden></span></button>
-    <button class="tab" data-view="dupes" data-short="Dupes" type="button">Duplicates<span id="dupe-badge" class="badge" hidden></span></button>
-    <button class="tab" data-view="playlists" data-short="Lists" type="button">Playlists</button>
-  </nav>
+  <button id="menu-toggle" class="menu-toggle" type="button"
+          aria-expanded="false" aria-controls="menu" aria-label="Open menu">
+    <span class="burger" aria-hidden="true"></span>
+    <!-- Something needs attention behind the menu. The counts themselves are
+         one tap away; this only has to say whether opening it is worth it. -->
+    <span id="menu-dot" class="menu-dot" hidden></span>
+  </button>
+  <!-- With the tabs gone this is the only thing saying where you are. -->
+  <h1 id="view-title">Queue</h1>
   <span id="conn" class="conn offline">connecting</span>
-  <span id="whoami" class="whoami"></span>
-  <button id="settings-toggle" class="ghost" type="button">Settings</button>
-  <button id="signout" class="ghost" type="button">Sign out</button>
 </header>
+
+<!-- One navigation for both sizes. The bottom bar this replaces needed a
+     6rem overhang to cover the iOS home indicator, short labels behind a
+     font-size:0 trick, and its own badge positioning - none of which the
+     desktop tabs wanted, and all of which had to be maintained twice. -->
+<div id="menu" class="menu" hidden>
+  <div id="menu-backdrop" class="menu-backdrop"></div>
+  <nav class="menu-panel" aria-label="Sections">
+    <div class="menu-head">
+      <span class="menu-title">Download Center</span>
+      <button id="menu-close" class="menu-close" type="button"
+              aria-label="Close menu">&times;</button>
+    </div>
+
+    <button class="nav-item active" data-view="queue" type="button">
+      <span class="nav-label">Queue</span>
+    </button>
+    <button class="nav-item" data-view="browse" type="button">
+      <span class="nav-label">Browse</span>
+    </button>
+    <button class="nav-item" data-view="staging" type="button">
+      <span class="nav-label">Staging</span>
+      <span id="staging-badge" class="badge" hidden></span>
+    </button>
+    <button class="nav-item" data-view="health" type="button">
+      <span class="nav-label">Health</span>
+      <span id="health-badge" class="badge" hidden></span>
+    </button>
+    <button class="nav-item" data-view="dupes" type="button">
+      <span class="nav-label">Duplicates</span>
+      <span id="dupe-badge" class="badge" hidden></span>
+    </button>
+    <button class="nav-item" data-view="playlists" type="button">
+      <span class="nav-label">Playlists</span>
+    </button>
+
+    <hr class="menu-rule">
+
+    <button id="settings-toggle" class="nav-item" type="button">
+      <span class="nav-label">Settings</span>
+    </button>
+
+    <div class="menu-foot">
+      <span id="whoami" class="whoami"></span>
+      <button id="signout" class="ghost" type="button">Sign out</button>
+    </div>
+  </nav>
+</div>
 
 <main>
   <form id="settings" hidden autocomplete="off">

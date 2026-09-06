@@ -168,6 +168,20 @@ Carries over: the counts (Health, Duplicates) need to stay visible without
 opening the menu — an unread-style dot on the button when anything needs
 attention.
 
+**Shipped 2026-09-06.** Header is the burger, the current view's name and
+the connection pill; Settings, the username and Sign out moved into the
+overlay. Decided at build time: burger on the left (convention beats reach
+for a control pressed many times a session), and the view name in the header
+because with the tabs gone nothing else says where you are.
+
+One honest gap: the attention dot summarises the Health, Staging and
+Duplicates badges, but only Health and Staging are loaded at sign-in.
+`/api/duplicates` groups every row in the library, so fetching it on every
+page load would put a full scan in the way of the app opening. The dot is
+therefore right about Duplicates only after the panel has been opened once.
+Fixing it properly means a cheap count endpoint, which is worth doing when
+the Health tab is cut down (item 3) and that panel is being touched anyway.
+
 ---
 
 ## Later

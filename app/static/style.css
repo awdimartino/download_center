@@ -190,11 +190,12 @@ header {
   gap: var(--s-3);
   padding: var(--s-3) var(--s-5);
   /* Opaque, and deliberately not backdrop-filtered. A filtered element
-     becomes the containing block for every `position: fixed` descendant,
-     and the tab bar is one of those on a phone - blurring the header
-     silently pinned the bar to the bottom of the header instead of the
-     bottom of the screen, on top of the title. */
+     becomes the containing block for every `position: fixed` descendant.
+     The bottom tab bar this once broke is gone, but the menu overlay is
+     fixed too and the trap is the same one. */
   background: var(--bg);
+  /* Clears the notch, so the title is not under the status bar. */
+  padding-top: calc(var(--s-3) + env(safe-area-inset-top, 0px));
   border-bottom: 1px solid var(--line);
 }
 
@@ -218,35 +219,173 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
 
 main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
-/* --- tabs ----------------------------------------------------------------- */
+/* --- navigation ----------------------------------------------------------
+   One pattern at every width. The bottom bar this replaces needed a 6rem
+   overhang to cover the iOS home indicator, short labels behind a
+   font-size:0 trick, and badge positioning of its own - none of which the
+   desktop tabs wanted, and all of which had to be kept working twice. */
 
-.tabs {
+.menu-toggle {
+  position: relative;
   display: flex;
-  gap: 2px;
-  margin-left: var(--s-3);
-  padding: 3px;
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r-md);
-}
-
-.tab {
-  min-height: 30px;
-  padding: 0 var(--s-3);
+  align-items: center;
+  justify-content: center;
+  /* Past the 44px touch minimum in both directions. */
+  width: 44px;
+  height: 44px;
+  padding: 0;
   background: none;
   border-color: transparent;
-  border-radius: var(--r-sm);
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 500;
+  border-radius: var(--r-md);
+  flex-shrink: 0;
 }
-.tab:hover { background: var(--panel-2); color: var(--text); }
-.tab.active { background: var(--panel-3); color: var(--text); }
-.tab.active:hover { background: var(--panel-3); }
+.menu-toggle:hover { background: var(--panel-2); }
+
+/* Three lines from one element: the bar itself plus its two pseudo-elements.
+   No image request, and it scales with the box rather than a fixed asset. */
+.burger, .burger::before, .burger::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text);
+  transition: transform .16s ease, opacity .16s ease;
+}
+.burger { position: relative; }
+.burger::before, .burger::after { content: ""; position: absolute; left: 0; }
+.burger::before { top: -6px; }
+.burger::after { top: 6px; }
+
+/* Open, the same three lines become a cross, so the control reads as a
+   toggle rather than two different buttons in the same place. */
+.menu-toggle[aria-expanded="true"] .burger { background: transparent; }
+.menu-toggle[aria-expanded="true"] .burger::before { transform: translateY(6px) rotate(45deg); }
+.menu-toggle[aria-expanded="true"] .burger::after { transform: translateY(-6px) rotate(-45deg); }
+
+/* Whether opening the menu is worth it. Deliberately not a number: the
+   counts are one tap away, and three of them competing on a 20px button was
+   what made the old badge positioning such a fight. */
+.menu-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--warn);
+  /* Rings the dot in the header colour so it stays legible over a line. */
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+#view-title { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+
+/* --- the menu overlay ----------------------------------------------------- */
+
+.menu {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+}
+
+.menu-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .55);
+  /* No backdrop-filter. A filtered element becomes the containing block for
+     every position:fixed descendant, which is the trap that pinned the old
+     tab bar inside the header. */
+}
+
+.menu-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(20rem, 84vw);
+  padding: var(--s-3) var(--s-3) var(--s-4);
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  /* Its own scroller, so a long menu never chains its scroll to the page
+     behind it and leaves you somewhere else when it closes. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Clears the notch at the top and the home indicator at the bottom. The
+     panel is full-height, so both are its problem. */
+  padding-top: calc(var(--s-3) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(var(--s-4) + env(safe-area-inset-bottom, 0px));
+}
+
+.menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-2) var(--s-3);
+}
+.menu-title { font-size: 13px; font-weight: 650; color: var(--muted); }
+.menu-close {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  background: none;
+  border-color: transparent;
+  color: var(--muted);
+  border-radius: var(--r-sm);
+}
+.menu-close:hover { background: var(--panel-2); color: var(--text); }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  width: 100%;
+  /* A full-width row is a generous target on a phone and reads as a list on
+     a desktop, which is the parity the two layouts never had. */
+  min-height: 46px;
+  padding: 0 var(--s-3);
+  margin-bottom: 2px;
+  background: none;
+  border-color: transparent;
+  border-radius: var(--r-md);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+.nav-item:hover { background: var(--panel-2); color: var(--text); }
+.nav-item.active {
+  background: var(--panel-3);
+  color: var(--text);
+  font-weight: 600;
+}
+.nav-item.active:hover { background: var(--panel-3); }
+
+.menu-rule {
+  height: 1px;
+  margin: var(--s-3) var(--s-2);
+  border: 0;
+  background: var(--line-soft);
+}
+
+.menu-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  /* Pushed to the bottom of the panel however short the list is. */
+  margin-top: auto;
+  padding: var(--s-4) var(--s-2) 0;
+}
 
 /* A count, not a status. Kept apart from the job pills below, which share
-   the class name and were being painted amber by this rule. */
-.tab .badge {
+   the class name and were being painted amber by this rule. In a vertical
+   list a badge simply sits at the end of its row - no absolute positioning,
+   which is what the old five-across bar needed and kept getting wrong. */
+.nav-item .badge {
   min-width: 17px;
   padding: 0 5px;
   border: 0;
@@ -1004,105 +1143,28 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   /* No overflow-x here, deliberately. It was `hidden`, which makes an
      element a scroll container - and a scroll container is what a sticky
      descendant sticks to, so the header stuck to a box that never scrolls
-     and scrolled away with the page, taking Settings and Sign out with it.
-     WebKit knocks a fixed element loose from the same rule, which is the
-     bottom tab bar. `clip` breaks sticky in Chromium too. Nothing here
-     actually overflows at 390px - the long strings are handled by the
-     overflow-wrap rule at the end of this block - so the safety net was
-     only ever costing us the two things it was meant to protect. */
+     and scrolled away with the page, taking the title with it. `clip`
+     breaks sticky in Chromium too. Nothing here actually overflows at
+     390px: the long strings are handled by the overflow-wrap rule at the
+     end of this block. */
   html, body { max-width: 100%; }
-  /* Room for the bottom bar, including whatever the device reserves
-     below it, so the last row of a panel is never parked under it. */
-  main {
-    padding: var(--s-3) var(--s-3)
-             calc(5.5rem + env(safe-area-inset-bottom, 0px));
-  }
 
-  header {
-    flex-wrap: wrap;
-    gap: var(--s-2);
-    padding: var(--s-2) var(--s-3);
-  }
-  header h1 { font-size: 15px; white-space: nowrap; }
-  .whoami { width: 100%; order: 3; font-size: 12px; }
-  .conn { order: 2; }
+  /* No bottom bar to clear any more, so the page ends where the page ends.
+     The old value reserved 5.5rem plus the safe-area inset on every panel. */
+  main { padding: var(--s-3); }
 
-  nav.tabs {
-    position: fixed;
-    left: 0; right: 0;
-    /* Not bottom: 0. See the padding below. */
-    bottom: -6rem;
-    z-index: 40;
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    gap: 0;
-    margin: 0;
-    /* The bar is fixed to the bottom of the layout viewport, and on a phone
-       that is not the bottom of the screen: iOS leaves the home-indicator
-       inset below it and exposes more while the address bar animates, and
-       the page kept showing through the gap.
+  header { gap: var(--s-2); padding: var(--s-2) var(--s-3); }
+  header { padding-top: calc(var(--s-2) + env(safe-area-inset-top, 0px)); }
+  #view-title { font-size: 15px; white-space: nowrap; }
 
-       A same-coloured box-shadow was the first attempt and does not paint
-       there - Safari rasterises a fixed layer to the viewport it is
-       anchored to, and the shadow falls outside it. So the bar's own box
-       goes there instead: the element hangs 6rem below its anchor and
-       carries that 6rem back as bottom padding, which leaves the labels
-       exactly where they were and puts real background over the strip.
-       The inset is added on top, so the row also clears the home
-       indicator rather than sitting under it. */
-    padding: 0 0 calc(6rem + max(0.4rem, env(safe-area-inset-bottom, 0px)));
-    background: var(--panel);
-    border: 0;
-    border-top: 1px solid var(--line);
-    border-radius: 0;
-  }
+  /* Full width on a phone: a drawer that leaves a sliver of the page behind
+     it invites a mis-tap on whatever is under that sliver. */
+  .menu-panel { width: 100%; border-right: 0; }
 
-  nav.tabs .tab {
-    position: relative;
-    /* Comfortably past the 44px minimum for a touch target. */
-    min-height: 52px;
-    padding: 0;
-    border-radius: 0;
-    background: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+  /* Comfortably past the touch minimum, and roomier than the desktop rows
+     because this is the primary way to move around on a phone. */
+  .nav-item { min-height: 52px; font-size: 15px; }
 
-  /* "Duplicates" does not fit five-across; each tab carries a short form. */
-  nav.tabs .tab { font-size: 0; }
-  nav.tabs .tab::before { content: attr(data-short); font-size: 11.5px; font-weight: 500; }
-  nav.tabs .tab.active { background: none; }
-  nav.tabs .tab.active::before { color: var(--accent); font-weight: 600; }
-  /* The active mark is a rule along the top edge: legible at a glance without
-     a filled block competing with the panel it belongs to. */
-  nav.tabs .tab.active::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 22%; right: 22%;
-    height: 2px;
-    border-radius: 0 0 2px 2px;
-    background: var(--accent);
-  }
-
-  /* Out of the flow: in it, a badge on one tab lifted that label above the
-     other four and the row stopped reading as a row. */
-  /* Anchored to the tab's own right edge, not offset from its centre. A
-     three-digit count measured from the middle of the last tab ran off the
-     side of the screen and was cut in half. */
-  .tab .badge {
-    position: absolute;
-    top: 7px;
-    right: 5px;
-    left: auto;
-    margin: 0;
-    min-width: 15px;
-    padding: 0 4px;
-    font-size: 9.5px;
-    line-height: 15px;
-  }
 
   /* One thing per row, full width, thumb-sized. */
   #add-form, #search-form { flex-direction: column; align-items: stretch; }
@@ -1174,6 +1236,8 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
 }
 
 @media (max-width: 400px) {
-  nav.tabs .tab::before { font-size: 10.5px; }
-  header h1 { font-size: 14px; }
+  /* The tab rule that used to live here shrank five labels to fit across the
+     screen. A vertical menu has no such constraint, so only the title needs
+     to give way. */
+  #view-title { font-size: 14px; }
 }
