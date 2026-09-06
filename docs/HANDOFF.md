@@ -63,11 +63,18 @@ that.
 
 ## Where things stand
 
-**Deployed:** commit `8fe62e3`, container healthy, image pulled 2026-09-06
-20:44 UTC. Verified after the pull: the new markup is served, the *Import
-as-is* button is in `app.js`, and `POST /api/staging/import-as-is` answers
-401 rather than 404. Sessions are in memory, so the restart signed everyone
-out — a websocket 403 in the log right after a deploy is that, not a fault.
+**Deployed:** commit `dc2742a`, container healthy. Verified after the pull:
+the shell is `no-store` and stamps `?v=<hash>` onto its assets, `/static`
+answers `no-cache`, the served `app.js` contains the *Import as-is* button
+and the served CSS the `cursor: default` rule. Sessions are in memory, so a
+restart signs everyone out — a websocket 403 in the log straight after a
+deploy is that, not a fault.
+
+**A deploy did not reach the browser before `21ab5b6`** (FIXES item 39).
+Static assets carried no `Cache-Control`, so a fresh shell loaded a stale
+`app.js` and the first report of the escape hatch was that it was not
+there. If a change ever appears to be missing, check the asset version in
+the page source against `asset_version()` before doubting the code.
 
 **Navidrome 0.58.5.** Three libraries: `Music Library` (id 1, `/music`),
 `Kelly` (id 2, `/kelly`), `Test` (id 5, `/test`). Users: `alex` → 1,
