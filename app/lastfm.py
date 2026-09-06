@@ -36,6 +36,7 @@ import re
 import sqlite3
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -52,6 +53,10 @@ PAGE = 200
 # minutes. One request every quarter second is well inside that and still
 # fetches a year of listening in a couple of minutes.
 PAUSE = 0.25
+# Delays between attempts at one page. The final 0 is the last try: there is
+# no point sleeping after it. A quarter of an hour of requests should not be
+# thrown away by one bad minute at the other end.
+RETRY_BACKOFF = (2, 5, 15, 30, 0)
 
 SOURCE = "lastfm"
 
@@ -88,6 +93,18 @@ class LastfmError(RuntimeError):
 # --- talking to Last.fm -----------------------------------------------------
 
 def _call(method: str, secret: str | None = None, **params: str) -> dict:
+    """One request, retried while the failure looks temporary.
+
+    Last.fm returns a 500 now and then. Without this, a single one part way
+    through a long history threw away every page already fetched - which is
+    the same mistake as treating a rate-limited search as "no results", and
+    more expensive here because a full history is a quarter of an hour of
+    requests.
+
+    A 5xx, a timeout or a dropped connection is worth another go. An error
+    *in the response body* is Last.fm telling us the request was wrong, and
+    repeating it will not help.
+    """
     query = {"method": method, "api_key": params.pop("api_key"), **params}
     if secret:
         # Signed calls hash every parameter, sorted by name, with the shared
@@ -100,14 +117,29 @@ def _call(method: str, secret: str | None = None, **params: str) -> dict:
     url = API + "?" + urllib.parse.urlencode(query)
     request = urllib.request.Request(
         url, headers={"User-Agent": "download-center/1.0"})
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            body = json.load(response)
-    except Exception as exc:
-        raise LastfmError(f"{type(exc).__name__}: {exc}"[:200]) from exc
-    if "error" in body:
-        raise LastfmError(f"{body.get('message', 'unknown error')}")
-    return body
+
+    last = ""
+    for attempt, delay in enumerate(RETRY_BACKOFF, start=1):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = json.load(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500:
+                raise LastfmError(f"HTTP {exc.code}") from exc
+            last = f"HTTP {exc.code}"
+        except Exception as exc:
+            last = f"{type(exc).__name__}: {exc}"[:120]
+        else:
+            if "error" in body:
+                raise LastfmError(f"{body.get('message', 'unknown error')}")
+            return body
+
+        if delay:
+            log.warning("last.fm %s (attempt %d), retrying in %ds",
+                        last, attempt, delay)
+            time.sleep(delay)
+
+    raise LastfmError(f"{last} after {len(RETRY_BACKOFF)} attempts")
 
 
 def username_for(session_key: str, api_key: str, secret: str) -> str:
@@ -148,7 +180,7 @@ def scrobbles(username: str, api_key: str,
                 continue
             out.append((item.get("artist", {}).get("#text", ""),
                         item.get("name", ""), int(date)))
-        if progress:
+        if progress and (page % 25 == 0 or page == pages or page == 1):
             progress(page, pages, len(out))
         page += 1
         time.sleep(PAUSE)

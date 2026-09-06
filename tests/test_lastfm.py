@@ -115,3 +115,82 @@ def test_ampersand_and_the_word_and_are_the_same_band(a, b):
     what the tag says. Stripping & as punctuation would leave the two
     spellings permanently unmatchable."""
     assert lastfm.normalise(a) == lastfm.normalise(b)
+
+
+# --- surviving a flaky API --------------------------------------------------
+
+def test_a_server_error_is_retried(monkeypatch):
+    """One 500 part way through a quarter of an hour of requests threw away
+    every page already fetched. Same mistake as treating a rate-limited
+    search as "no results", and more expensive."""
+    import urllib.error
+    calls = {"n": 0}
+
+    def flaky(request, timeout=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise urllib.error.HTTPError(
+                "u", 500, "Internal Server Error", {}, None)
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"ok": true}'
+        return Response()
+
+    monkeypatch.setattr(lastfm.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(lastfm.time, "sleep", lambda s: None)
+    monkeypatch.setattr(lastfm.json, "load", lambda r: {"ok": True})
+
+    assert lastfm._call("user.getRecentTracks", api_key="k") == {"ok": True}
+    assert calls["n"] == 3
+
+
+def test_a_client_error_is_not_retried(monkeypatch):
+    """A 4xx means the request was wrong. Repeating it cannot help."""
+    import urllib.error
+    calls = {"n": 0}
+
+    def refused(request, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(lastfm.urllib.request, "urlopen", refused)
+    monkeypatch.setattr(lastfm.time, "sleep", lambda s: None)
+
+    with pytest.raises(lastfm.LastfmError, match="403"):
+        lastfm._call("user.getRecentTracks", api_key="k")
+    assert calls["n"] == 1
+
+
+def test_an_error_in_the_body_is_not_retried(monkeypatch):
+    """Last.fm answering "invalid parameters" is not a transient failure."""
+    calls = {"n": 0}
+
+    def answered(request, timeout=None):
+        calls["n"] += 1
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        return Response()
+
+    monkeypatch.setattr(lastfm.urllib.request, "urlopen", answered)
+    monkeypatch.setattr(lastfm.time, "sleep", lambda s: None)
+    monkeypatch.setattr(lastfm.json, "load",
+                        lambda r: {"error": 6, "message": "No user"})
+
+    with pytest.raises(lastfm.LastfmError, match="No user"):
+        lastfm._call("user.getInfo", api_key="k")
+    assert calls["n"] == 1
+
+
+def test_it_gives_up_eventually(monkeypatch):
+    import urllib.error
+
+    def always_500(request, timeout=None):
+        raise urllib.error.HTTPError("u", 503, "Unavailable", {}, None)
+
+    monkeypatch.setattr(lastfm.urllib.request, "urlopen", always_500)
+    monkeypatch.setattr(lastfm.time, "sleep", lambda s: None)
+
+    with pytest.raises(lastfm.LastfmError, match="attempts"):
+        lastfm._call("user.getRecentTracks", api_key="k")
