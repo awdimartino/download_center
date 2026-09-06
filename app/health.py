@@ -21,6 +21,7 @@ import shutil
 import sqlite3
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,11 +57,11 @@ class Check:
     detail: str = ""
     # Where to look when the number is not what it should be.
     hint: str = ""
-    # Hidden unless the panel is asked to show everything. For the ones that
-    # can recur but rarely do, and for facts that are status rather than
-    # health. Demoted rather than deleted: twenty-one rows was too many to
-    # read, but a row nobody reads is still better than a number nobody can
-    # get at when it finally matters.
+    # Status rather than something to act on: facts, and problems that can
+    # recur but rarely do. Shown like any other row - the toggle that used to
+    # hide these made you click twice to see the same panel on every visit -
+    # but dimmed, and kept out of the badge. A badge that counts things you
+    # cannot act on sends you looking for a problem that is not there.
     secondary: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -253,8 +254,9 @@ def _library_section(connection: sqlite3.Connection, live: str,
     if "last_scan_at" in columns:
         row = connection.execute(
             "select max(last_scan_at) from library").fetchone()
-        # Status, not health. Behind the toggle.
-        section.add(Check("last_scan", "Last scan", row[0] or "never", INFO,
+        # Status, not health.
+        value, detail = _since(row[0])
+        section.add(Check("last_scan", "Last scan", value, INFO, detail,
                           secondary=True))
 
     return section
@@ -453,6 +455,32 @@ def _system_section(started_at: float) -> Section:
     return section
 
 
+def _since(stamp: str | None) -> tuple[str, str]:
+    """A timestamp Navidrome wrote, as (how long ago, when exactly).
+
+    Navidrome stores `2026-09-06 21:24:58.614024204+00:00` - a space for a
+    separator and nanoseconds on the end - and that went into the value
+    column verbatim. That column is five rem of right-aligned tabular
+    numerals, sized for counts, so a 33-character timestamp arrived
+    overflowing and unreadable and lined up with nothing.
+
+    The age belongs in the column, since the question is "is the index
+    stale"; the timestamp itself belongs in the detail beside it, where
+    there is room for it.
+    """
+    if not stamp:
+        return "never", "Navidrome has not scanned this library"
+    try:
+        # fromisoformat takes the space separator and truncates the extra
+        # digits; anything it cannot read is shown raw rather than guessed at.
+        scanned = datetime.fromisoformat(stamp)
+    except ValueError:
+        return "unknown", stamp
+    age = time.time() - scanned.timestamp()
+    return (f"{_duration(age)} ago",
+            scanned.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC"))
+
+
 def _duration(seconds: float) -> str:
     days, rest = divmod(int(seconds), 86400)
     hours, rest = divmod(rest, 3600)
@@ -536,18 +564,16 @@ def report(started_at: float,
 
     sections.append(_system_section(started_at))
 
-    # Counted over the primary rows only. A badge that includes things the
-    # panel does not show sends you looking for a number that is not there.
+    # Counted over the rows you can act on. Every row is shown now, but a
+    # badge that includes status rows sends you looking for a problem that
+    # is not one.
     problems = sum(
         1 for section in sections for check in section.checks
         if check.status in (WARN, FAIL) and not check.secondary
     )
-    hidden = sum(1 for section in sections for check in section.checks
-                 if check.secondary)
     return {
         "sections": [section.as_dict() for section in sections],
         "problems": problems,
-        "hidden": hidden,
         "navidrome_error": error,
         "generated_at": time.time(),
     }
