@@ -4,10 +4,43 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  # Runs the tests on a branch before it is merged. The build only publishes
+  # from main and tags, so a pull request gets the feedback without the four
+  # minutes of QEMU.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
+  # Before the image, always. The loop used to be: push, wait four minutes
+  # for an emulated arm64 build, pull on the Pi, hard-refresh, and let the
+  # user find the bug. That is how the duplicate-save bug was found.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # beets pulls in most of what the app imports, so the test job installs
+      # the real dependency set rather than a guess at a subset.
+      - run: pip install -r requirements-dev.txt
+
+      - name: Compile every module
+        # Catches a syntax error in a file no test happens to import, which
+        # otherwise only surfaces as a container that will not start.
+        run: python -m compileall -q app tools
+
+      - run: python -m pytest
+
   publish:
+    needs: test
+    # A branch or pull request gets the tests; only main and tags get an
+    # image. Publishing from a branch would move :latest to unreviewed code.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
