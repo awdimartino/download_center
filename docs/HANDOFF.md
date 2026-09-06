@@ -59,7 +59,7 @@ Local Python is `.venv/Scripts/python.exe` — `python` is not on PATH.
 
 ## Where things stand
 
-**Deployed:** commit `8366766`, container healthy, deployed 2026-09-06.
+**Deployed:** commit `f4a0346`, container healthy, deployed 2026-09-06.
 `state.db` is backed up beside itself before every migration
 (`state.db.bak-2026-09-06`, `state.db.bak-pre-tier2`). The ledger migration
 was dry-run against a copy of the real database and preserved all 825 rows.
