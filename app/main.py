@@ -603,7 +603,11 @@ async def delete_job(
     # the job would otherwise be gone from memory with its scratch files
     # still on disk and no event telling any browser it went.
     try:
-        space = workspace.for_session(session.identity, job.get("library_id"))
+        # The library need not be mounted: this only removes scratch files
+        # under the staging root. Refusing would strand the job in memory
+        # with its files on disk.
+        space = workspace.for_session(session.identity, job.get("library_id"),
+                                      require_library=False)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     JOBS.pop(job_id, None)
@@ -747,7 +751,8 @@ def _browsing_library(session: auth.Session) -> int | None:
     rather than everything being marked held against library zero.
     """
     try:
-        return workspace.for_session(session.identity).library_id
+        return workspace.for_session(session.identity,
+                                    require_library=False).library_id
     except ValueError:
         return None
 
@@ -814,7 +819,8 @@ async def forget_track(
     library, like every other answer the ledger gives.
     """
     try:
-        space = workspace.for_session(session.identity)
+        # A ledger row, not a file. Nothing here needs the library on disk.
+        space = workspace.for_session(session.identity, require_library=False)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     forgotten = await asyncio.to_thread(

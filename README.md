@@ -190,6 +190,20 @@ docker compose up -d
 
 Then open <http://localhost:8000> and sign in with a Navidrome account.
 
+**Every library needs a bind mount here, at the same path Navidrome uses.**
+Navidrome reports where a library lives from its own database, and this is a
+different container. Add a library there and forget the mount here and the
+path is valid for Navidrome and absent for this — at which point beets is
+configured with a `directory:` that exists only inside the container. It
+gets created in the container's writable layer, the music is filed into it,
+the import reports success, and the next `docker compose pull` destroys the
+lot.
+
+This is now refused with a message naming the path, rather than discovered
+later. Mounting both containers at the same path is what makes a library
+path read from Navidrome's database directly usable here with no mapping to
+maintain.
+
 **Mount Navidrome's database.** It is commented out in `docker-compose.yml`
 and it is not optional: which libraries an account may see is read from that
 file, so without it every user signs in with no library, no download has

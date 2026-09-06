@@ -479,7 +479,10 @@ def report(started_at: float,
     user_id = getattr(identity, "user_id", "") or ""
     if identity is not None:
         with contextlib.suppress(ValueError):
-            space = workspace.for_session(identity)
+            # Reporting only. An unmounted library should not blank the
+            # whole panel - the disk and database sections still say
+            # something useful, and the Staging tab is where that shows up.
+            space = workspace.for_session(identity, require_library=False)
     roots = [Path(lib["path"]) for lib in libraries]
     audits = [a for a in (diskaudit.cached(r) for r in roots) if a]
     audit = _merge_audits(audits)

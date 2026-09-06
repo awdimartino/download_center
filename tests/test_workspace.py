@@ -16,13 +16,25 @@ from app.config import settings
 from app.navidrome import Identity
 
 
+# Where the default identity's library lives. A real directory, because
+# for_session now refuses a library this container cannot see - which is the
+# whole point of the guard, and would otherwise make every test here a test
+# of that guard instead of what it means to test.
+LIBRARY: Path | None = None
+
+
 @pytest.fixture(autouse=True)
 def staging_root(tmp_path, monkeypatch):
+    global LIBRARY
     root = tmp_path / "untagged"
     root.mkdir()
+    LIBRARY = tmp_path / "music"
+    LIBRARY.mkdir()
+    (tmp_path / "kelly").mkdir()
     monkeypatch.setattr(settings, "output_dir", root)
     monkeypatch.setattr(workspace, "CONFIG_DIR", tmp_path / "config")
-    return root
+    yield root
+    LIBRARY = None
 
 
 def _identity(username="alex", libraries=None, user_id="u-1"):
@@ -30,7 +42,7 @@ def _identity(username="alex", libraries=None, user_id="u-1"):
         user_id=user_id, username=username, is_admin=False, token="t",
         subsonic_token="s", subsonic_salt="s",
         libraries=libraries if libraries is not None
-        else [{"id": 1, "name": "Music", "path": "/music"}])
+        else [{"id": 1, "name": "Music", "path": str(LIBRARY)}])
 
 
 # --- picking a destination --------------------------------------------------
@@ -59,9 +71,9 @@ def test_the_key_carries_the_library_id_not_its_name():
     assert space.key == "alex-1"
 
 
-def test_two_libraries_for_one_person_are_separate_workspaces():
-    libraries = [{"id": 1, "name": "Music", "path": "/music"},
-                 {"id": 2, "name": "Kelly", "path": "/kelly"}]
+def test_two_libraries_for_one_person_are_separate_workspaces(tmp_path):
+    libraries = [{"id": 1, "name": "Music", "path": str(LIBRARY)},
+                 {"id": 2, "name": "Kelly", "path": str(tmp_path / "kelly")}]
     one = workspace.for_session(_identity(libraries=libraries), 1)
     two = workspace.for_session(_identity(libraries=libraries), 2)
 
@@ -80,7 +92,7 @@ def test_prepare_writes_who_the_directory_belongs_to(staging_root):
     assert marker.is_file()
     lines = marker.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "alex"
-    assert lines[2] == str(Path("/music"))
+    assert lines[2] == str(LIBRARY)
     assert lines[3] == "1"
 
 
@@ -90,7 +102,7 @@ def test_prepare_refuses_a_directory_belonging_to_someone_else(staging_root):
     mine = workspace.for_session(_identity("alex"))
     mine.prepare()
 
-    intruder = workspace.Workspace("alex.", 1, "Music", Path("/music"))
+    intruder = workspace.Workspace("alex.", 1, "Music", LIBRARY)
     # Force the collision the slug can produce.
     (staging_root / intruder.key).mkdir(parents=True, exist_ok=True)
     (staging_root / intruder.key / ".owner").write_text(
@@ -135,7 +147,7 @@ def test_existing_reads_back_what_a_session_created(staging_root):
     assert len(found) == 1
     assert found[0].username == "alex"
     assert found[0].library_id == 1
-    assert found[0].library_path == Path("/music")
+    assert found[0].library_path == LIBRARY
 
 
 def test_existing_ignores_a_directory_with_no_owner_marker(staging_root):
@@ -158,3 +170,73 @@ def test_existing_ignores_dotted_directories(staging_root):
 def test_a_username_becomes_something_a_filesystem_cannot_misread(
         username, expected):
     assert workspace.slug(username) == expected
+
+
+# --- a library this container cannot see ----------------------------------
+
+def test_a_library_that_is_not_mounted_here_is_refused(tmp_path):
+    """Navidrome reports where a library lives from its own database, and
+    this is a different container with its own mounts. Add a library there
+    and forget the bind mount here and the path exists for Navidrome and not
+    for us - so beets creates it inside the container, files the music into
+    it, reports success, and the next `docker compose pull` takes the lot.
+    """
+    identity = _identity(libraries=[
+        {"id": 9, "name": "Test", "path": str(tmp_path / "not-mounted")}])
+
+    with pytest.raises(ValueError, match="not mounted"):
+        workspace.for_session(identity)
+
+
+def test_the_refusal_names_the_path_and_says_what_to_do(tmp_path):
+    missing = tmp_path / "not-mounted"
+    identity = _identity(libraries=[
+        {"id": 9, "name": "Test", "path": str(missing)}])
+
+    with pytest.raises(ValueError) as caught:
+        workspace.for_session(identity)
+
+    message = str(caught.value)
+    assert "Test" in message
+    assert str(missing) in message
+    assert "bind mount" in message
+
+
+def test_a_mounted_library_is_fine(tmp_path):
+    root = tmp_path / "mounted"
+    root.mkdir()
+    identity = _identity(libraries=[
+        {"id": 9, "name": "Test", "path": str(root)}])
+
+    assert workspace.for_session(identity).library_path == root
+
+
+def test_a_file_where_a_library_should_be_is_refused(tmp_path):
+    """`is_dir()`, not `exists()`. A bind mount pointing at a file is not a
+    library, and treating it as one fails much later and less clearly."""
+    impostor = tmp_path / "library"
+    impostor.write_text("not a directory", encoding="utf-8")
+    identity = _identity(libraries=[
+        {"id": 9, "name": "Test", "path": str(impostor)}])
+
+    with pytest.raises(ValueError, match="not mounted"):
+        workspace.for_session(identity)
+
+
+def test_read_only_callers_can_opt_out(tmp_path):
+    """Deleting a job touches only the staging scratch directory, and
+    forgetting a ledger row touches no files at all. Refusing those because
+    the library is unmounted would strand a job with its files on disk."""
+    identity = _identity(libraries=[
+        {"id": 9, "name": "Test", "path": str(tmp_path / "not-mounted")}])
+
+    space = workspace.for_session(identity, require_library=False)
+    assert space.library_id == 9
+
+
+def test_the_check_is_on_by_default():
+    """The cost of forgetting it is music written into a container and lost;
+    the cost of an unnecessary check is one keyword argument."""
+    import inspect
+    signature = inspect.signature(workspace.for_session)
+    assert signature.parameters["require_library"].default is True
