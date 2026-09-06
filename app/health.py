@@ -17,6 +17,7 @@ state goes through Navidrome's HTTP API instead.
 from __future__ import annotations
 
 import contextlib
+import logging
 import shutil
 import sqlite3
 import time
@@ -26,6 +27,8 @@ from typing import Any
 
 from . import diskaudit, navidrome, uuidtags, workspace
 from .config import settings
+
+log = logging.getLogger("download_center.health")
 
 # The tag whose value Navidrome is configured to use as its persistent track
 # identity. Stored parsed in media_file.tags, so it can be queried directly
@@ -496,11 +499,20 @@ def report(started_at: float,
                         "Checks unavailable",
                         [Check("unavailable", "Query failed", "—",
                                INFO, str(exc)[:120])]))
-            with contextlib.suppress(sqlite3.Error):
+            # Aliased `mf`, because `live` is written in terms of it. Without
+            # the alias this raised "no such column: mf.missing" into a bare
+            # suppress, so the stale-index check below silently never fired -
+            # and that check is the only thing that can tell "never stamped"
+            # from "stamped but not yet scanned". Logged rather than
+            # swallowed for the same reason.
+            try:
                 indexed_stamped = _scalar(connection, f"""
-                    select count(*) from media_file
+                    select count(*) from media_file mf
                      where {live}
                        and json_extract(mf.tags, '{UUID_TAG}') is not null""")
+            except sqlite3.Error as exc:
+                log.warning("could not count stamped tracks in the index, so "
+                            "the stale-index check is unavailable: %s", exc)
 
     sections.append(_disk_section(audit))
     stale = _stale_index_check(indexed_stamped, audit)

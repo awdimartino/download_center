@@ -187,8 +187,17 @@ def to_form(rules: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict) or len(payload) != 1:
             raise Unsupported(f"the '{operator}' condition names no field")
         name, value = next(iter(payload.items()))
-        if name not in _BY_NAME:
+        spec = _BY_NAME.get(name)
+        if spec is None:
             raise Unsupported(f"unknown field '{name}'")
+        # Checked here as well as on the way out. The form only offers the
+        # operators a field can take, so a rule written elsewhere with, say,
+        # `contains` on a play count opened as fully editable and then failed
+        # on Save with an error about a rule this app had handed over itself.
+        # Better to say up front that it cannot be shown.
+        if operator not in {o["name"] for o in OPERATORS[spec.kind]}:
+            raise Unsupported(
+                f"'{spec.label}' cannot be asked '{operator}' in this editor")
         conditions.append({"field": name, "operator": operator,
                            "value": value})
 

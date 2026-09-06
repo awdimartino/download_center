@@ -93,9 +93,14 @@ def download(url: str, destination: Path, on_progress: ProgressHook | None = Non
     if not destination.exists():
         # Extraction can land on a different extension if ffmpeg declined the
         # conversion; surface that rather than reporting a phantom success.
-        siblings = list(destination.parent.glob(destination.stem + ".*"))
+        # Matched by prefix rather than by glob: a title like "Song [Remix]"
+        # is a character class to glob, so the diagnostic that exists to say
+        # what went wrong reported an empty list.
+        prefix = destination.stem + "."
+        siblings = sorted(p.name for p in destination.parent.iterdir()
+                          if p.name.startswith(prefix))
         raise DownloadError(
-            f"Expected {destination.name} but found {[s.name for s in siblings]}"
+            f"Expected {destination.name} but found {siblings}"
         )
 
     return destination

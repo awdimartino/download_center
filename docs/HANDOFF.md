@@ -49,8 +49,9 @@ ssh -i ~/.ssh/id_ed25519_pi argyle@alex-pi \
 curl -s "https://api.github.com/repos/awdimartino/download_center/actions/runs?per_page=1"
 ```
 
-Do **not** follow the README's rsync-and-build deploy section; it is stale.
-The Pi runs a prebuilt GHCR image and has no git checkout.
+The Pi runs a prebuilt GHCR image and has no git checkout. The README now
+describes this flow too; its old rsync-and-build section was removed on
+2026-09-06.
 
 Local Python is `.venv/Scripts/python.exe` — `python` is not on PATH.
 

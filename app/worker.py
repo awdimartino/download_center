@@ -130,10 +130,14 @@ async def run_job(job: dict[str, Any], push: Push,
     await push(job)
 
     # Dedupe first, so completeness is judged on what will actually be written.
+    # Scoped to the library this job files into: "already downloaded" is a
+    # question about a collection, and asking it of the whole installation
+    # meant a second person's first download was skipped entirely.
     pending = []
     for item in items:
         held = await asyncio.to_thread(
-            ledger.already_downloaded, item["spotify_id"], item.get("isrc")
+            ledger.already_downloaded, item["spotify_id"], item.get("isrc"),
+            space.library_id
         )
         if held:
             _mark(item, "skipped")
@@ -177,7 +181,8 @@ async def run_job(job: dict[str, Any], push: Push,
         # space that should be fetched again, not skipped.
         for item in pending:
             if item["status"] == "complete":
-                await asyncio.to_thread(ledger.record, item, item.get("file_path"))
+                await asyncio.to_thread(ledger.record, item,
+                                        item.get("file_path"), space.library_id)
 
     failed = sum(1 for item in items if item["status"] == "failed")
     done = sum(1 for item in items if item["status"] in ("complete", "skipped"))

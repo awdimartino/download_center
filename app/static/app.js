@@ -406,6 +406,46 @@ function albumCard(card) {
   return node;
 }
 
+// "Already have" is the ledger's word, not the filesystem's - beets moved
+// the file out of staging, so that table is the only thing that knows. When
+// the file later leaves the library nothing notices, and the track becomes
+// permanently unfetchable with no way to say otherwise. Clicking the tag is
+// the way back.
+//
+// The tag replaces itself with a download button rather than re-running the
+// view, so the answer is immediate and this does not need to know whether it
+// is inside a search grid or an album listing.
+function heldTag(item, queueLabel) {
+  const tag = el("button", "held", queueLabel === "Get" ? "have" : "already have");
+  tag.type = "button";
+  tag.title = "Already downloaded into your library. Click to forget it, so "
+            + "it can be downloaded again. No file is touched.";
+  tag.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if (!confirm(
+      `Forget "${item.name}"?\n\n`
+      + "It stops counting as already downloaded, so it can be fetched "
+      + "again.\nNothing on disk is touched.")) return;
+    showError("");
+    try {
+      const response = await fetch("/api/ledger/forget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_id: item.id }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        showError(body.detail || `Request failed (${response.status})`);
+        return;
+      }
+      tag.replaceWith(queueButton(item.url, queueLabel));
+    } catch {
+      showError("Could not reach the server.");
+    }
+  });
+  return tag;
+}
+
 function trackCard(card) {
   const node = el("div", "card");
   node.append(cover(card.cover));
@@ -416,7 +456,7 @@ function trackCard(card) {
     el("div", "card-sub dim", `${card.album || ""}${card.year ? ` \u00b7 ${card.year}` : ""}`)
   );
   const actions = el("div", "card-actions");
-  if (card.held) actions.append(el("span", "held", "already have"));
+  if (card.held) actions.append(heldTag(card, "Download"));
   actions.append(queueButton(card.url, "Download"));
   body.append(actions);
   node.append(body);
@@ -500,7 +540,7 @@ async function openAlbum(id) {
       el("span", "track-dur", duration(track.duration_ms))
     );
     row.append(track.held
-      ? el("span", "held", "have")
+      ? heldTag(track, "Get")
       : queueButton(track.url, "Get"));
     list.append(row);
   });
@@ -668,6 +708,7 @@ const dupesEl = document.getElementById("dupes");
 const dupesEmpty = document.getElementById("dupes-empty");
 const dupeNote = document.getElementById("dupe-note");
 const dupeBadge = document.getElementById("dupe-badge");
+const dupeResult = document.getElementById("dupe-result");
 
 let dupeGroups = [];
 
@@ -679,9 +720,18 @@ function describeCopy(copy) {
   return bits.join(" · ");
 }
 
+// Titles differ within a group more often than the grouping admits: matching
+// normalises away "feat." clauses, so two different collaborations of one
+// song land together. Showing only the group's first title hid exactly the
+// difference you need to see before removing one of them.
+function titlesDiffer(copies) {
+  return new Set(copies.map((c) => `${c.artist} — ${c.title}`)).size > 1;
+}
+
 function renderGroup(group) {
   const card = el("div", `dupe${group.confident ? " confident" : ""}`);
   const first = group.copies[0];
+  const mixed = titlesDiffer(group.copies);
 
   const head = el("div", "dupe-head");
   head.append(
@@ -691,6 +741,11 @@ function renderGroup(group) {
   );
   if (group.why) head.append(el("span", "dupe-why", `keep ${group.why}`));
   card.append(head);
+  if (mixed) {
+    card.append(el("div", "dupe-warn",
+      "These are not titled the same. Check they are the same recording " +
+      "before removing either."));
+  }
 
   const name = `dupe-${group.key}`;
   group.copies.forEach((copy) => {
@@ -703,6 +758,9 @@ function renderGroup(group) {
 
     row.append(
       radio,
+      // The per-copy title, always. It is the field the decision turns on.
+      el("span", `dupe-copy-title${mixed ? " differs" : ""}`,
+         `${copy.artist} — ${copy.title}`),
       el("span", "dupe-spec", describeCopy(copy)),
       el("span", "dupe-album", copy.album || "—"),
       el("span", "dupe-path", copy.path)
@@ -717,6 +775,22 @@ function renderGroup(group) {
     action("Keep selected, remove the rest", "primary", async () => {
       const chosen = card.querySelector(`input[name="${CSS.escape(name)}"]:checked`);
       if (!chosen) return;
+      const keeper = group.copies.find((c) => c.id === chosen.value);
+      const losers = group.copies.filter((c) => c.id !== chosen.value);
+      // Asked, because this moves audio files and there is no undo button.
+      // Everything else that touches a file confirms; this was the one that
+      // did not, and it is the one you press two hundred times.
+      const lines = [
+        `Remove ${losers.length} cop${losers.length === 1 ? "y" : "ies"}, keeping:`,
+        `    ${keeper.artist} — ${keeper.title}`,
+        `    ${describeCopy(keeper)}`,
+        `    ${keeper.path}`,
+        "",
+        "Moving to duplicates-removed/ inside the library:",
+        ...losers.map((c) => `    ${c.artist} — ${c.title}  (${describeCopy(c)})\n    ${c.path}`),
+      ];
+      if (mixed) lines.push("", "These copies are NOT titled the same.");
+      if (!confirm(lines.join("\n"))) return;
       await postDupe("/api/duplicates/resolve",
         { key: group.key, keeper: chosen.value });
     }),
@@ -728,6 +802,33 @@ function renderGroup(group) {
   return card;
 }
 
+// The server reports what it actually managed to do: which annotation it
+// moved, which file it could not. Discarding that and simply reloading meant
+// a failed move looked exactly like a successful one - the group disappeared
+// from the list either way, whether or not anything had happened.
+function reportResolution(payload) {
+  if (!payload || payload.quarantined === undefined) {
+    dupeResult.hidden = true;
+    return;
+  }
+  const moved = payload.quarantined || [];
+  const failed = payload.failed || [];
+  const migrated = payload.migrated || [];
+  const parts = [];
+  if (moved.length) {
+    parts.push(`Set aside ${moved.length} file${moved.length === 1 ? "" : "s"} ` +
+               `to duplicates-removed/.`);
+  }
+  if (migrated.length) {
+    parts.push(`Moved ${migrated.join(" and ")} onto the copy you kept.`);
+  }
+  if (failed.length) parts.push(`Could not move: ${failed.join("; ")}`);
+  if (!moved.length && !failed.length) parts.push("Nothing was moved.");
+  dupeResult.textContent = parts.join(" ");
+  dupeResult.className = failed.length ? "warn" : "notice";
+  dupeResult.hidden = false;
+}
+
 async function postDupe(path, body) {
   showError("");
   try {
@@ -736,12 +837,16 @@ async function postDupe(path, body) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const detail = await response.json().catch(() => ({}));
-      showError(detail.detail || `Request failed (${response.status})`);
+      showError(payload.detail || `Request failed (${response.status})`);
       return;
     }
+    reportResolution(payload);
     await loadDupes();
+    // Keep the set-aside list honest if it is open, since a resolve is
+    // exactly the thing that adds to it.
+    if (quarantineEl.open) await loadQuarantine();
   } catch {
     showError("Could not reach the server.");
   }
@@ -761,6 +866,74 @@ function renderDupes(payload) {
     : "";
   dupeNote.hidden = !payload.confident;
 }
+
+// --- what has already been set aside -------------------------------------
+// Read-only. It exists because "nothing is deleted" is a claim you should be
+// able to check, and until now the only way to check it was to ssh in.
+
+const quarantineEl = document.getElementById("quarantine");
+const quarantineList = document.getElementById("quarantine-list");
+const quarantineEmpty = document.getElementById("quarantine-empty");
+const quarantineCount = document.getElementById("quarantine-count");
+
+function bytes(n) {
+  if (!n) return "";
+  return n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${(n / 1e6).toFixed(0)} MB`;
+}
+
+function quarantineRow(entry) {
+  const row = el("div", `quarantined${entry.present ? "" : " gone"}`);
+  const named = entry.artist || entry.title;
+
+  row.append(
+    el("span", "quarantined-name",
+       named ? `${entry.artist} — ${entry.title}` : entry.name),
+    el("span", "quarantined-album", entry.album || "—"),
+    el("span", "quarantined-path", entry.was || entry.path),
+    el("span", "quarantined-size", bytes(entry.size))
+  );
+
+  const notes = [];
+  if (!entry.present) notes.push("file no longer there");
+  // A file with no ledger row was set aside before the record was kept, or
+  // moved here by hand. Worth saying so rather than showing a blank line.
+  if (!entry.recorded) notes.push("no record of who removed it");
+  if (entry.decided_by) notes.push(`removed by ${entry.decided_by}`);
+  if (notes.length) row.append(el("span", "quarantined-note", notes.join(" · ")));
+  if (entry.kept) row.title = `Kept instead: ${entry.kept}`;
+  return row;
+}
+
+async function loadQuarantine() {
+  try {
+    const data = await fetch("/api/duplicates/quarantined").then((r) => r.json());
+    const entries = data.entries || [];
+    quarantineList.replaceChildren(...entries.map(quarantineRow));
+
+    quarantineCount.textContent = entries.length
+      ? `${data.total}${data.truncated ? "+" : ""}${data.bytes ? ` · ${bytes(data.bytes)}` : ""}`
+      : "none";
+    quarantineEmpty.hidden = entries.length > 0;
+
+    const caveats = [];
+    if (data.missing) caveats.push(`${data.missing} recorded file(s) are no longer there`);
+    if (data.unrecorded) caveats.push(`${data.unrecorded} predate the removal log`);
+    quarantineEmpty.textContent = entries.length
+      ? "" : "Nothing has been set aside.";
+    if (caveats.length) {
+      quarantineList.append(el("p", "panel-sub", caveats.join(" · ") + "."));
+    }
+  } catch (err) {
+    quarantineEmpty.textContent = `Could not read the quarantine: ${err.message}`;
+    quarantineEmpty.hidden = false;
+  }
+}
+
+// Only when it is opened. It walks a directory, and most visits to this tab
+// are about the list above it.
+quarantineEl.addEventListener("toggle", () => {
+  if (quarantineEl.open) loadQuarantine();
+});
 
 async function loadDupes() {
   try {
@@ -783,8 +956,17 @@ document.getElementById("dupe-auto").addEventListener("click", async (event) => 
       showError("Nothing is confident enough to resolve unattended.");
       return;
     }
-    if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/.`)) return;
-    await fetch("/api/duplicates/auto?apply=true", { method: "POST" });
+    if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/ inside its own library. This cannot be undone from here.`)) return;
+    const result = await fetch("/api/duplicates/auto?apply=true", { method: "POST" })
+      .then((r) => r.json());
+    // Reported rather than discarded: a run that resolved nothing and a run
+    // that resolved everything used to look identical from here.
+    const failed = result.failed || [];
+    dupeResult.textContent =
+      `Resolved ${result.resolved || 0} group(s).` +
+      (failed.length ? ` ${failed.length} problem(s): ${failed.slice(0, 3).join("; ")}` : "");
+    dupeResult.className = failed.length ? "warn" : "notice";
+    dupeResult.hidden = false;
     await loadDupes();
   } finally {
     button.disabled = false;

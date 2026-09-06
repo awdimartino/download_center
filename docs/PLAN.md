@@ -197,7 +197,9 @@ Sensible once there are a few weeks of snapshots.
 ## Code quality
 
 Deliberately listed after the features: these are risk and speed, not
-comfort — but nothing here is on fire.
+comfort. A review on 2026-09-06 found four things that *are* on fire; they
+are listed under "Found by review" below and take precedence over the
+feature order above.
 
 ### Tests — the real gap
 
@@ -238,8 +240,59 @@ change lands.
   outlived its markup and took every panel down with it. The burger rewrite
   is a natural moment to split this per panel.
 - **No linter or formatter config exists.**
-- Two empty stray directories, `config;C` and `untagged;C`, left by a shell
-  mishap. Untracked; just delete them.
+- ~~Two empty stray directories, `config;C` and `untagged;C`.~~ Deleted.
+
+### Found by review — 2026-09-06
+
+A skeptical read of the whole codebase. Full list is in the conversation;
+these are the ones that lose data or hide themselves. Ordered by magnitude.
+
+1. **Resolving a duplicate has no confirmation step**
+   (`app/static/app.js`, `renderGroup`). The bulk auto-resolve confirms and
+   so does deleting a playlist's rules; the per-group button that moves a
+   file out of the library does not. Compounding: the quarantine directory
+   is flat, so album structure is destroyed and two `01 Intro.mp3` collide;
+   nothing records what moved where; and `postDupe` discards the response,
+   so a failed move or an unmigrated star is never shown.
+2. **The duplicate review UI never shows each copy's title** — only the
+   group's first. `normalise()` strips `feat.` clauses, so two different
+   collaborations group together and are presented as identical rows.
+3. **The ledger is global, not per-user** (`app/ledger.py` — no user or
+   library column). The moment Kelly signs in and queues something alex
+   already has, every track is skipped and nothing is written. Directly
+   contradicts rule 2 above. There is also no path that removes a ledger
+   row, so a quarantined track can never be re-downloaded.
+4. **`health.py`'s `indexed_stamped` query is broken and silently
+   suppressed** — `select count(*) from media_file` with no `mf` alias while
+   the WHERE clause says `mf.missing`. It raises `sqlite3.Error`, gets
+   swallowed by a bare `contextlib.suppress`, and so **"Stamped but not yet
+   scanned" has never once fired.** That is the only detector for the
+   failure mode the mtime-preserving stamper deliberately creates.
+
+Second tier, worth fixing but not urgent: long blocking work inside request
+handlers behind process-wide locks (`/api/staging/import` can hold
+`_import_lock` for 900s per path; `/api/health/audit` holds a module lock
+for a whole library walk, and its docstring claims the opposite); the
+websocket pushes whole jobs at 2 Hz and the browser rebuilds every row, with
+one slow client stalling publishes for everyone; the concurrency semaphore
+is per-job so N jobs give N×3 downloads; and `matcher._search` swallows every
+exception, turning a transient 429 into a permanent, never-retried "no
+results".
+
+Smaller, all verified: `sanitize()` does not strip backslashes (`\|` inside
+the character class escapes the pipe, not the backslash);
+`_move_into_place` silently overwrites after 98 collisions despite its
+docstring; `Workspace.key` does disk I/O in a property and changes answer if
+the `.owner` marker does; beets success is detected by string-matching
+`"Skipping"` in human output; `to_form` accepts operators `to_rules` will
+reject, so some playlists open but cannot be saved; `GET /api/settings` is
+not admin-gated and returns `navidrome_url`/`navidrome_user`; sessions are
+never pruned; `pyyaml` is imported but not in `requirements.txt`.
+
+**The pattern worth attacking:** every one of these fails *silently* — a
+bare `suppress`, an `except Exception: return []`, string-matched subprocess
+output, a discarded response body. That is the argument for item 5 below
+being worth more than its position suggests.
 
 ---
 
@@ -268,6 +321,18 @@ Not code — things waiting in the library itself.
 
 Why things are the way they are, so they do not get re-litigated.
 
+- **2026-09-06 — The ledger is scoped to a library, not to a person.** The
+  question it answers is "is this recording already in this collection", and
+  a collection is a library. Two accounts writing into one library share the
+  answer, so an administrator does not re-fetch what somebody else filed
+  there; two libraries do not, so Kelly's first download is not silently
+  skipped because alex owns the record. Rows written before the column
+  existed are attributed to library 1, which is where they all went.
+- **2026-09-06 — Forgetting a ledger row is explicit, not automatic.** The
+  ledger is the only record that a track was fetched, so a file leaving the
+  library makes it permanently unfetchable. The "already have" tag in Browse
+  clears the row. Resolving a duplicate deliberately does *not*: it keeps a
+  copy, so the track is still held.
 - **2026-09-06 — Last.fm backfill is a one-time manual import.** It has the
   history snapshots cannot reconstruct; snapshots have the accuracy and the
   coverage of both users. Neither replaces the other.

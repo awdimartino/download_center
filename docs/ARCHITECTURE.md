@@ -38,10 +38,18 @@ Knowing which store owns a fact is most of understanding this codebase.
 | `config/beets/<workspace>/library.db` | Beets' index of one person's filed music | One per workspace |
 | The audio files | `navidrome_uuid`, MusicBrainz ids, all tags | The truth. Everything else is a cache |
 
-`state.db` has exactly two tables — `ledger` (source_id, isrc, title,
-artist, album, file_path, completed_at) and `duplicate_dismissed`
-(group_key, note, decided_at). It deliberately holds no user table, no
-library table and no copy of anything Navidrome knows.
+`state.db` has three tables. `ledger` (source_id, **library_id**, isrc,
+title, artist, album, file_path, completed_at), keyed on the pair — the
+question is "is this recording already in this collection", and a collection
+is a library, so two accounts sharing one library share the answer and two
+libraries do not. `duplicate_dismissed` (group_key, note, decided_at) holds
+"keep both" decisions. `duplicate_quarantined` records every file the
+duplicates flow set aside — source, target, keeper, who decided — because
+"nothing is deleted" is only useful if the file can be found again.
+
+It deliberately holds no user table, no library table and no copy of
+anything Navidrome knows. `library_id` is a foreign key in spirit only:
+Navidrome owns what a library *is*.
 
 ---
 
@@ -147,7 +155,9 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
 ## Companion features
 
 - **`health.py`** (522 lines) — checks against Navidrome's database and the
-  disk audit. Every query is scoped to the signed-in user's libraries.
+  disk audit. Scoped to the signed-in user's libraries via `_live_clause`,
+  with one exception: `orphan_annotations` counts every user's dangling
+  stars, because the rows it looks at have no library to scope to.
 - **`diskaudit.py`** — walks the library reading tags directly, because
   Navidrome's index can be stale or wrong. Runs in the background and
   caches.
@@ -202,9 +212,9 @@ ssh -i ~/.ssh/id_ed25519_pi argyle@alex-pi \
   'cd ~/Docker && docker compose pull download-center && docker compose up -d download-center'
 ```
 
-The README's "Deploying to a Raspberry Pi" section describes an
-rsync-and-build flow that is **not** what runs. There is no git checkout on
-the Pi; `~/Docker/download-center/` holds only `config/`.
+There is no git checkout on the Pi; `~/Docker/download-center/` holds only
+`config/`. The README describes this same pull-and-restart flow, without the
+host specifics.
 
 ---
 

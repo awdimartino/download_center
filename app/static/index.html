@@ -105,12 +105,26 @@
     <div class="panel-note">
       <p>
         Copies of the same recording. Nothing is deleted — the copy you
-        drop moves to <code>duplicates-removed/</code>, and any star or
-        rating on it is moved onto the one you keep.
+        drop moves to <code>duplicates-removed/</code> inside its own
+        library, and any star or rating on it is moved onto the one you keep.
       </p>
       <button id="dupe-auto" class="ghost" type="button">Resolve MusicBrainz matches</button>
     </div>
     <p id="dupe-note" class="warn" hidden></p>
+    <p id="dupe-result" class="notice" hidden></p>
+
+    <details id="quarantine">
+      <summary>
+        Set aside <span id="quarantine-count" class="pill"></span>
+      </summary>
+      <p class="panel-sub">
+        Copies already removed from the library. Read-only — putting one back
+        means deciding what to do about the copy that was kept, which is a
+        job for a shell, not a list.
+      </p>
+      <div id="quarantine-list"></div>
+      <p id="quarantine-empty" class="empty">Nothing has been set aside.</p>
+    </details>
     <div id="dupes"></div>
     <p id="dupes-empty" class="empty">Looking for duplicates…</p>
   </section>
