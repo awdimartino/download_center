@@ -50,6 +50,8 @@ def gate() -> asyncio.Semaphore:
     return _gate
 
 Push = Callable[[dict[str, Any]], Awaitable[None]]
+# Job plus only the items whose visible state moved.
+Progress = Callable[[dict[str, Any], list], Awaitable[None]]
 
 
 def _mark(item: dict[str, Any], status: str, **fields: Any) -> None:
@@ -160,18 +162,51 @@ async def _process(item: dict[str, Any], dest: dict[str, Any],
             await asyncio.sleep(settings.rate_limit_sleep)
 
 
-async def _pusher(job: dict[str, Any], push: Push) -> None:
-    """Send the job to the browser at a fixed rate while it is running."""
+def _item_state(item: dict[str, Any]) -> tuple:
+    """The part of an item a browser can see change.
+
+    Progress is rounded to a percent: yt-dlp's hook fires hundreds of times
+    per file and nobody can see a thousandth of a bar move.
+    """
+    return (item["status"], round((item.get("progress") or 0) * 100),
+            item.get("error"))
+
+
+async def _pusher(job: dict[str, Any], push: Push,
+                  push_progress: Progress | None = None) -> None:
+    """Tell the browser what changed, at a fixed rate, while the job runs.
+
+    It used to send the entire job - every track, with all its metadata -
+    twice a second. For a 200-track playlist that is the whole list
+    re-serialised and sent to a phone 120 times a minute, almost all of it
+    identical to the last one. Now only the items whose visible state moved
+    are sent, and nothing at all is sent when nothing moved.
+    """
+    last: dict[str, tuple] = {}
+    last_status = None
     try:
         while True:
             await asyncio.sleep(PUSH_INTERVAL)
-            await push(job)
+            changed = [item for item in job["items"]
+                       if last.get(item["id"]) != _item_state(item)]
+            for item in changed:
+                last[item["id"]] = _item_state(item)
+
+            if not changed and job["status"] == last_status:
+                continue
+            last_status = job["status"]
+
+            if push_progress is None:
+                await push(job)
+            else:
+                await push_progress(job, changed)
     except asyncio.CancelledError:
         pass
 
 
 async def run_job(job: dict[str, Any], push: Push,
-                  space: workspace.Workspace) -> None:
+                  space: workspace.Workspace,
+                  push_progress: Progress | None = None) -> None:
     """Drive one job to completion, into one person's library.
 
     The workspace comes from whoever queued the job rather than from
@@ -204,7 +239,7 @@ async def run_job(job: dict[str, Any], push: Push,
         return
 
     layout = staging.plan(space, job["id"], pending)
-    ticker = asyncio.create_task(_pusher(job, push))
+    ticker = asyncio.create_task(_pusher(job, push, push_progress))
 
     try:
         await asyncio.gather(

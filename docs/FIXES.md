@@ -60,32 +60,32 @@ decision from the user before it can be done.
 
 ## Tier 2 — the app stalls under ordinary use
 
-- [ ] **5. Long blocking work inside request handlers, behind process-wide
+- [x] **5. Long blocking work inside request handlers, behind process-wide
       locks.** `/api/staging/import` holds `beets_runner._import_lock` for up
       to 900s *per path*; `/api/health/audit` holds `diskaudit._lock` for a
       whole library walk. Both are one button-press away, neither dedupes.
       Both are jobs wearing a request's clothing.
-- [ ] **5b. `diskaudit.refresh` docstring claims the opposite of what it
+- [x] **5b. `diskaudit.refresh` docstring claims the opposite of what it
       does** — "Concurrent callers share one walk." They serialise, each
       doing a full walk.
-- [ ] **6a. The websocket pushes the whole job dict at 2 Hz.**
+- [x] **6a. The websocket pushes the whole job dict at 2 Hz.**
       `worker._pusher`. A 200-track playlist re-serialises everything twice a
       second to a phone.
-- [ ] **6b. The browser rebuilds every card and row on each message.**
+- [x] **6b. The browser rebuilds every card and row on each message.**
       `app.js render()` → `replaceChildren`.
-- [ ] **6c. One slow websocket client stalls publishes for everyone.**
+- [x] **6c. One slow websocket client stalls publishes for everyone.**
       `Broker.publish` awaits `send_json` per client sequentially.
-- [ ] **7a. The concurrency semaphore is per-job.** `worker.run_job` creates
+- [x] **7a. The concurrency semaphore is per-job.** `worker.run_job` creates
       it inside the job, so N jobs give N × `concurrency` downloads, and
       `rate_limit_sleep` is likewise per-job.
-- [ ] **7b. Nothing bounds job creation, resolved playlist size, or `JOBS`.**
+- [x] **7b. Nothing bounds job creation, resolved playlist size, or `JOBS`.**
       `JOBS` grows for the process lifetime and is fully re-serialised on
       every `GET /api/jobs`.
-- [ ] **8. `matcher._search` swallows every exception**, turning a transient
+- [x] **8. `matcher._search` swallows every exception**, turning a transient
       429 into `MatchError("No results returned")` — which `worker` then
       deliberately never retries, on the reasoning that an identical search
       returns identical results. True for a miss, wrong for a rate limit.
-- [ ] **8b. `matcher._client` is a single shared `YTMusic`** (wrapping a
+- [x] **8b. `matcher._client` is a single shared `YTMusic`** (wrapping a
       non-thread-safe `requests.Session`) used from `concurrency` threads.
 
 ## Tier 3 — correctness

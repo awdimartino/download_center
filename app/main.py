@@ -186,6 +186,24 @@ async def push_job(job: dict[str, Any]) -> None:
     await broker.publish({"type": "job", "job": job}, owner=job.get("owner"))
 
 
+async def push_progress(job: dict[str, Any], changed: list) -> None:
+    """Only what moved.
+
+    The full job goes out on every phase change; between those, a 200-track
+    playlist would otherwise re-send every track twice a second to a phone,
+    almost all of it identical to the last one.
+    """
+    await broker.publish({
+        "type": "job_progress",
+        "id": job["id"],
+        "status": job["status"],
+        "error": job.get("error"),
+        "items": [{"id": i["id"], "status": i["status"],
+                   "progress": i.get("progress"), "error": i.get("error")}
+                  for i in changed],
+    }, owner=job.get("owner"))
+
+
 async def push_operation(operation: operations.Operation) -> None:
     await broker.publish({"type": "operation", "operation": operation.as_dict()},
                          owner=operation.owner)
@@ -457,7 +475,7 @@ async def _run(job: dict[str, Any], space: workspace.Workspace) -> None:
     job_id = job["id"]
     RUNNING[job_id] = asyncio.current_task()
     try:
-        await worker.run_job(job, push_job, space)
+        await worker.run_job(job, push_job, space, push_progress)
     except asyncio.CancelledError:
         job["status"] = "cancelled"
         for item in job["items"]:
