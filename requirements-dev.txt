@@ -1,0 +1,5 @@
+# Test-only dependencies. Kept out of requirements.txt so the runtime image
+# does not carry them.
+-r requirements.txt
+
+pytest==9.1.1

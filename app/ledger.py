@@ -40,6 +40,29 @@ CREATE TABLE IF NOT EXISTS duplicate_dismissed (
     note        TEXT,
     decided_at  TEXT NOT NULL
 );
+
+-- What was actually moved, and where to. Nothing is deleted, but "nothing is
+-- deleted" is only useful if you can find the file again: the quarantine
+-- directory holds thousands of tracks with no record of which record each
+-- came from or why it lost. This is the undo trail.
+CREATE TABLE IF NOT EXISTS duplicate_quarantined (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_key    TEXT NOT NULL,
+    track_id     TEXT NOT NULL,
+    library_id   INTEGER,
+    title        TEXT,
+    artist       TEXT,
+    album        TEXT,
+    source_path  TEXT NOT NULL,
+    target_path  TEXT NOT NULL,
+    keeper_id    TEXT,
+    keeper_path  TEXT,
+    decided_by   TEXT,
+    moved_at     TEXT NOT NULL,
+    restored_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_quarantined_group
+    ON duplicate_quarantined(group_key);
 """
 
 
@@ -131,4 +154,58 @@ def undismiss_duplicate(group_key: str) -> None:
     with _lock:
         _conn.execute("DELETE FROM duplicate_dismissed WHERE group_key = ?",
                       (group_key,))
+        _conn.commit()
+
+
+# --- what was set aside ---------------------------------------------------
+
+def record_quarantine(group_key: str, copy: Any, keeper: Any,
+                      source: str, target: str, decided_by: str) -> None:
+    """Note that a losing copy was moved, and where it went.
+
+    `copy` and `keeper` are duplicates.Copy objects; only the fields worth
+    reading back later are stored, so this module keeps no dependency on that
+    one. Recorded after the move so the row only ever describes a file that
+    is really at `target`.
+    """
+    assert _conn is not None, "ledger not connected"
+    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _lock:
+        _conn.execute(
+            "INSERT INTO duplicate_quarantined"
+            " (group_key, track_id, library_id, title, artist, album,"
+            "  source_path, target_path, keeper_id, keeper_path, decided_by,"
+            "  moved_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (group_key, copy.id, copy.library_id, copy.title, copy.artist,
+             copy.album, source, target, keeper.id, keeper.path, decided_by,
+             stamp))
+        _conn.commit()
+
+
+def quarantined(limit: int = 200,
+                include_restored: bool = False) -> list[dict[str, Any]]:
+    """Everything set aside, newest first. The list you undo from."""
+    assert _conn is not None, "ledger not connected"
+    where = "" if include_restored else " WHERE restored_at IS NULL"
+    with _lock:
+        rows = _conn.execute(
+            "SELECT id, group_key, track_id, library_id, title, artist, album,"
+            "       source_path, target_path, keeper_id, keeper_path,"
+            "       decided_by, moved_at, restored_at"
+            f"  FROM duplicate_quarantined{where}"
+            "  ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    keys = ("id", "group_key", "track_id", "library_id", "title", "artist",
+            "album", "source_path", "target_path", "keeper_id", "keeper_path",
+            "decided_by", "moved_at", "restored_at")
+    return [dict(zip(keys, row)) for row in rows]
+
+
+def mark_restored(entry_id: int) -> None:
+    assert _conn is not None, "ledger not connected"
+    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _lock:
+        _conn.execute(
+            "UPDATE duplicate_quarantined SET restored_at = ? WHERE id = ?",
+            (stamp, entry_id))
         _conn.commit()

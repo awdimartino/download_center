@@ -262,7 +262,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
 /* --- banners -------------------------------------------------------------- */
 
-.error, .warn {
+.error, .warn, .notice {
   margin: var(--s-3) 0 0;
   padding: var(--s-3) var(--s-4);
   border: 1px solid transparent;
@@ -281,6 +281,15 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border-color: color-mix(in srgb, var(--warn) 25%, transparent);
   border-left-color: var(--warn);
   color: color-mix(in srgb, var(--warn) 80%, #fff);
+}
+/* What just happened, when it went as asked. Reporting a success matters as
+   much as reporting a failure here: without it, a resolve that moved nothing
+   looked exactly like one that moved everything. */
+.notice {
+  background: var(--tint-ok);
+  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
+  border-left-color: var(--ok);
+  color: color-mix(in srgb, var(--ok) 80%, #fff);
 }
 
 .empty {
@@ -657,9 +666,22 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 .dupe-reason { font-size: 12.5px; color: var(--muted); }
 .dupe-why { font-size: 12.5px; font-weight: 500; color: var(--ok); }
 
+/* Shown when the copies in a group are not titled the same - matching
+   normalises "feat." clauses away, so two different collaborations can land
+   in one group and must not be resolved without a second look. */
+.dupe-warn {
+  margin: var(--s-2) 0 var(--s-1);
+  padding: var(--s-2) var(--s-3);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r-sm);
+  background: var(--tint-warn);
+  color: color-mix(in srgb, var(--warn) 80%, #fff);
+  font-size: 12.5px;
+}
+
 .dupe-copy {
   display: grid;
-  grid-template-columns: auto 13rem 1fr 2fr auto;
+  grid-template-columns: auto minmax(9rem, 1.3fr) 11rem 1fr 1.5fr auto;
   gap: var(--s-3);
   align-items: baseline;
   padding: var(--s-2) var(--s-3);
@@ -676,6 +698,13 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   border-color: color-mix(in srgb, var(--ok) 28%, transparent);
 }
 .dupe-copy input { accent-color: var(--ok); }
+
+/* The field the decision actually turns on, so it leads the row. */
+.dupe-copy-title {
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.dupe-copy-title.differs { color: var(--warn); }
 
 .dupe-spec { font-variant-numeric: tabular-nums; }
 .dupe-album { color: var(--muted); }
@@ -1015,7 +1044,7 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
   .dupe { padding: var(--s-3); }
   .dupe-copy { grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-3); padding: var(--s-2); margin: 0; }
   .dupe-copy input { width: 20px; height: 20px; }
-  .dupe-spec, .dupe-album, .dupe-path, .dupe-star { grid-column: 2; }
+  .dupe-copy-title, .dupe-spec, .dupe-album, .dupe-path, .dupe-star { grid-column: 2; }
   /* Otherwise the star falls into the radio column and hangs under it. */
   .dupe-star { justify-self: start; }
   .dupe-path { direction: ltr; font-size: 11.5px; }

@@ -668,6 +668,7 @@ const dupesEl = document.getElementById("dupes");
 const dupesEmpty = document.getElementById("dupes-empty");
 const dupeNote = document.getElementById("dupe-note");
 const dupeBadge = document.getElementById("dupe-badge");
+const dupeResult = document.getElementById("dupe-result");
 
 let dupeGroups = [];
 
@@ -679,9 +680,18 @@ function describeCopy(copy) {
   return bits.join(" · ");
 }
 
+// Titles differ within a group more often than the grouping admits: matching
+// normalises away "feat." clauses, so two different collaborations of one
+// song land together. Showing only the group's first title hid exactly the
+// difference you need to see before removing one of them.
+function titlesDiffer(copies) {
+  return new Set(copies.map((c) => `${c.artist} — ${c.title}`)).size > 1;
+}
+
 function renderGroup(group) {
   const card = el("div", `dupe${group.confident ? " confident" : ""}`);
   const first = group.copies[0];
+  const mixed = titlesDiffer(group.copies);
 
   const head = el("div", "dupe-head");
   head.append(
@@ -691,6 +701,11 @@ function renderGroup(group) {
   );
   if (group.why) head.append(el("span", "dupe-why", `keep ${group.why}`));
   card.append(head);
+  if (mixed) {
+    card.append(el("div", "dupe-warn",
+      "These are not titled the same. Check they are the same recording " +
+      "before removing either."));
+  }
 
   const name = `dupe-${group.key}`;
   group.copies.forEach((copy) => {
@@ -703,6 +718,9 @@ function renderGroup(group) {
 
     row.append(
       radio,
+      // The per-copy title, always. It is the field the decision turns on.
+      el("span", `dupe-copy-title${mixed ? " differs" : ""}`,
+         `${copy.artist} — ${copy.title}`),
       el("span", "dupe-spec", describeCopy(copy)),
       el("span", "dupe-album", copy.album || "—"),
       el("span", "dupe-path", copy.path)
@@ -717,6 +735,22 @@ function renderGroup(group) {
     action("Keep selected, remove the rest", "primary", async () => {
       const chosen = card.querySelector(`input[name="${CSS.escape(name)}"]:checked`);
       if (!chosen) return;
+      const keeper = group.copies.find((c) => c.id === chosen.value);
+      const losers = group.copies.filter((c) => c.id !== chosen.value);
+      // Asked, because this moves audio files and there is no undo button.
+      // Everything else that touches a file confirms; this was the one that
+      // did not, and it is the one you press two hundred times.
+      const lines = [
+        `Remove ${losers.length} cop${losers.length === 1 ? "y" : "ies"}, keeping:`,
+        `    ${keeper.artist} — ${keeper.title}`,
+        `    ${describeCopy(keeper)}`,
+        `    ${keeper.path}`,
+        "",
+        "Moving to duplicates-removed/ inside the library:",
+        ...losers.map((c) => `    ${c.artist} — ${c.title}  (${describeCopy(c)})\n    ${c.path}`),
+      ];
+      if (mixed) lines.push("", "These copies are NOT titled the same.");
+      if (!confirm(lines.join("\n"))) return;
       await postDupe("/api/duplicates/resolve",
         { key: group.key, keeper: chosen.value });
     }),
@@ -728,6 +762,33 @@ function renderGroup(group) {
   return card;
 }
 
+// The server reports what it actually managed to do: which annotation it
+// moved, which file it could not. Discarding that and simply reloading meant
+// a failed move looked exactly like a successful one - the group disappeared
+// from the list either way, whether or not anything had happened.
+function reportResolution(payload) {
+  if (!payload || payload.quarantined === undefined) {
+    dupeResult.hidden = true;
+    return;
+  }
+  const moved = payload.quarantined || [];
+  const failed = payload.failed || [];
+  const migrated = payload.migrated || [];
+  const parts = [];
+  if (moved.length) {
+    parts.push(`Set aside ${moved.length} file${moved.length === 1 ? "" : "s"} ` +
+               `to duplicates-removed/.`);
+  }
+  if (migrated.length) {
+    parts.push(`Moved ${migrated.join(" and ")} onto the copy you kept.`);
+  }
+  if (failed.length) parts.push(`Could not move: ${failed.join("; ")}`);
+  if (!moved.length && !failed.length) parts.push("Nothing was moved.");
+  dupeResult.textContent = parts.join(" ");
+  dupeResult.className = failed.length ? "warn" : "notice";
+  dupeResult.hidden = false;
+}
+
 async function postDupe(path, body) {
   showError("");
   try {
@@ -736,11 +797,12 @@ async function postDupe(path, body) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const detail = await response.json().catch(() => ({}));
-      showError(detail.detail || `Request failed (${response.status})`);
+      showError(payload.detail || `Request failed (${response.status})`);
       return;
     }
+    reportResolution(payload);
     await loadDupes();
   } catch {
     showError("Could not reach the server.");
@@ -783,8 +845,17 @@ document.getElementById("dupe-auto").addEventListener("click", async (event) => 
       showError("Nothing is confident enough to resolve unattended.");
       return;
     }
-    if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/.`)) return;
-    await fetch("/api/duplicates/auto?apply=true", { method: "POST" });
+    if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/ inside its own library. This cannot be undone from here.`)) return;
+    const result = await fetch("/api/duplicates/auto?apply=true", { method: "POST" })
+      .then((r) => r.json());
+    // Reported rather than discarded: a run that resolved nothing and a run
+    // that resolved everything used to look identical from here.
+    const failed = result.failed || [];
+    dupeResult.textContent =
+      `Resolved ${result.resolved || 0} group(s).` +
+      (failed.length ? ` ${failed.length} problem(s): ${failed.slice(0, 3).join("; ")}` : "");
+    dupeResult.className = failed.length ? "warn" : "notice";
+    dupeResult.hidden = false;
     await loadDupes();
   } finally {
     button.disabled = false;

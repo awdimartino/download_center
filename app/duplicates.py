@@ -28,7 +28,7 @@ import re
 import shutil
 import sqlite3
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import ledger, navidrome
@@ -302,10 +302,60 @@ def find(connection: sqlite3.Connection,
 
 # --- acting on a group ----------------------------------------------------
 
-def _quarantine_dir() -> Path:
-    path = settings.music_dir.parent / "duplicates-removed"
+# A directory set aside is still inside the library tree, so the scanner has
+# to be told to skip it. Navidrome ignores any directory holding this file.
+NDIGNORE = ".ndignore"
+
+QUARANTINE_NAME = "duplicates-removed"
+
+
+def _quarantine_root(root: Path) -> Path:
+    """Where a library's losing copies are set aside.
+
+    Inside the library they came from, deliberately, for two reasons.
+
+    It used to be one shared directory at `music_dir.parent`, which put one
+    person's files inside another's collection - and, in the deployed layout,
+    resolved to `/duplicates-removed`, which is not a mounted volume at all.
+    "Quarantined" therefore meant "copied into the container's own filesystem
+    and destroyed by the next deploy", while the original was unlinked from
+    the library because the move crossed a device boundary. Nothing is
+    deleted was not true.
+
+    Inside the library root, the move is a rename on the same filesystem, the
+    file is still there afterwards, and each library keeps its own.
+    """
+    path = root / QUARANTINE_NAME
     path.mkdir(parents=True, exist_ok=True)
+    marker = path / NDIGNORE
+    if not marker.exists():
+        marker.write_text(
+            "Copies set aside by Download Center as duplicates.\n"
+            "Navidrome skips any directory holding a .ndignore file, so these\n"
+            "stay out of the library without being deleted.\n",
+            encoding="utf-8")
     return path
+
+
+def _relative(copy: Copy, root: Path) -> Path:
+    """Where a copy sits inside its library.
+
+    Navidrome has stored this column as both an absolute path and one
+    relative to the library across versions, so both are accepted. The
+    structure is what matters: it is what lets a file be put back.
+
+    Judged as POSIX deliberately. Navidrome runs on Linux and writes Linux
+    paths, and on Windows `Path("/music/x").is_absolute()` is False - which
+    would take an absolute path for a relative one and join it onto the root.
+    """
+    stored = PurePosixPath(copy.path.replace("\\", "/"))
+    if not stored.is_absolute():
+        return Path(*stored.parts) if stored.parts else Path(stored.name)
+    try:
+        inside = stored.relative_to(PurePosixPath(root.as_posix()))
+    except ValueError:
+        return Path(stored.name)
+    return Path(*inside.parts)
 
 
 def _library_root(copy: Copy, identity: navidrome.Identity) -> Path:
@@ -363,24 +413,47 @@ def resolve(group: Group, keeper_id: str,
 
     moved, failed = [], []
     for loser in losers:
-        source = _library_root(loser, identity) / loser.path
+        root = _library_root(loser, identity)
+        source = root / loser.path
         if not source.exists():
             failed.append(f"{loser.path}: already gone")
             continue
-        target = _quarantine_dir() / source.name
+
+        # The path inside the library is kept rather than flattened to the
+        # basename. Flattening collided every "01 Intro.mp3" in the
+        # collection into one folder and threw away the only thing that said
+        # which record a file came from, which made putting one back a guess.
+        target = _quarantine_root(root) / _relative(loser, root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        stem, suffix = target.stem, target.suffix
         n = 2
         while target.exists():
-            target = _quarantine_dir() / f"{source.stem} ({n}){source.suffix}"
+            target = target.with_name(f"{stem} ({n}){suffix}")
             n += 1
+
         try:
             shutil.move(str(source), str(target))
-            moved.append(str(target.name))
         except Exception as exc:
             failed.append(f"{loser.path}: {type(exc).__name__}: {exc}")
+            continue
 
-    log.info("duplicate resolved: kept %s, quarantined %d", keeper.path, len(moved))
-    return {"kept": keeper.path, "quarantined": moved,
-            "migrated": migrated, "failed": failed}
+        # Written after the move, so the record only ever describes a file
+        # that is really there. Without this, undoing a resolution meant
+        # matching filenames by eye against a folder of thousands.
+        try:
+            ledger.record_quarantine(
+                group_key=group.dismiss_key, copy=loser, keeper=keeper,
+                source=str(source), target=str(target),
+                decided_by=identity.username)
+        except Exception:
+            log.exception("could not record the quarantine of %s", source)
+        moved.append({"path": loser.path, "moved_to": str(target),
+                      "title": loser.title, "album": loser.album})
+
+    log.info("duplicate resolved by %s: kept %s, quarantined %d, failed %d",
+             identity.username, keeper.path, len(moved), len(failed))
+    return {"kept": keeper.path, "keeper_id": keeper.id,
+            "quarantined": moved, "migrated": migrated, "failed": failed}
 
 
 def auto_resolve(connection: sqlite3.Connection, identity: navidrome.Identity,
