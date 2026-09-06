@@ -9,7 +9,7 @@ import hashlib
 import logging
 import time
 import uuid
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +38,13 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 # Process start, for the uptime the health panel reports.
 STARTED_AT = time.time()
+
+# When the next staging sweep is due, as a unix timestamp; None while one is
+# running or when the timer is switched off. The Staging panel counts down to
+# it, because "beets has not looked at this yet" and "beets looked and refused"
+# leave a folder in exactly the same state, and only one of them is worth
+# acting on.
+NEXT_SWEEP: float | None = None
 
 
 # --- job state ------------------------------------------------------------
@@ -246,12 +253,18 @@ async def _sweep_loop() -> None:
     Without this they would sit there forever, which was survivable only while
     something outside this process was also running beets.
     """
+    global NEXT_SWEEP
     while True:
         minutes = settings.staging_sweep_minutes
         if minutes <= 0:
+            NEXT_SWEEP = None
             await asyncio.sleep(300)
             continue
+        NEXT_SWEEP = time.time() + minutes * 60
         await asyncio.sleep(minutes * 60)
+        # Cleared while it runs, so the panel says "sweeping now" rather than
+        # counting down to a moment that has already passed.
+        NEXT_SWEEP = None
         try:
             result = await asyncio.to_thread(beets_runner.sweep_staging)
             if result.get("ran"):
@@ -1186,7 +1199,9 @@ async def staging_contents(
                     "refused": refused["reason"] if refused else None,
                 })
         return {"library": space.library_name,
-                "staging": str(space.staging), "entries": entries}
+                "staging": str(space.staging), "entries": entries,
+                "next_sweep": NEXT_SWEEP,
+                "sweep_minutes": settings.staging_sweep_minutes}
 
     try:
         return await asyncio.to_thread(collect)
@@ -1277,11 +1292,52 @@ async def playcount_status(
 ) -> dict[str, Any]:
     """Whether snapshots are actually being taken.
 
-    There is nothing to show yet - statistics need weeks of these - but the
-    thing that must not fail quietly is the collecting, and that is
-    checkable tonight.
+    The thing that must not fail quietly is the collecting, and that is
+    checkable tonight - long before there is enough history to say anything
+    interesting with.
     """
     return await asyncio.to_thread(playcounts.status)
+
+
+# How far back the Listening panel will look. Bounded because the window
+# reaches straight into a query: an unbounded one asks for every snapshot
+# ever taken, on a Raspberry Pi, from a button.
+MAX_LISTENING_DAYS = 3650
+MAX_LISTENING_TRACKS = 200
+
+
+@app.get("/api/playcounts/top")
+async def playcount_top(
+    days: int = 30,
+    limit: int = 25,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """The signed-in person's most played tracks over a window.
+
+    Theirs alone. Play counts are per Navidrome account, and one person's
+    listening is not another's to read - the same rule the rest of this
+    application follows.
+    """
+    days = max(1, min(days, MAX_LISTENING_DAYS))
+    limit = max(1, min(limit, MAX_LISTENING_TRACKS))
+
+    def collect() -> dict[str, Any]:
+        end = playcounts.last_complete_day()
+        start = (datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
+                 - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        tracks = playcounts.top_tracks(start, end, session.identity.user_id,
+                                       limit)
+        return {
+            "start": start, "end": end, "days": days,
+            "tracks": tracks,
+            "plays": sum(track["plays"] for track in tracks),
+            # Theirs, not the installation's. status() counts every account's
+            # imported history together, which shown to someone who has never
+            # played anything is both baffling and none of their business.
+            "coverage": playcounts.coverage(session.identity.user_id),
+        }
+
+    return await asyncio.to_thread(collect)
 
 
 @app.post("/api/playcounts/snapshot")

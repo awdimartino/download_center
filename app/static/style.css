@@ -1306,3 +1306,59 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
 .check.secondary .check-label,
 .check.secondary .check-value { color: var(--muted); }
 .check.secondary .check-detail { color: var(--faint); }
+
+/* --- listening ------------------------------------------------------------
+   Play counts, which until now existed only as rows in a table nobody could
+   see. Built from the same pieces as the rest: the stat boxes above the
+   duplicates list, the row rhythm of the health checks. */
+
+.stat-detail { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+
+.listen-range { display: flex; gap: var(--s-2); flex-shrink: 0; }
+.range.active {
+  background: var(--tint-accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+#listening {
+  margin-top: var(--s-4);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+#listening:empty { display: none; }
+
+.listen-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(8rem, 1.6fr) minmax(6rem, 1fr) 6rem 3.5rem;
+  gap: var(--s-3);
+  align-items: center;
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--line-soft);
+}
+.listen-row:last-child { border-bottom: 0; }
+.listen-row.gone { opacity: .55; }
+
+.listen-rank { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.listen-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.listen-artist { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.listen-plays { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
+
+/* The shape of the list, readable without reading a single number. */
+.listen-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.listen-bar-fill { height: 100%; background: var(--accent); border-radius: inherit; }
+
+@media (max-width: 640px) {
+  /* The bar is the first thing to give: it is decoration over a number that
+     is already there. */
+  .listen-row { grid-template-columns: 1.6rem 1fr 3rem; gap: var(--s-1) var(--s-3); }
+  .listen-artist { grid-column: 2 / -1; }
+  .listen-bar { display: none; }
+}

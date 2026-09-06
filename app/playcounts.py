@@ -353,3 +353,92 @@ def plays_between(start: str, end: str,
            for (track_uuid, who), plays in totals.items()]
     out.sort(key=lambda row: row["plays"], reverse=True)
     return out
+
+
+def _titles(uuids: list[str]) -> dict[str, dict[str, str]]:
+    """Track UUID -> what it is called, from Navidrome's index.
+
+    Snapshots are keyed by UUID and nothing else, which is the point - the
+    identity survives retagging, moving and a rebuilt database - but it makes
+    the stored rows unreadable on their own. A UUID with no row here is a
+    track that has since left the library; its plays still happened, so it is
+    reported rather than dropped.
+    """
+    if not uuids:
+        return {}
+    found: dict[str, dict[str, str]] = {}
+    try:
+        connection = navidrome.open_db()
+    except navidrome.Unavailable as exc:
+        log.warning("cannot name tracks: %s", exc)
+        return found
+    with connection:
+        # Chunked: SQLite's parameter limit is 999 by default and a year of
+        # listening comfortably exceeds it.
+        for start in range(0, len(uuids), 500):
+            chunk = uuids[start:start + 500]
+            holes = ",".join("?" * len(chunk))
+            rows = connection.execute(f"""
+                select json_extract(mf.tags, '{UUID_TAG}') as uuid,
+                       mf.title, mf.artist, mf.album
+                  from media_file mf
+                 where json_extract(mf.tags, '{UUID_TAG}') in ({holes})
+            """, chunk).fetchall()
+            for uuid, title, artist, album in rows:
+                found[uuid] = {"title": title or "", "artist": artist or "",
+                               "album": album or ""}
+    return found
+
+
+def top_tracks(start: str, end: str, user_id: str,
+               limit: int = 25) -> list[dict[str, Any]]:
+    """The most played tracks over a range, named and ready to show."""
+    rows = plays_between(start, end, user_id)[:limit]
+    names = _titles([row["track_uuid"] for row in rows])
+    for row in rows:
+        known = names.get(row["track_uuid"])
+        row["title"] = known["title"] if known else "(no longer in the library)"
+        row["artist"] = known["artist"] if known else ""
+        row["album"] = known["album"] if known else ""
+        row["known"] = known is not None
+    return rows
+
+
+def coverage(user_id: str) -> dict[str, Any]:
+    """What has been captured *for one person*.
+
+    `status()` answers for the installation, which is right for a health
+    check and wrong for a panel: the imported Last.fm history belongs to
+    whoever listened to it, and 41,203 plays shown to an account that has
+    never played anything is both confusing and somebody else's business.
+
+    The job facts - whether the nightly run happened, and which day it is
+    working towards - stay global, because they are about the collector
+    rather than the collection.
+    """
+    store = ledger.connection()
+    imported, first, last = store.execute(
+        "SELECT COALESCE(SUM(plays), 0), MIN(day), MAX(day)"
+        "  FROM play_imported WHERE user_id = ?", (user_id,)).fetchone()
+    sources = [row[0] for row in store.execute(
+        "SELECT DISTINCT source FROM play_imported WHERE user_id = ?",
+        (user_id,)).fetchall()]
+    snapshot_days = store.execute(
+        "SELECT COUNT(DISTINCT taken_on) FROM play_snapshot WHERE user_id = ?",
+        (user_id,)).fetchone()[0]
+
+    wanted = last_complete_day()
+    return {
+        "imported_plays": imported,
+        "imported_from": first,
+        "imported_to": last,
+        "imported_sources": sources,
+        "snapshot_days": snapshot_days,
+        # About the job, not the person.
+        "days_run": store.execute(
+            "SELECT COUNT(*) FROM play_snapshot_run").fetchone()[0],
+        "last_run": store.execute(
+            "SELECT MAX(day) FROM play_snapshot_run").fetchone()[0],
+        "up_to_date": taken_on(wanted),
+        "awaiting": wanted,
+    }
