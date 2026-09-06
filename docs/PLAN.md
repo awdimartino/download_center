@@ -294,6 +294,11 @@ designing:
 - **Pull from MusicBrainz on request.** Point at an album, search MusicBrainz,
   apply the chosen release. This is beets' matcher, driven by hand instead of
   by confidence thresholds — for the cases where beets refused to guess.
+  **Half of this shipped** (FIXES item 36): *Import as-is* files a refused
+  item under the tags it already has, so nothing is stuck any more. What is
+  left is the choosing — showing the five candidates beets would not pick
+  between, and applying the one you point at. Wanted where the seeded tags
+  are wrong, rather than merely unconfirmed.
 - **Index tracks.** Trigger a scan of a path without waiting for the sweep.
 - **Delete tracks.** Remove from the library. Must quarantine, never
   `unlink` — the same rule the duplicates flow already follows.

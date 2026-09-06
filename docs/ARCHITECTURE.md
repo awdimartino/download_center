@@ -160,7 +160,16 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
 - **`staging.py`** assembles albums in `.incomplete/` and *renames* them into
   place — a rename, so beets never sees a half-written album. `settled`
   requires a folder to be quiet for `staging_quiet_seconds` before import.
-- **`beets_runner.py`** generates each workspace's config from a template
+- **`beets_runner.py`** — the escape hatch lives here.
+  `import_paths(..., as_is=True)` runs `beet import -A`: no matching at all,
+  filed under the tags the file already carries. Only ever reached by someone
+  pressing *Import as-is*; the sweep never passes it, because importing
+  without matching is a judgement about one item. A file with an album tag
+  goes to `$albumartist/$album/` — the folder its siblings land in, so a later
+  arrival joins it instead of founding a second copy — and one without goes to
+  `Non-Album/`. Which paths beets refused, and why, is remembered in memory so
+  the Staging tab can say so; a refusal otherwise looks exactly like nothing
+  having run. It also generates each workspace's config from a template
   (placeholder substitution, **not** `str.format` — beets path templates are
   full of braces) and runs the import.
 - **`stamp.py`** assigns identity tags *after* beets has filed a file, not at
@@ -207,6 +216,10 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
   session that owns the job.
 - The shell is served `no-store`; a cached pre-auth page once made the app
   look like it would not sign in.
+- `POST /api/staging/import-as-is` takes a `kind` and a `name`, never a
+  path. `Workspace.staged()` is the boundary that turns those back into a
+  file: resolved and compared against the staging directory, so a name from
+  the browser cannot address anything outside it.
 
 ---
 
@@ -214,6 +227,19 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
 
 `app.js` is one global scope, organised by panel: queue, browse, staging,
 health, duplicates, playlists. It still wants splitting (FIXES item 29).
+
+There is no JavaScript test runner — Node is not available here or in CI — so
+`tests/test_frontend.py` checks the *joins* instead: no duplicate ids, every
+id `app.js` names exists in the markup, every id the stylesheet styles
+exists, every menu entry has a section behind it, and nothing is left in the
+markup that nothing references. It cannot tell you the page works. It can
+tell you the page is still wired to itself, which is what the hand check
+before each deploy was actually doing.
+
+A message about work that a panel started belongs *in that panel*.
+`#error` at the top of `<main>` sits outside every section, so anything left
+there followed you onto every other view; `showView` now clears it, and the
+import and audit outcomes go to `#staging-op` and `#health-op`.
 
 Navigation is a single menu at every width: a button in the header opens a
 full-height overlay listing the panels. Panels are shown by toggling

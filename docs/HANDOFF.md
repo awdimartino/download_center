@@ -16,7 +16,7 @@ what Navidrome cannot — download music, edit smart playlist rules, audit
 library health, resolve duplicate copies, and keep the listening history
 Navidrome throws away — for any number of Navidrome accounts, each with
 their own library, staging area and beets index. It is deployed, healthy,
-and has 219 tests behind a CI gate.
+and has 254 tests behind a CI gate.
 
 ---
 
@@ -91,17 +91,15 @@ complete day. `GET /api/playcounts` reports whether it is up to date.
 
 ## What to do next
 
-1. **Staging refusals.** The one thing that leaves files stuck. beets is
-   configured `quiet_fallback: skip` and never guesses — but when it
-   refuses, the app offers nothing to do about it. Diagnosed concretely: a
-   staged "Radiohead - Let Down" with perfect tags (title, artist, album,
-   track 5/12, ISRC, exact album duration) was skipped because beets found
-   **five** candidate recordings and would not choose between them. So the
-   fix is not better matching — it is a UI that shows the candidates and
-   lets you pick, plus an *import as-is* escape hatch. See PLAN.md, "Pull
-   from MusicBrainz on request".
-2. **Wrapped-style stats.** Now unblocked — four years of history exist.
-3. **`app/static/app.js` split** (FIXES item 29) and **`app/main.py` into
+1. **Bug testing on the test account.** The user is doing this now, against
+   everything built recently. Expect reports rather than a task list.
+2. **The candidate picker.** The other half of the staging refusal work.
+   *Import as-is* shipped, so nothing is stuck any more, but there is still
+   no way to see the five candidate recordings beets would not choose
+   between and point at one. Wanted where the seeded tags are wrong rather
+   than merely unconfirmed. See PLAN.md, "Pull from MusicBrainz on request".
+3. **Wrapped-style stats.** Now unblocked — four years of history exist.
+4. **`app/static/app.js` split** (FIXES item 29) and **`app/main.py` into
    routers** (item 28). Refactors, not bugs.
 
 ---
@@ -113,12 +111,21 @@ complete day. `GET /api/playcounts` reports whether it is up to date.
   existing playlists. `bpm` and `compilation` are least certain. A rejected
   field surfaces Navidrome's own error naming it, so nothing fails silently,
   but it has never been saved against the live server.
-- **The frontend has no automated tests.** Every UI change this session
-  shipped on a static check — ids resolve, no duplicate ids, braces balance,
-  no dead selectors — and was confirmed by the user in Safari afterwards.
-  Node is not available in the dev environment.
+- **The frontend has no *executing* tests.** That static check — ids
+  resolve, no duplicate ids, no dead selectors — is now
+  `tests/test_frontend.py` and runs in CI, so a renamed id or a menu entry
+  with no panel behind it fails the build. Nothing executes `app.js`: Node
+  is not available here or in CI. Layout and behaviour still need Safari.
 - **The health cut-down has not been seen in a browser.** The
   *show everything* toggle is new markup.
+- **Neither has the Staging tab's new row.** Each item now carries a reason
+  and an *Import as-is* button in a fourth grid cell, which drops to its own
+  full-width row under 640px. Static checks and the Python side are covered;
+  the layout is not.
+- **A refusal note is lost on restart.** It is held in memory on purpose —
+  it describes the last attempt, not the library — so after a container
+  restart a stuck item shows no reason until the next sweep runs. Absent, not
+  wrong, but do not read "no note" as "never tried".
 
 ---
 

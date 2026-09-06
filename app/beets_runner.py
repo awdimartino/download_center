@@ -11,6 +11,15 @@ Albums and singles are imported separately because beets treats them
 differently: an album import matches against a release, a singleton import
 matches individual recordings. Sending loose tracks through album matching is
 what makes an import stop and ask.
+
+Beets is configured never to guess, so anything it is unsure of stays in
+staging - which is correct, and was also a dead end: nothing in the
+application could then file it. `import_paths(..., as_is=True)` is the way
+out. It imports with `--noautotag`, so no matching happens at all and the
+file is filed under the tags it already carries, which for a downloaded
+track are the ones seeded from Spotify. Which paths are refused, and why, is
+remembered here so the UI can say so rather than showing a folder that looks
+untouched.
 """
 
 from __future__ import annotations
@@ -25,7 +34,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import navidrome, stamp, workspace
+from . import navidrome, stamp, uuidtags, workspace
 from .config import CONFIG_DIR, settings
 
 log = logging.getLogger("download_center.beets")
@@ -33,6 +42,50 @@ log = logging.getLogger("download_center.beets")
 # Serialises every beets invocation. Two processes writing one library.db
 # and moving files into the same tree is how things get lost.
 _import_lock = threading.Lock()
+
+# path -> {"reason", "at"} for everything beets looked at and would not file.
+# A refusal is otherwise invisible: the folder simply stays where it is,
+# which looks identical to nothing having run. Guarded by its own lock
+# because the sweep writes it from a worker thread while a request reads it.
+#
+# Deliberately in memory. It is a note about the last attempt, not a fact
+# about the library, and the next sweep rebuilds it; persisting it would
+# mean a schema migration for something that is allowed to be missing.
+_refused: dict[str, dict[str, Any]] = {}
+_refused_lock = threading.Lock()
+
+
+def _key(path: Path) -> str:
+    """One spelling of a path, so a note can be found again.
+
+    Resolved, because the two sides reach the same file differently: the
+    staging listing walks `iterdir()`, while an item imported by name comes
+    through `Workspace.staged()`, which resolves. Left as raw strings, a
+    refusal recorded by one would simply never be found by the other - and
+    the row would show no reason, silently, which is the failure this whole
+    note exists to prevent.
+    """
+    return str(path.resolve())
+
+
+def refusal(path: Path) -> dict[str, Any] | None:
+    """Why beets last refused this path, if it did and it is still there."""
+    with _refused_lock:
+        return _refused.get(_key(path))
+
+
+def _remember_refusal(path: Path, reason: str) -> None:
+    with _refused_lock:
+        _refused[_key(path)] = {"reason": reason, "at": time.time()}
+
+
+def _forget_refusals(paths: list[Path]) -> None:
+    """Drop notes for paths that were filed, or have otherwise gone."""
+    with _refused_lock:
+        for path in paths:
+            _refused.pop(_key(path), None)
+        for key in [k for k in _refused if not Path(k).exists()]:
+            del _refused[key]
 
 # Kept for the one-off migration of the single-user layout; every other
 # reference goes through a workspace.
@@ -131,12 +184,22 @@ def ensure_config(space: workspace.Workspace) -> Path:
     return space.beets_config
 
 
-def _run(space: workspace.Workspace, path: Path,
-         singleton: bool) -> tuple[bool, str]:
+def _run(space: workspace.Workspace, path: Path, singleton: bool,
+         as_is: bool = False) -> tuple[bool, str]:
     # Invoked through the interpreter rather than the `beet` script, which
     # is only on PATH when beets is installed system-wide.
-    command = [sys.executable, "-m", "beets", "import",
-               "-qs" if singleton else "-q", str(path)]
+    flags = ["-q"]
+    if singleton:
+        flags.append("-s")
+    if as_is:
+        # --noautotag. Not `--quiet-fallback=asis`, which would still spend a
+        # MusicBrainz lookup per file before giving the same answer: this
+        # button exists because matching has already been tried and failed,
+        # and a person is waiting on it.
+        flags.append("-A")
+    # Every flag before the path: optparse accepts them interspersed, but a
+    # path that begins with a dash would then be read as one.
+    command = [sys.executable, "-m", "beets", "import", *flags, str(path)]
     environment = {**os.environ, "BEETSDIR": str(space.beets_dir)}
     try:
         result = subprocess.run(
@@ -213,12 +276,33 @@ def filed_since(space: workspace.Workspace, moment: float) -> list[Path]:
     return paths
 
 
-def import_paths(space: workspace.Workspace,
-                 published: list[Path]) -> dict[str, Any]:
+def _singleton_mode(path: Path, as_is: bool) -> bool:
+    """Whether to import this path as loose tracks rather than as an album.
+
+    The answer differs by mode because the flag means two different things.
+    Matching a fragment of a release against that release is what makes an
+    import stop and ask, so a loose *file* is matched as a singleton. With
+    `--noautotag` nothing is matched, and the flag only chooses a path
+    template: a file carrying an album tag then belongs in
+    `$albumartist/$album/`, the same folder its siblings will land in, so a
+    later arrival joins it instead of founding a second copy. Only a file
+    with no album to belong to goes to `Non-Album/`.
+    """
+    if not path.is_file():
+        return False
+    return not uuidtags.album_name(path) if as_is else True
+
+
+def import_paths(space: workspace.Workspace, published: list[Path],
+                 as_is: bool = False) -> dict[str, Any]:
     """Import freshly published paths, returning a summary for the UI.
 
     Only what this job produced is imported, never the whole staging tree, so
     a concurrent job or another tool writing there is left alone.
+
+    With `as_is`, beets does no matching and files each path under the tags
+    it already has. That is the escape hatch for what it refused, and it is
+    never automatic: nothing calls this without someone asking for it.
     """
     if not settings.beets_enabled:
         return {"ran": False, "reason": "disabled"}
@@ -239,15 +323,16 @@ def import_paths(space: workspace.Workspace,
         return {"ran": False, "reason": "an import is already running",
                 "busy": True}
     try:
-        return _import_paths(space, published)
+        return _import_paths(space, published, as_is)
     finally:
         _import_lock.release()
 
 
-def _import_paths(space: workspace.Workspace,
-                  published: list[Path]) -> dict[str, Any]:
+def _import_paths(space: workspace.Workspace, published: list[Path],
+                  as_is: bool = False) -> dict[str, Any]:
     ensure_config(space)
     imported, skipped, failed = 0, 0, []
+    filed: list[Path] = []
     # Recorded before the first import so nothing filed during the run is
     # missed, at the cost of occasionally re-checking a file already stamped.
     started = time.time()
@@ -255,12 +340,13 @@ def _import_paths(space: workspace.Workspace,
     for path in published:
         if not path.exists():
             continue
-        # Singles are files; album imports are whole directories.
-        singleton = path.is_file()
+        singleton = _singleton_mode(path, as_is)
         before = _library_size(space)
-        ok, output = _run(space, path, singleton)
+        ok, output = _run(space, path, singleton, as_is)
         if not ok:
-            failed.append(f"{path.name}: {output.splitlines()[-1] if output else 'failed'}")
+            detail = output.splitlines()[-1] if output else "failed"
+            failed.append(f"{path.name}: {detail}")
+            _remember_refusal(path, f"beets could not import this: {detail}")
             log.warning("beets import failed for %s: %s", path.name, output)
             continue
         # Asked of beets' own database rather than of its console output.
@@ -271,11 +357,22 @@ def _import_paths(space: workspace.Workspace,
         # for the import.
         if _library_size(space) > before:
             imported += 1
+            filed.append(path)
             log.info("beets imported %s", path.name)
         else:
             skipped += 1
-            log.info("beets skipped %s (no confident match)", path.name)
+            # An as-is import that files nothing is not "no confident match"
+            # - there was no matching. Something else stopped it, and saying
+            # the wrong reason is worse than saying little.
+            _remember_refusal(path, "nothing was filed, and beets said why in the log"
+                              if as_is else "beets found no confident match")
+            log.info("beets skipped %s (%s)", path.name,
+                     "as-is import filed nothing" if as_is
+                     else "no confident match")
 
+    # Only what was filed: a path that was refused again this run has just
+    # had its note rewritten, and must keep it.
+    _forget_refusals(filed)
     _prune_empty(space)
 
     # Identity is assigned here rather than at download time, because the
@@ -295,6 +392,7 @@ def _import_paths(space: workspace.Workspace,
 
     return {
         "ran": True,
+        "as_is": as_is,
         "imported": imported,
         "skipped": skipped,
         "failed": failed,

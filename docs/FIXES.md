@@ -200,6 +200,35 @@ decision from the user before it can be done.
       `main()` never called the function. The tests passed because they
       exercised the function directly and nothing exercised the command.
 
+- [x] **36. A staging refusal was a dead end.** beets is configured never to
+      guess, which is right, and nothing in the application could then file
+      what it refused — so a track it would not place stayed in staging for
+      ever, in a folder that looked exactly like one nothing had run against.
+      Two halves: *Import as-is* per item (`beet import -A`, no matching, filed
+      under the tags it already carries) and a note on the row saying why it
+      is still there. The candidate picker — search MusicBrainz, choose a
+      release — is still on the Later list in PLAN.md; this is the escape
+      hatch, not the matcher.
+      Verified end to end against real beets and a real file before deploying:
+      an ordinary import skips and records the refusal, as-is files it to
+      `Radiohead/OK Computer/05 - Let Down.mp3`, stamps it, triggers a scan
+      and clears the note.
+
+- [x] **37. An error banner outlived the panel that raised it.** `#error`
+      sits in `<main>` above every section and `showView` never touched it, so
+      "An import is already running" — pushed over the websocket, to every tab
+      and device signed in as that user — stayed on screen on Queue, Browse,
+      Playlists and Settings until something else happened to clear it. The
+      banner is cleared on every view change, and an operation's outcome now
+      reports into its own panel (`#staging-op`, `#health-op`) rather than the
+      page-wide one.
+
+- [x] **38. The front end had no automated tests at all** — every UI change
+      shipped on a hand-run static check that lived in a scratchpad.
+      `tests/test_frontend.py` is that check, made permanent and run in CI.
+      It proves the page is wired to itself, not that it works; Safari is
+      still the only thing that can say that.
+
 ---
 
 ## The pattern

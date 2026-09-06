@@ -1169,6 +1169,7 @@ async def staging_contents(
                     continue
                 files = ([f for f in entry.rglob("*") if f.is_file()]
                          if entry.is_dir() else [entry])
+                refused = beets_runner.refusal(entry)
                 entries.append({
                     "kind": kind,
                     "name": entry.name,
@@ -1177,6 +1178,10 @@ async def staging_contents(
                     "age_days": round(
                         (time.time() - entry.stat().st_mtime) / 86400, 1),
                     "settled": beets_runner.settled(entry),
+                    # Why it is still here, when this process knows. Absent
+                    # after a restart, which is why it is a note on the row
+                    # and not the thing the row is built from.
+                    "refused": refused["reason"] if refused else None,
                 })
         return {"library": space.library_name,
                 "staging": str(space.staging), "entries": entries}
@@ -1208,6 +1213,49 @@ async def staging_import(
             return {"ran": False, "reason": "nothing waiting"}
         return beets_runner.import_paths(space, waiting)
 
+    operation, started = operations.start(
+        "import", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
+class ImportAsIs(BaseModel):
+    kind: str
+    name: str
+
+
+@app.post("/api/staging/import-as-is")
+async def staging_import_as_is(
+    body: ImportAsIs,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """File one staged item under the tags it already has.
+
+    The way out of a refusal. Beets never guesses, so a track it could not
+    place stays in staging for ever unless someone says "file it anyway" -
+    and until this existed, there was nothing to say it with.
+
+    Deliberately one named item at a time, and never on a timer: importing
+    without matching is a judgement about *this* item, and applying it to
+    the whole staging area would file every doubtful thing at once.
+    """
+    try:
+        space = workspace.for_session(session.identity)
+        path = space.staged(body.kind, body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not beets_runner.settled(path):
+        # Still being written to. The ordinary import refuses these; so must
+        # this one, or a half-finished album gets filed on a button press.
+        raise HTTPException(
+            status_code=409,
+            detail=f"{body.name} is still arriving; try again shortly.")
+
+    def run() -> dict[str, Any]:
+        return beets_runner.import_paths(space, [path], as_is=True)
+
+    # Shares the "import" gate with the ordinary sweep: they are two beets
+    # runs over the same tree, and the one lock is what keeps them apart.
     operation, started = operations.start(
         "import", session.identity.username, run)
     return {"started": started, "operation": operation.as_dict()}

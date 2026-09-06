@@ -488,6 +488,11 @@ function showView(view) {
     item.classList.toggle("active", item.dataset.view === view);
   });
 
+  // The banner belongs to whatever you were just doing. It lives outside
+  // every section, so leaving it up carried one panel's problem onto all the
+  // others, where there was nothing to act on and nothing to clear it.
+  showError("");
+
   const active = document.querySelector(`.nav-item[data-view="${view}"]`);
   const label = active && active.querySelector(".nav-label");
   // With the tabs gone this is the only thing saying where you are.
@@ -771,19 +776,53 @@ const stagingEl = document.getElementById("staging");
 const stagingEmpty = document.getElementById("staging-empty");
 const stagingBadge = document.getElementById("staging-badge");
 
+// Files it under the tags it already has. Beets is configured never to
+// guess, which is right, and used to be a dead end: what it would not place
+// stayed here for ever with nothing in the app able to move it.
+async function importAsIs(entry, button) {
+  const held = entry.kind === "album"
+    ? `the ${entry.tracks} files in "${entry.name}"` : `"${entry.name}"`;
+  if (!confirm(
+    `File ${held} using the tags already on it?\n\n` +
+    `Beets will not match it against MusicBrainz, so it is filed exactly as ` +
+    `tagged — and if you already hold this recording, this adds a second ` +
+    `copy for the Duplicates tab to catch.`)) return;
+  button.disabled = true;
+  const payload = await startOperation("import", "/api/staging/import-as-is",
+                                       { kind: entry.kind, name: entry.name });
+  // Nothing was started - the item is still arriving, or has gone. Re-render
+  // so the button works again; leaving it disabled means the only way to try
+  // again is to leave the tab and come back.
+  if (!payload || payload.detail) loadStaging();
+}
+
 function stagingRow(entry) {
   const row = el("div", `staging-item${entry.settled ? "" : " unsettled"}`);
+  const actions = el("div", "staging-actions");
+  if (!entry.settled) {
+    // Still being written to. Importing now would file a partial album, so
+    // there is nothing to offer yet.
+    actions.append(el("span", "staging-note", "still arriving"));
+  } else {
+    if (entry.refused) {
+      const note = el("span", "staging-note",
+                      entry.refused.length > 90
+                        ? `${entry.refused.slice(0, 90)}…` : entry.refused);
+      note.title = entry.refused;
+      actions.append(note);
+    }
+    const button = el("button", "ghost", "Import as-is");
+    button.addEventListener("click", () => importAsIs(entry, button));
+    actions.append(button);
+  }
   row.append(
     el("span", "staging-kind", entry.kind),
     el("span", "staging-name", entry.name),
     el("span", "staging-meta",
        `${entry.tracks} file${entry.tracks === 1 ? "" : "s"} · ` +
-       `${(entry.bytes / 1e6).toFixed(0)} MB · ${entry.age_days}d`)
+       `${(entry.bytes / 1e6).toFixed(0)} MB · ${entry.age_days}d`),
+    actions
   );
-  if (!entry.settled) {
-    // Still being written to. Importing now would file a partial album.
-    row.append(el("span", "staging-note", "still arriving"));
-  }
   return row;
 }
 
@@ -807,55 +846,101 @@ async function loadStaging() {
 // will hold a request open. The server pushes the outcome over the socket.
 const OPERATION_LABELS = {
   import: { button: "staging-import", idle: "Try importing now",
-            busy: "Importing…" },
-  audit: { button: "health-audit", idle: "Re-read files", busy: "Reading…" },
+            busy: "Importing…", note: "staging-op" },
+  audit: { button: "health-audit", idle: "Re-read files", busy: "Reading…",
+           note: "health-op" },
 };
+
+// An operation's outcome belongs to the panel that started it. The banner at
+// the top of the page is outside every section, so anything left there
+// followed you onto Queue, Browse, Playlists and Settings and stayed until
+// something else happened to clear it - which for an import that reported
+// "already running" was easily never.
+function setNote(id, message, tone) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  node.textContent = message;
+  node.className = tone || "warn";
+  node.hidden = !message;
+}
+
+function importSummary(result) {
+  const failed = result.failed || [];
+  if (failed.length) return [`Import problems: ${failed.join("; ")}`, "warn"];
+  if (result.imported) {
+    const rest = result.skipped ? `, ${result.skipped} still waiting` : "";
+    return [`Filed ${result.imported} item${result.imported === 1 ? "" : "s"}` +
+            `${result.as_is ? " as tagged" : ""}${rest}.`, "notice"];
+  }
+  // Nothing filed and nothing failed: beets ran and refused. Said plainly,
+  // because the folder looking untouched is exactly how this used to hide.
+  if (result.skipped) {
+    return [`Nothing could be filed; ${result.skipped} still waiting.`, "warn"];
+  }
+  return ["", "notice"];
+}
 
 function showOperation(operation) {
   const spec = OPERATION_LABELS[operation.name];
   if (!spec) return;
   const button = document.getElementById(spec.button);
+  const running = operation.status === "running";
   if (button) {
-    button.disabled = operation.status === "running";
-    button.textContent = operation.status === "running" ? spec.busy : spec.idle;
+    button.disabled = running;
+    button.textContent = running ? spec.busy : spec.idle;
   }
-  if (operation.status === "running") return;
+  if (operation.name === "import") {
+    // The per-row buttons run the same beets lock, so they cannot be live
+    // while an import is in flight. A finished one re-renders them.
+    stagingEl.querySelectorAll("button").forEach((b) => { b.disabled = running; });
+  }
+  if (running) return;
 
   if (operation.status === "failed") {
-    showError(`${operation.name} failed: ${operation.error}`);
+    setNote(spec.note, `${operation.name} failed: ${operation.error}`, "warn");
     return;
   }
   const result = operation.result || {};
   if (operation.name === "import") {
     if (result.busy) {
-      showError("An import is already running; this one was not started.");
+      setNote(spec.note,
+              "An import is already running; this one was not started.", "warn");
     } else if (!result.ran) {
-      showError(`Nothing to import: ${result.reason}`);
+      setNote(spec.note, `Nothing to import: ${result.reason}`, "warn");
     } else {
-      const failed = result.failed || [];
-      showError(failed.length ? `Import problems: ${failed.join("; ")}` : "");
+      const [message, tone] = importSummary(result);
+      setNote(spec.note, message, tone);
     }
     loadStaging();
   } else {
+    setNote(spec.note, "");
     loadHealth();
   }
 }
 
-async function startOperation(name, path) {
-  showError("");
+async function startOperation(name, path, body) {
+  const spec = OPERATION_LABELS[name];
+  setNote(spec.note, "");
   try {
-    const payload = await fetch(path, { method: "POST" })
-      .then((r) => r.json());
+    const request = { method: "POST" };
+    if (body) {
+      request.headers = { "Content-Type": "application/json" };
+      request.body = JSON.stringify(body);
+    }
+    const payload = await fetch(path, request).then((r) => r.json());
     if (payload.detail) {
-      showError(payload.detail);
-      return;
+      setNote(spec.note, payload.detail, "warn");
+      return payload;
     }
     if (!payload.started) {
-      showError(`That is already running; watching the one in flight.`);
+      setNote(spec.note,
+              "That is already running; watching the one in flight.", "warn");
     }
     showOperation(payload.operation);
+    return payload;
   } catch (err) {
-    showError(`Could not start: ${err.message}`);
+    setNote(spec.note, `Could not start: ${err.message}`, "warn");
+    return null;
   }
 }
 

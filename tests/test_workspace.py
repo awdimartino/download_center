@@ -240,3 +240,61 @@ def test_the_check_is_on_by_default():
     import inspect
     signature = inspect.signature(workspace.for_session)
     assert signature.parameters["require_library"].default is True
+
+
+# --- naming a staged item ---------------------------------------------------
+# The name comes from the browser, so this is a trust boundary: everything
+# behind it moves files into a music library.
+
+def _prepared():
+    space = workspace.for_session(_identity())
+    space.prepare()
+    return space
+
+
+def test_a_staged_single_resolves_to_its_file():
+    space = _prepared()
+    track = space.singles_dir / "Burial - Archangel.mp3"
+    track.write_bytes(b"audio")
+
+    assert space.staged("single", "Burial - Archangel.mp3") == track
+
+
+def test_a_staged_album_resolves_to_its_directory():
+    space = _prepared()
+    album = space.albums_dir / "Radiohead - OK Computer"
+    album.mkdir()
+
+    assert space.staged("album", "Radiohead - OK Computer") == album.resolve()
+
+
+@pytest.mark.parametrize("name", [
+    "../../../etc/passwd", "..", ".owner", "sub/dir", "sub\\dir", "",
+])
+def test_a_name_that_leaves_staging_is_refused(name):
+    """Not "does this contain ..": resolved and compared against the parent,
+    so a symlink cannot walk out of a name that looked clean."""
+    space = _prepared()
+    with pytest.raises(ValueError):
+        space.staged("single", name)
+
+
+def test_a_name_that_is_not_there_is_refused():
+    space = _prepared()
+    with pytest.raises(ValueError, match="not in"):
+        space.staged("single", "never-downloaded.mp3")
+
+
+def test_an_album_asked_for_as_a_single_is_refused():
+    """Kind decides both the folder and the beets mode. Letting them disagree
+    would import a whole album with the singleton path template."""
+    space = _prepared()
+    (space.albums_dir / "A Record").mkdir()
+    with pytest.raises(ValueError, match="not in"):
+        space.staged("single", "A Record")
+
+
+def test_an_unknown_kind_is_refused():
+    space = _prepared()
+    with pytest.raises(ValueError, match="unknown kind"):
+        space.staged("elsewhere", "anything")

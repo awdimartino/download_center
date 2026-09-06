@@ -179,6 +179,20 @@ beets was busy. That is why the `.owner` marker exists: the sweep runs on a
 timer with nobody signed in, so the folder itself has to say whose files these
 are.
 
+### When beets will not file something
+
+Beets is configured never to guess, so anything it is unsure of stays in
+staging. The Staging tab shows what is waiting, why it was refused when this
+process knows, and offers **Import as-is** on each item: `beet import -A`, no
+matching at all, filed under the tags it already carries — which for a
+downloaded track are the ones seeded from Spotify.
+
+A track with an album tag is filed to `$albumartist/$album/`, the same folder
+its siblings land in, so a later arrival joins it rather than founding a
+second copy of the record. A track with no album goes to `Non-Album/`.
+Nothing does this on a timer: importing without matching is a judgement about
+one item, and the sweep will never make it for you.
+
 ## Setup
 
 ```bash
