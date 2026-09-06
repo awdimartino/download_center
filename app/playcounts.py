@@ -235,21 +235,41 @@ def taken_on(day: str) -> bool:
 
 def status() -> dict[str, Any]:
     """Enough to tell whether this is working, before there is anything to
-    show for it. Statistics need weeks; this needs to be checkable tonight."""
+    show for it. Statistics need weeks; this needs to be checkable tonight.
+
+    Reports both halves of the record. Snapshots are what this app collects
+    from now on; imported rows are the history from before it started, and
+    leaving them out of the status made 41,000 plays look like nothing was
+    there.
+    """
     store = ledger.connection()
-    days = store.execute(
-        "SELECT COUNT(DISTINCT taken_on) FROM play_snapshot").fetchone()[0]
-    rows = store.execute("SELECT COUNT(*) FROM play_snapshot").fetchone()[0]
-    first = store.execute("SELECT MIN(taken_on) FROM play_snapshot").fetchone()[0]
-    last = store.execute("SELECT MAX(taken_on) FROM play_snapshot").fetchone()[0]
-    anomalies = store.execute("SELECT COUNT(*) FROM play_anomaly").fetchone()[0]
+
+    def one(sql: str) -> Any:
+        return store.execute(sql).fetchone()[0]
+
+    imported = store.execute(
+        "SELECT source, COUNT(*), SUM(plays), MIN(day), MAX(day)"
+        "  FROM play_imported GROUP BY source").fetchall()
+
+    # The day the loop is aiming at. `today` is never the answer - a day
+    # cannot be summarised until it has finished.
+    wanted = last_complete_day()
     return {
-        "days": days,
-        "rows": rows,
-        "first_day": first,
-        "last_day": last,
-        "anomalies": anomalies,
-        "today_taken": taken_on(today()),
+        "snapshots": {
+            "days": one("SELECT COUNT(DISTINCT taken_on) FROM play_snapshot"),
+            "rows": one("SELECT COUNT(*) FROM play_snapshot"),
+            "first_day": one("SELECT MIN(taken_on) FROM play_snapshot"),
+            "last_day": one("SELECT MAX(taken_on) FROM play_snapshot"),
+            "anomalies": one("SELECT COUNT(*) FROM play_anomaly"),
+        },
+        "imported": [
+            {"source": source, "rows": rows, "plays": plays,
+             "first_day": first, "last_day": last}
+            for source, rows, plays, first, last in imported
+        ],
+        # The question worth asking of a nightly job: is it up to date?
+        "up_to_date": taken_on(wanted),
+        "awaiting": wanted,
     }
 
 

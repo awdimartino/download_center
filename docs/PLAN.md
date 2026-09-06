@@ -111,7 +111,7 @@ one account. Kelly has 3,089 plays. Snapshots cover both users uniformly and
 depend on nothing external. Use Last.fm to backfill, snapshots as the
 ongoing truth.
 
-### 2. Last.fm backfill — one time only — SHIPPED 2026-09-06
+### 2. Last.fm backfill — done, and the tooling removed
 
 Snapshots start history from tonight. Last.fm already holds the part that
 came before, with genuine per-scrobble timestamps, and importing it once
@@ -179,6 +179,23 @@ the other's - so a library track called "o" matched "Last Train At 25
 O’clock" perfectly. It flatters the numbers and hides real misses in the
 low band at the same time. Compare on a compacted form and require the
 artist to agree.
+
+**Final numbers**, after resolving the ambiguous cases: **41,203 plays**
+across 38,559 day/track rows and 1,298 days. The 3,402 that matched several
+*files* of one recording are not ambiguous about what was played, only about
+which copy - so each went to the copy `duplicates.py` would keep (lossless,
+then bitrate, then size). If those 199 duplicate groups are ever resolved,
+the losers are quarantined and the keeper survives, so the history already
+points at the file that will still be there.
+
+8,318 scrobbles remain unmatched. They are music that is genuinely not in
+the library, checked by hand.
+
+**`app/lastfm.py` and its tests are gone**, along with the `lastfm_api_key`
+and `lastfm_secret` settings and the credentials on the Pi. This was a
+one-time import; keeping a fetcher, a matcher and a shared secret around for
+something that will not run again is cost with no reader. What stays is the
+data: `play_imported`, and `plays_between` reading it beside the snapshots.
 
 Undo: `DELETE FROM play_imported WHERE source = 'lastfm'`.
 

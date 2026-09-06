@@ -38,7 +38,7 @@ Knowing which store owns a fact is most of understanding this codebase.
 | `config/beets/<workspace>/library.db` | Beets' index of one person's filed music | One per workspace |
 | The audio files | `navidrome_uuid`, MusicBrainz ids, all tags | The truth. Everything else is a cache |
 
-`state.db` has five tables. `ledger` (source_id, **library_id**, isrc,
+`state.db` has six tables. `ledger` (source_id, **library_id**, isrc,
 title, artist, album, file_path, completed_at), keyed on the pair — the
 question is "is this recording already in this collection", and a collection
 is a library, so two accounts sharing one library share the answer and two
@@ -52,6 +52,16 @@ Navidrome keeps a cumulative count and only the latest date, so history it
 has already overwritten is unrecoverable - these are the only copy. Keyed by
 track UUID rather than `media_file.id`, and only *changed* counts are
 stored, so a year is tens of thousands of rows rather than near a million.
+
+`play_imported` holds listening from before the snapshots began - alex's
+Last.fm history, imported once in September 2026 and matched to tracks by
+artist and title. Kept apart from `play_snapshot` because the two are
+different kinds of evidence: a snapshot is a cumulative total this app read
+itself, an import is somebody else's record matched by text.
+`playcounts.plays_between` reads both, and the two cover disjoint periods by
+construction - the import stops the day snapshots start.
+
+The tool that produced it is deliberately not in the tree. It ran once.
 
 It deliberately holds no user table, no library table and no copy of
 anything Navidrome knows. `library_id` is a foreign key in spirit only:

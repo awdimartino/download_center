@@ -263,11 +263,11 @@ def test_status_says_enough_to_tell_it_is_working(wired):
     played(wired, "t1", ALEX, 6)
     playcounts.take("2026-03-02")
 
-    status = playcounts.status()
-    assert status["days"] == 2
-    assert status["rows"] == 2
-    assert status["first_day"] == "2026-03-01"
-    assert status["last_day"] == "2026-03-02"
+    snapshots = playcounts.status()["snapshots"]
+    assert snapshots["days"] == 2
+    assert snapshots["rows"] == 2
+    assert snapshots["first_day"] == "2026-03-01"
+    assert snapshots["last_day"] == "2026-03-02"
 
 
 def test_an_unreachable_navidrome_is_reported_not_raised(state_db, monkeypatch,
@@ -405,3 +405,39 @@ def test_a_file_flagged_missing_is_not_counted(wired):
     played(wired, "gone", ALEX, 40)
 
     assert playcounts.take("2026-03-01")["tracked"] == 1
+
+
+# --- status reports both halves of the record -------------------------------
+
+def test_status_reports_imported_history_too(wired):
+    """Leaving it out made 41,000 imported plays look like nothing was
+    there: the record is snapshots *and* the history from before them."""
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 5)
+    playcounts.take("2026-03-01")
+    _import("2026-02-14", "uuid-a", ALEX, 40)
+
+    status = playcounts.status()
+    assert status["snapshots"]["days"] == 1
+    assert len(status["imported"]) == 1
+    assert status["imported"][0]["source"] == "lastfm"
+    assert status["imported"][0]["plays"] == 40
+    assert status["imported"][0]["first_day"] == "2026-02-14"
+
+
+def test_status_says_whether_the_nightly_job_is_up_to_date(wired):
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 5)
+
+    assert playcounts.status()["up_to_date"] is False
+    playcounts.take()          # defaults to the last complete day
+    status = playcounts.status()
+    assert status["up_to_date"] is True
+    assert status["awaiting"] == playcounts.last_complete_day()
+
+
+def test_status_with_nothing_recorded_yet(wired):
+    status = playcounts.status()
+    assert status["snapshots"]["days"] == 0
+    assert status["imported"] == []
+    assert status["up_to_date"] is False

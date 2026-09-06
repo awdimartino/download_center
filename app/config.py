@@ -30,8 +30,6 @@ _ENV_OVERRIDES = {
     "navidrome_password": "DC_NAVIDROME_PASSWORD",
     "staging_sweep_minutes": "DC_STAGING_SWEEP_MINUTES",
     "play_day_timezone": "DC_PLAY_DAY_TIMEZONE",
-    "lastfm_api_key": "DC_LASTFM_API_KEY",
-    "lastfm_secret": "DC_LASTFM_SECRET",
 }
 
 
@@ -85,12 +83,6 @@ class Settings(BaseModel):
     # were.
     play_day_timezone: str = "UTC"
 
-    # The same pair Navidrome uses (ND_LASTFM_APIKEY / ND_LASTFM_SECRET),
-    # needed only by the one-off scrobble import. The session key itself is
-    # Navidrome's and is read from its database, so nothing here stores a
-    # credential that belongs to a person.
-    lastfm_api_key: str = ""
-    lastfm_secret: str = ""
 
     @property
     def albums_dir(self) -> Path:
