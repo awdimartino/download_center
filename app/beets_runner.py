@@ -206,8 +206,21 @@ def import_paths(space: workspace.Workspace,
     # Held across every workspace rather than per user: they have separate
     # databases but the machine has one disk, and a sweep plus a finishing
     # job is the collision worth avoiding.
-    with _import_lock:
+    #
+    # Acquired without blocking. Waiting here meant a threadpool worker sat
+    # on this lock for as long as the running import took - up to 900s per
+    # path - and enough of those starve every other `to_thread` call in the
+    # application. Refusing is honest and costs nothing: an import is a sweep
+    # over whatever is waiting, so the one already running will pick up this
+    # caller's paths too if they have settled, and the timer catches the rest.
+    if not _import_lock.acquire(blocking=False):
+        log.info("an import is already running; not starting another")
+        return {"ran": False, "reason": "an import is already running",
+                "busy": True}
+    try:
         return _import_paths(space, published)
+    finally:
+        _import_lock.release()
 
 
 def _import_paths(space: workspace.Workspace,

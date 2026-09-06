@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth, beets_runner, diskaudit, duplicates
-from . import generic, ledger, navidrome
+from . import generic, ledger, navidrome, operations
 from . import playlists as smart_playlists
 from . import spotify, staging, worker, workspace
 from . import config
@@ -120,16 +120,36 @@ class Broker:
         async with self._lock:
             self._clients.pop(ws, None)
 
+    # A client that has stopped reading must not hold up the others. Sends
+    # were sequential and unbounded, so one phone on bad wifi with a full TCP
+    # window stalled the publish loop - and with it the pusher driving every
+    # active job - for everybody.
+    SEND_TIMEOUT = 5.0
+
     async def publish(self, message: dict[str, Any],
                       owner: str | None = None) -> None:
         async with self._lock:
-            targets = [(ws, who) for ws, who in self._clients.items()]
-        for ws, who in targets:
-            if owner is not None and who != owner:
-                continue
+            targets = [(ws, who) for ws, who in self._clients.items()
+                       if owner is None or who == owner]
+        if not targets:
+            return
+
+        async def send(ws: WebSocket) -> WebSocket | None:
             try:
-                await ws.send_json(message)
+                await asyncio.wait_for(ws.send_json(message),
+                                       timeout=self.SEND_TIMEOUT)
+                return None
             except Exception:
+                # Including the timeout. A socket that cannot take five
+                # seconds of slack is gone; it will reconnect and get a fresh
+                # snapshot, which is cheaper than holding everyone else up.
+                return ws
+
+        # Concurrently, so the slowest client costs the slowest client's time
+        # rather than the sum of everybody's.
+        stalled = await asyncio.gather(*(send(ws) for ws, _ in targets))
+        for ws in stalled:
+            if ws is not None:
                 await self.unregister(ws)
 
 
@@ -140,9 +160,15 @@ async def push_job(job: dict[str, Any]) -> None:
     await broker.publish({"type": "job", "job": job}, owner=job.get("owner"))
 
 
+async def push_operation(operation: operations.Operation) -> None:
+    await broker.publish({"type": "operation", "operation": operation.as_dict()},
+                         owner=operation.owner)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     ledger.connect(settings.ledger_path)
+    operations.subscribe(push_operation)
     log.info("staging directory: %s", settings.output_dir)
     log.info("ledger holds %d previously downloaded track(s)", ledger.count())
     if not settings.spotify_configured:
@@ -717,12 +743,23 @@ async def health(
 async def health_audit(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """Re-read identity tags from every file. Slow, hence explicit."""
+    """Re-read identity tags from every file.
+
+    Started, not awaited. It reads every file in the library, which is
+    minutes on a Pi - far longer than a browser will hold a request open, so
+    awaiting it made the button look broken while the work went on unseen.
+    The result arrives over the websocket and is readable from
+    /api/operations.
+    """
+    libraries = list(session.identity.libraries)
+
     def run() -> dict[str, Any]:
         return {library["name"]: diskaudit.refresh(Path(library["path"])).as_dict()
-                for library in session.identity.libraries}
+                for library in libraries}
 
-    return await asyncio.to_thread(run)
+    operation, started = operations.start(
+        "audit", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
 
 
 # --- duplicates -----------------------------------------------------------
@@ -961,15 +998,34 @@ async def staging_contents(
 async def staging_import(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """Try to import everything waiting, now rather than on the timer."""
-    def run() -> dict[str, Any]:
+    """Try to import everything waiting, now rather than on the timer.
+
+    Started, not awaited: beets gets 900 seconds *per path*, so a staging
+    area with a dozen items could hold a request open for hours. The result
+    arrives over the websocket and is readable from /api/operations.
+    """
+    try:
         space = workspace.for_session(session.identity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def run() -> dict[str, Any]:
         waiting = beets_runner.waiting_in(space)
         if not waiting:
             return {"ran": False, "reason": "nothing waiting"}
         return beets_runner.import_paths(space, waiting)
 
-    return await asyncio.to_thread(run)
+    operation, started = operations.start(
+        "import", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
+@app.get("/api/operations")
+async def list_operations(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """What long-running work is in flight, and how the last run went."""
+    return {"operations": operations.all_operations()}
 
 
 @app.get("/api/status")

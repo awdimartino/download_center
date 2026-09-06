@@ -146,6 +146,10 @@ function handleMessage(message) {
   } else if (message.type === "job_deleted") {
     jobs.delete(message.id);
     collapsed.delete(message.id);
+  } else if (message.type === "operation") {
+    // Import and audit finish long after their request returned.
+    showOperation(message.operation);
+    return;
   } else {
     return;
   }
@@ -605,21 +609,65 @@ async function loadStaging() {
   }
 }
 
-document.getElementById("staging-import").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  button.textContent = "Importing…";
-  try {
-    const result = await fetch("/api/staging/import", { method: "POST" })
-      .then((r) => r.json());
-    if (!result.ran) showError(`Nothing to import: ${result.reason}`);
-    await loadStaging();
-  } catch (err) {
-    showError(`Import failed: ${err.message}`);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Try importing now";
+// Import and audit are started, not awaited - beets gets 900s per path and
+// an audit reads every file in the library, both far longer than a browser
+// will hold a request open. The server pushes the outcome over the socket.
+const OPERATION_LABELS = {
+  import: { button: "staging-import", idle: "Try importing now",
+            busy: "Importing…" },
+  audit: { button: "health-audit", idle: "Re-read files", busy: "Reading…" },
+};
+
+function showOperation(operation) {
+  const spec = OPERATION_LABELS[operation.name];
+  if (!spec) return;
+  const button = document.getElementById(spec.button);
+  if (button) {
+    button.disabled = operation.status === "running";
+    button.textContent = operation.status === "running" ? spec.busy : spec.idle;
   }
+  if (operation.status === "running") return;
+
+  if (operation.status === "failed") {
+    showError(`${operation.name} failed: ${operation.error}`);
+    return;
+  }
+  const result = operation.result || {};
+  if (operation.name === "import") {
+    if (result.busy) {
+      showError("An import is already running; this one was not started.");
+    } else if (!result.ran) {
+      showError(`Nothing to import: ${result.reason}`);
+    } else {
+      const failed = result.failed || [];
+      showError(failed.length ? `Import problems: ${failed.join("; ")}` : "");
+    }
+    loadStaging();
+  } else {
+    loadHealth();
+  }
+}
+
+async function startOperation(name, path) {
+  showError("");
+  try {
+    const payload = await fetch(path, { method: "POST" })
+      .then((r) => r.json());
+    if (payload.detail) {
+      showError(payload.detail);
+      return;
+    }
+    if (!payload.started) {
+      showError(`That is already running; watching the one in flight.`);
+    }
+    showOperation(payload.operation);
+  } catch (err) {
+    showError(`Could not start: ${err.message}`);
+  }
+}
+
+document.getElementById("staging-import").addEventListener("click", () => {
+  startOperation("import", "/api/staging/import");
 });
 
 // --- health ---------------------------------------------------------------
@@ -684,19 +732,8 @@ let healthTimer = null;
 // Reading tags from every file takes long enough that it runs on a timer in
 // the background; this is for when you have just fixed something and want the
 // answer now rather than in six hours.
-document.getElementById("health-audit").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  button.textContent = "Reading…";
-  try {
-    await fetch("/api/health/audit", { method: "POST" });
-    await loadHealth();
-  } catch (err) {
-    showError(`Audit failed: ${err.message}`);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Re-read files";
-  }
+document.getElementById("health-audit").addEventListener("click", () => {
+  startOperation("audit", "/api/health/audit");
 });
 
 // --- duplicates -----------------------------------------------------------
