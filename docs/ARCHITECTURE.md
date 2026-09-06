@@ -38,7 +38,7 @@ Knowing which store owns a fact is most of understanding this codebase.
 | `config/beets/<workspace>/library.db` | Beets' index of one person's filed music | One per workspace |
 | The audio files | `navidrome_uuid`, MusicBrainz ids, all tags | The truth. Everything else is a cache |
 
-`state.db` has three tables. `ledger` (source_id, **library_id**, isrc,
+`state.db` has five tables. `ledger` (source_id, **library_id**, isrc,
 title, artist, album, file_path, completed_at), keyed on the pair — the
 question is "is this recording already in this collection", and a collection
 is a library, so two accounts sharing one library share the answer and two
@@ -46,6 +46,12 @@ libraries do not. `duplicate_dismissed` (group_key, note, decided_at) holds
 "keep both" decisions. `duplicate_quarantined` records every file the
 duplicates flow set aside — source, target, keeper, who decided — because
 "nothing is deleted" is only useful if the file can be found again.
+
+`play_snapshot` and `play_anomaly` are the nightly play-count record.
+Navidrome keeps a cumulative count and only the latest date, so history it
+has already overwritten is unrecoverable - these are the only copy. Keyed by
+track UUID rather than `media_file.id`, and only *changed* counts are
+stored, so a year is tens of thousands of rows rather than near a million.
 
 It deliberately holds no user table, no library table and no copy of
 anything Navidrome knows. `library_id` is a foreign key in spirit only:

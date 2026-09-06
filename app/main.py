@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth, beets_runner, diskaudit, duplicates
-from . import generic, ledger, navidrome, operations
+from . import generic, ledger, navidrome, operations, playcounts
 from . import playlists as smart_playlists
 from . import spotify, staging, worker, workspace
 from . import config
@@ -224,7 +224,8 @@ async def lifespan(app: FastAPI):
         log.warning("Spotify credentials missing - add them to config/config.toml")
 
     background = [asyncio.create_task(_audit_loop()),
-                  asyncio.create_task(_sweep_loop())]
+                  asyncio.create_task(_sweep_loop()),
+                  asyncio.create_task(_snapshot_loop())]
     try:
         yield
     finally:
@@ -255,6 +256,30 @@ async def _sweep_loop() -> None:
                 log.info("staging sweep: %s", result)
         except Exception:
             log.exception("staging sweep failed")
+
+
+# How often to check whether today's snapshot has been taken. Not a clock
+# time: a container that was restarting at 3am would simply miss the day, and
+# a day of listening history cannot be recovered afterwards. Checking on a
+# short cycle for "has today been done" catches up whenever the process
+# happens to be alive.
+SNAPSHOT_CHECK_MINUTES = 30
+
+
+async def _snapshot_loop() -> None:
+    """Record play counts once a day.
+
+    Navidrome keeps a cumulative total and one date, so anything not
+    captured is gone for good - which is why this is driven by "is today
+    done" rather than by a time of day it might sleep through.
+    """
+    while True:
+        try:
+            if not await asyncio.to_thread(playcounts.taken_on, playcounts.today()):
+                await asyncio.to_thread(playcounts.take)
+        except Exception:
+            log.exception("play-count snapshot failed")
+        await asyncio.sleep(SNAPSHOT_CHECK_MINUTES * 60)
 
 
 async def _audit_loop() -> None:
@@ -1190,6 +1215,28 @@ async def list_operations(
 ) -> dict[str, Any]:
     """What long-running work is in flight, and how the last run went."""
     return {"operations": operations.all_operations()}
+
+
+@app.get("/api/playcounts")
+async def playcount_status(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Whether snapshots are actually being taken.
+
+    There is nothing to show yet - statistics need weeks of these - but the
+    thing that must not fail quietly is the collecting, and that is
+    checkable tonight.
+    """
+    return await asyncio.to_thread(playcounts.status)
+
+
+@app.post("/api/playcounts/snapshot")
+async def playcount_snapshot(
+    session: auth.Session = Depends(admin_session),
+) -> dict[str, Any]:
+    """Take one now rather than waiting for the timer. Admin only: it reads
+    every account's listening, not just the caller's."""
+    return await asyncio.to_thread(playcounts.take)
 
 
 @app.get("/api/status")

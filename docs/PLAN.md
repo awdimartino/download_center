@@ -58,7 +58,7 @@ See also [ARCHITECTURE.md](ARCHITECTURE.md) for how the code works and
 
 ## Next
 
-### 1. Play-count tracking
+### 1. Play-count tracking — SHIPPED 2026-09-06
 
 **Why it can't wait.** Navidrome's `annotation` table stores a *cumulative*
 `play_count` and only the *most recent* `play_date`. There are 6,623 plays
@@ -79,6 +79,24 @@ This is the only item on the list with a clock on it.
   reset can lower a count; that gets recorded as such rather than emitted as
   minus-four plays.
 - The first night is a baseline. Real data starts on the second.
+
+**Built.** `app/playcounts.py`, a `_snapshot_loop` in main.py, and
+`play_snapshot` / `play_anomaly` in state.db. The loop asks "has today been
+done" every 30 minutes rather than firing at a clock time: a container
+restarting at 3am would simply miss the day, and a missed day cannot be
+recovered. `GET /api/playcounts` reports whether it is working;
+`POST /api/playcounts/snapshot` takes one now (admin only - it reads every
+account's listening).
+
+Verified against a copy of the live database before shipping: 2,429
+(track, user) pairs carrying 6,568 plays, alex 3,479 and kelly 3,089.
+
+**50 annotation rows cannot be tracked**, and that is worth fixing: 49 mp3s
+whose files are stamped on disk but whose UUID is not in Navidrome's index -
+the "stamped but not yet scanned" case, which a full scan fixes - and one
+`.wav`, which can never carry the tag and whose 6 plays are permanently
+untrackable. Every day before that full scan is 55 plays of history filed
+against nothing.
 
 **Last.fm's place.** It has genuine per-scrobble timestamps going back
 further than any snapshot could, so it is the better source for *history*.
