@@ -59,10 +59,14 @@ Local Python is `.venv/Scripts/python.exe` — `python` is not on PATH.
 
 ## Where things stand
 
-**Deployed:** commit `53b47ba`, container healthy, deployed 2026-09-06.
-`state.db` backed up beside itself as `state.db.bak-2026-09-06` before the
-ledger migration; the migration was dry-run against a copy of the real
-database first and preserved all 825 rows.
+**Deployed:** commit `fabfdd9`, container healthy, deployed 2026-09-06.
+`state.db` is backed up beside itself before every migration
+(`state.db.bak-2026-09-06`, `state.db.bak-pre-tier2`). The ledger migration
+was dry-run against a copy of the real database and preserved all 825 rows.
+
+**All bugs from the 2026-09-06 review are fixed.** 164 tests; CI runs
+compile, ruff and pytest before it builds. See [FIXES.md](FIXES.md) - the
+only items left open are the two refactors, which are not bugs.
 
 **Navidrome 0.58.5.** Two libraries: `Music Library` (id 1, `/music`) and
 `Kelly` (id 2, `/kelly`). Users: `alex` → library 1, `kelly` → library 2,
@@ -90,9 +94,9 @@ The agreed order is in PLAN.md. In short:
 5. ~~**Tests and a CI step that runs them.**~~ Done 2026-09-06: 114 tests,
    and CI runs them before the image is built. Grow the suite as you go.
 
-Ahead of all of these: the open items in [FIXES.md](FIXES.md). Tier 1 is
-closed; Tier 2 (blocking work in request handlers, websocket cost, per-job
-concurrency, `matcher` swallowing every exception) is next.
+The review backlog is clear, so this list is now the plan again. Note that
+`app/static/app.js` still wants splitting (FIXES.md item 29) - the burger
+rewrite is the natural moment, so do it there rather than separately.
 
 ---
 
