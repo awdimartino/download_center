@@ -96,3 +96,78 @@ def test_the_error_banner_is_cleared_when_the_view_changes():
     body = JS[JS.index("function showView("):]
     body = body[:body.index("\n}\n")]
     assert 'showError("")' in body
+
+
+# --- getting the new files to the browser at all ----------------------------
+
+def _static_response(tmp_path, request_headers=()):
+    from app.main import RevalidatedStatic
+
+    asset = tmp_path / "app.js"
+    # Written once. Starlette's ETag is derived from mtime and size, so
+    # rewriting it between the two calls would change the ETag and the second
+    # request would be asking about a different file.
+    if not asset.exists():
+        asset.write_text("console.log('new');", encoding="utf-8")
+    static = RevalidatedStatic(directory=tmp_path)
+    scope = {"type": "http", "method": "GET", "headers": list(request_headers)}
+    return static.file_response(str(asset), asset.stat(), scope)
+
+
+def test_static_assets_must_be_revalidated(tmp_path):
+    """Starlette sends an ETag and no Cache-Control, and a response with no
+    Cache-Control is heuristically cacheable - the browser picks its own
+    freshness lifetime and does not ask again. That shipped a deploy where
+    index.html was new (it is no-store) and app.js was months old: the
+    Import as-is button was in the served file and absent from the page."""
+    response = _static_response(tmp_path)
+    assert response.headers["cache-control"] == "no-cache"
+
+
+def test_an_unchanged_asset_still_answers_304(tmp_path):
+    """`no-cache` means "ask first", not "do not store". If revalidation
+    stopped returning 304 this would be a full re-download of every asset on
+    every navigation, which is a different bug rather than a fix."""
+    first = _static_response(tmp_path)
+    etag = first.headers["etag"]
+
+    again = _static_response(tmp_path, [(b"if-none-match", etag.encode())])
+    assert again.status_code == 304
+    assert again.headers["cache-control"] == "no-cache"
+
+
+def test_the_shell_stamps_a_version_onto_its_assets():
+    """Headers cannot rescue a browser that is already holding a stale copy:
+    it does not ask, so it never learns they changed. A URL it has never seen
+    is the only thing that always works."""
+    import asyncio
+
+    from app.main import asset_version, index
+
+    html = asyncio.run(index()).body.decode()
+    version = asset_version()
+    for name in ("app.js", "style.css"):
+        assert f'/static/{name}?v={version}' in html
+        assert f'"/static/{name}"' not in html, "an unversioned reference left behind"
+
+
+def test_the_version_follows_the_asset_contents(tmp_path, monkeypatch):
+    """A token that does not change when the files do is worse than no token
+    at all: it pins every browser to the stale copy permanently."""
+    from app import main
+
+    assert set(main.ASSETS) == {"app.js", "style.css"}
+
+    def version_of(js: str) -> str:
+        (tmp_path / "app.js").write_text(js, encoding="utf-8")
+        (tmp_path / "style.css").write_text("body{}", encoding="utf-8")
+        monkeypatch.setattr(main, "STATIC_DIR", tmp_path)
+        main.asset_version.cache_clear()
+        return main.asset_version()
+
+    first = version_of("console.log('one');")
+    second = version_of("console.log('two');")
+
+    assert len(first) == 12
+    assert first != second
+    main.asset_version.cache_clear()

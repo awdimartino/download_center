@@ -223,6 +223,21 @@ decision from the user before it can be done.
       reports into its own panel (`#staging-op`, `#health-op`) rather than the
       page-wide one.
 
+- [x] **39. Deploys did not reach the browser.** Reported by the user
+      immediately after the escape hatch shipped: no *Import as-is* button,
+      though the container was serving an `app.js` that contained one.
+      `StaticFiles` sends an ETag and no `Cache-Control`, and a response with
+      no `Cache-Control` is *heuristically* cacheable — the browser picks its
+      own freshness lifetime and does not ask again. So `index.html` being
+      `no-store` bought nothing: a fresh shell loaded a stale script.
+      This is almost certainly what every "hard-refresh and try again" in the
+      notes was actually about, back to the burger rewrite.
+      Two halves, because headers cannot rescue a browser that already holds
+      a stale copy — it does not ask, so it never learns: `no-cache` on
+      `/static` (revalidate, not "do not store"; an unchanged file still
+      answers 304), and `?v=<hash of the assets>` stamped onto the references
+      by the shell, which is a URL no browser can have a stale copy of.
+
 - [x] **38. The front end had no automated tests at all** — every UI change
       shipped on a hand-run static check that lived in a scratchpad.
       `tests/test_frontend.py` is that check, made permanent and run in CI.

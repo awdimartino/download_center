@@ -323,6 +323,21 @@ Each of these cost real time or caused a real bug.
   expose them.
 - `.wav` and `.aiff` cannot carry these tags; exclude them from tag checks.
 
+**Browser caching**
+- A response with **no `Cache-Control` is still cacheable**. The browser
+  invents a freshness lifetime — conventionally a fraction of the file's age
+  — and does not ask again until it expires. Starlette's `StaticFiles` sends
+  an ETag and a Last-Modified and no Cache-Control, so `index.html` being
+  `no-store` bought nothing: a deploy served a new shell beside an `app.js`
+  Safari saw no reason to re-fetch, and a button that was in the file the
+  container served was absent from the page.
+- Headers alone cannot fix a browser that is *already* holding a stale copy,
+  because it does not ask. Only a URL it has never seen can. Both are in
+  place now: `no-cache` on `/static` (which means "revalidate", not "do not
+  store" — an unchanged file still answers 304) and `?v=<hash of the
+  assets>` stamped onto the references by the shell, which is the one
+  document that is always fetched fresh.
+
 **CSS**
 - `[hidden]` is a user-agent rule and loses to any class setting `display`.
   Stated once, `!important`, at the top of the stylesheet.
