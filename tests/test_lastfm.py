@@ -7,6 +7,8 @@ much the feature as the writing.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from app import lastfm
@@ -243,3 +245,38 @@ def test_the_audit_is_ordered_by_how_often_it_was_scrobbled():
     audit = lastfm.audit_unmatched(planned, index)
     assert audit[0]["scrobbled"] == "Band B - Often"
     assert audit[0]["scrobbles"] == 5
+
+
+def test_the_audit_flag_is_actually_wired_up(tmp_path, monkeypatch, capsys):
+    """The flag existed and did nothing for one deploy: argparse knew it,
+    main() never called audit_unmatched, and the tests above passed because
+    they exercise the function rather than the command. A flag that is
+    silently ignored is the exact failure this codebase keeps producing."""
+    import app.lastfm as lf
+
+    target = tmp_path / "unmatched.txt"
+    index = _index([("Radiohead", "Let Down", ["uuid-a"])])
+    monkeypatch.setattr(lf, "_credentials", lambda user: ("k", "s", "sk"))
+    monkeypatch.setattr(lf, "username_for", lambda *a: "argyle_nz")
+    monkeypatch.setattr(lf, "library_index", lambda c: index)
+    monkeypatch.setattr(lf, "scrobbles",
+                        lambda *a, **k: [("Nobody", "Nothing", 1771070400)])
+    monkeypatch.setattr(lf.ledger, "connect", lambda p: None)
+
+    class FakeConn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, args=()):
+            class R:
+                def fetchone(self_inner): return ("u-alex",)
+            return R()
+    monkeypatch.setattr(lf.navidrome, "open_db", lambda: FakeConn())
+    monkeypatch.setattr(lf.ledger, "connection", lambda: FakeConn())
+    monkeypatch.setattr(sys, "argv",
+                        ["lastfm", "alex", "--audit", str(target)])
+
+    assert lf.main() == 0
+    assert target.exists(), "--audit was accepted and did nothing"
+    body = target.read_text(encoding="utf-8")
+    assert "Nobody - Nothing" in body
+    assert "wrote 1 unmatched titles" in capsys.readouterr().out

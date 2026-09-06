@@ -417,6 +417,19 @@ def main() -> int:
         for line, count in planned["unmatched_examples"]:
             print(f"  {count:>5}x  {line}")
 
+    if args.audit:
+        rows = audit_unmatched(planned, index)
+        with open(args.audit, "w", encoding="utf-8") as handle:
+            handle.write(f"{'plays':>6}  {'score':>5}  scrobbled"
+                         f"{' ' * 52}nearest in library (normalised)\n")
+            for row in rows:
+                handle.write(f"{row['scrobbles']:>6}  {row['score']:>5}  "
+                             f"{row['scrobbled'][:58]:60}{row['nearest'][:58]}\n")
+        close = [r for r in rows if r["score"] >= 85]
+        print(f"\nwrote {len(rows)} unmatched titles to {args.audit}")
+        print(f"  {len(close)} of them look close to something here "
+              f"(score 85+) - those are the ones worth reading")
+
     if not args.apply:
         print("\nDRY RUN. Nothing written. Re-run with --apply.")
         return 0
