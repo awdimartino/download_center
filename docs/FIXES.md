@@ -173,9 +173,32 @@ decision from the user before it can be done.
 - [x] **26. CI runs no tests, lint or type check.** A test job must run
       before the four-minute QEMU build.
 - [x] **27. No linter or formatter config exists.**
-- [ ] **28. `app/main.py` is 939 lines**; split into routers.
-- [ ] **29. `app/static/app.js` is 1,215 lines in one global scope.** The
-      burger rewrite is the natural moment to split it per panel.
+- [ ] **28. `app/main.py` is over a thousand lines**; split into routers.
+- [ ] **29. `app/static/app.js` is one global scope.** The burger rewrite
+      was going to be the moment; it shipped without the split so that a
+      WebKit problem could be attributed to one change or the other. Still
+      worth doing.
+
+---
+
+## Found after the review
+
+- [x] **31. Deleting a running job orphaned its downloads.** See above.
+- [x] **32. A snapshot on a quiet day never counted as taken.** Only changed
+      counts go into `play_snapshot`, so a day when nobody listened wrote no
+      rows - and asking that table whether the day was done answered no, for
+      ever. The nightly job would have repeated it every half hour and the
+      status read permanently stale. `play_snapshot_run` records each run.
+- [x] **33. Play snapshots counted tracks whose files were deleted.**
+      `_current()` filtered `media_file.missing` without joining `folder` -
+      the gotcha already written down in ARCHITECTURE.md. 49 tracks on this
+      library.
+- [x] **34. The snapshot day was off by one.** A snapshot is a total at the
+      moment it runs, so the last day it can describe in full is yesterday;
+      it was labelled today. Every delta would have been a day late.
+- [x] **35. `--audit` was accepted and did nothing.** argparse knew the flag,
+      `main()` never called the function. The tests passed because they
+      exercised the function directly and nothing exercised the command.
 
 ---
 

@@ -874,7 +874,7 @@ const healthError = document.getElementById("health-error");
 const healthBadge = document.getElementById("health-badge");
 
 function renderCheck(check) {
-  const row = el("div", `check ${check.status}`);
+  const row = el("div", `check ${check.status}${check.secondary ? " secondary" : ""}`);
   const label = el("span", "check-label", check.label);
   if (check.hint) label.title = check.hint;
 
@@ -886,21 +886,43 @@ function renderCheck(check) {
   return row;
 }
 
+// Whether the demoted rows are showing. Kept across reloads of the panel so
+// the five-minute poll does not fold it back up while you are reading it.
+let showEverything = false;
+let lastHealth = null;
+
 function renderHealth(report) {
+  lastHealth = report;
   healthError.textContent = report.navidrome_error
     ? `Navidrome database unreadable: ${report.navidrome_error}`
     : "";
   healthError.hidden = !report.navidrome_error;
 
-  healthEl.replaceChildren(
-    ...report.sections.map((section) => {
-      const block = el("section", "check-group");
-      block.append(el("h2", "section-head", section.title));
-      block.append(...section.checks.map(renderCheck));
-      return block;
-    })
-  );
-  healthEmpty.hidden = report.sections.length > 0;
+  const blocks = [];
+  report.sections.forEach((section) => {
+    const rows = section.checks.filter((c) => showEverything || !c.secondary);
+    // A section with nothing left to show is a heading over empty space.
+    if (!rows.length) return;
+    const block = el("section", "check-group");
+    block.append(el("h2", "section-head", section.title));
+    block.append(...rows.map(renderCheck));
+    blocks.push(block);
+  });
+
+  if (report.hidden) {
+    const more = el("button", "ghost show-everything",
+      showEverything
+        ? "Show less"
+        : `Show everything (${report.hidden} more)`);
+    more.addEventListener("click", () => {
+      showEverything = !showEverything;
+      renderHealth(lastHealth);
+    });
+    blocks.push(more);
+  }
+
+  healthEl.replaceChildren(...blocks);
+  healthEmpty.hidden = blocks.length > 0;
 
   setBadge(healthBadge, report.problems);
 }

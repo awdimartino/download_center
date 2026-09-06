@@ -181,3 +181,115 @@ def test_a_zero_db_replaygain_counts_as_measured(wired, tmp_path, identity):
 
     report = health.report(0.0, _libraries(tmp_path), identity)
     assert _find(report, "no_replaygain")["value"] == 1
+
+
+# --- the cut-down panel -----------------------------------------------------
+
+def _keys(report):
+    return {c["key"] for s in report["sections"] for c in s["checks"]}
+
+
+def _check(report, key):
+    for section in report["sections"]:
+        for check in section["checks"]:
+            if check["key"] == key:
+                return check
+    return None
+
+
+def test_the_rows_nobody_acted_on_are_gone(wired, tmp_path, identity):
+    """Informational, never acted on, and between them they taught you that
+    a non-zero number here means nothing."""
+    add_track(wired, "t1", album="", track_number=0, tags=UUID_JSON)
+
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    assert "no_album" not in _keys(report)
+    assert "no_track_number" not in _keys(report)
+
+
+def test_the_staging_summary_is_gone(wired, tmp_path, identity):
+    """The Staging tab shows the same thing in full, one tap away."""
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    keys = _keys(report)
+    assert "staging_albums" not in keys
+    assert "staging_singles" not in keys
+    assert "staging_age" not in keys
+
+
+def test_the_uuid_question_is_asked_once_not_twice(wired, tmp_path, identity):
+    """The database row and the disk row were the same question. So were the
+    two duplicate-UUID rows."""
+    add_track(wired, "t1", tags=UUID_JSON)
+    diskaudit._cache[str(tmp_path / "music")] = diskaudit.Audit(
+        files=1, stamped=1, taken_at=0.0)
+
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    keys = _keys(report)
+    assert "unstamped" in keys and "uuid_collisions" in keys
+    assert "disk_unstamped" not in keys
+    assert "disk_duplicate_uuids" not in keys
+
+
+def test_the_disk_wins_when_it_disagrees_with_the_index(wired, tmp_path,
+                                                        identity):
+    """Navidrome's index can be stale; the files cannot. A file stamped but
+    not yet re-read is not an unstamped file, and calling it one sends you
+    looking for work already done."""
+    add_track(wired, "a", tags=None, path="a.mp3")
+    add_track(wired, "b", tags=None, path="b.mp3")
+    diskaudit._cache[str(tmp_path / "music")] = diskaudit.Audit(
+        files=2, stamped=2, missing_track_uuid=[], taken_at=0.0)
+
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    check = _check(report, "unstamped")
+    assert check["value"] == 0, "the index says two, the disk says none"
+    assert "files themselves" in check["detail"]
+
+
+def test_migration_artefacts_are_demoted_not_deleted(wired, tmp_path, identity):
+    """They can recur, rarely. A row nobody reads still beats a number
+    nobody can get at when it finally matters."""
+    diskaudit._cache[str(tmp_path / "music")] = diskaudit.Audit(
+        files=1, stamped=1, split_albums=["Artist/Album"],
+        spanning_albums=["uuid in 2 directories"], taken_at=0.0)
+
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    for key in ("disk_split_albums", "disk_spanning_albums", "disk_files"):
+        assert _check(report, key)["secondary"] is True, key
+
+
+def test_status_facts_are_demoted(wired, tmp_path, identity):
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    assert _check(report, "uptime")["secondary"] is True
+    assert _check(report, "last_scan")["secondary"] is True
+
+
+def test_free_space_stays_on_the_front(wired, tmp_path, identity):
+    """A fact, but one you act on."""
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    assert _check(report, "disk_free")["secondary"] is False
+
+
+def test_the_badge_counts_only_what_is_shown(wired, tmp_path, identity):
+    """A badge that includes hidden rows sends you looking for a number the
+    panel does not display."""
+    add_track(wired, "bare", tags=None)
+    diskaudit._cache[str(tmp_path / "music")] = diskaudit.Audit(
+        files=1, stamped=0, missing_track_uuid=["bare.mp3"],
+        split_albums=["a", "b"], taken_at=0.0)
+
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    shown = [c for s in report["sections"] for c in s["checks"]
+             if not c["secondary"] and c["status"] in (health.WARN, health.FAIL)]
+    assert report["problems"] == len(shown)
+    assert report["hidden"] > 0
+
+
+def test_the_panel_is_about_a_dozen_rows_not_twenty(wired, tmp_path, identity):
+    """The point of the exercise: twenty-one checks in six sections was too
+    many to read, so nothing in it got read."""
+    add_track(wired, "t1", tags=UUID_JSON)
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    primary = [c for s in report["sections"] for c in s["checks"]
+               if not c["secondary"]]
+    assert len(primary) <= 12, [c["key"] for c in primary]

@@ -170,10 +170,13 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
 
 ## Companion features
 
-- **`health.py`** (522 lines) — checks against Navidrome's database and the
-  disk audit. Scoped to the signed-in user's libraries via `_live_clause`,
-  with one exception: `orphan_annotations` counts every user's dangling
-  stars, because the rows it looks at have no library to scope to.
+- **`health.py`** — checks against Navidrome's database and the disk audit,
+  scoped to the signed-in user's libraries via `_live_clause`. Nine rows
+  that can be acted on, plus a handful marked `secondary` that the panel
+  hides behind a toggle: things that can recur but rarely do, and facts that
+  are status rather than health. Where the database and the disk answer the
+  same question, the disk wins - Navidrome's index can be stale, the files
+  cannot.
 - **`diskaudit.py`** — walks the library reading tags directly, because
   Navidrome's index can be stale or wrong. Runs in the background and
   caches.
@@ -181,6 +184,10 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
   id and by normalised title, **always within one library**. Ranks copies,
   migrates stars and ratings onto the keeper, and *quarantines* losers to
   `duplicates-removed/`. Nothing is deleted.
+- **`playcounts.py`** — nightly snapshots of Navidrome's cumulative play
+  counts, so listening history stops being unrecoverable. Keyed by track
+  UUID, storing only what changed, with a run log so a quiet day still
+  counts as captured. `play_imported` holds the Last.fm backfill beside it.
 - **`playlists.py`** — smart playlist rules. Translates between Navidrome's
   nested operator shape and a flat form the browser can render. Rules it
   cannot represent are marked unsupported rather than flattened.
