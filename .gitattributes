@@ -5,3 +5,7 @@
 
 *.png binary
 *.jpg binary
+
+# Test fixtures. `text=auto` above would guess, and a guess that goes wrong
+# rewrites bytes inside an audio file.
+*.mp3 binary
