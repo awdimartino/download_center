@@ -116,6 +116,10 @@
       </p>
       <button id="staging-import" class="ghost" type="button">Try importing now</button>
     </div>
+    <!-- How the last import went. In the panel that started it, not in the
+         banner at the top of the page: that one sits outside every section,
+         so a message left there followed you onto every other tab. -->
+    <p id="staging-op" class="warn" hidden></p>
     <div id="staging"></div>
     <p id="staging-empty" class="empty">Nothing waiting.</p>
   </section>
@@ -125,6 +129,10 @@
       <p>Every number here should be zero. Anything else is worth a look.</p>
       <button id="health-audit" class="ghost" type="button">Re-read files</button>
     </div>
+    <!-- Kept apart from #health-error below, which is about the report
+         itself: the audit finishing reloads the report, and one element
+         would mean each overwriting the other's message. -->
+    <p id="health-op" class="warn" hidden></p>
     <p id="health-error" class="warn" hidden></p>
     <div id="health"></div>
     <p id="health-empty" class="empty">Checking…</p>

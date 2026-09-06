@@ -831,6 +831,17 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 .staging-meta { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .staging-note { font-size: 11.5px; font-weight: 600; color: var(--warn); }
 
+/* The fourth column the grid above already allows for: why it is still here,
+   and the one thing to do about it. */
+.staging-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.staging-actions .staging-note { text-align: right; }
+
 /* --- health --------------------------------------------------------------- */
 
 .check-group {
@@ -1225,6 +1236,16 @@ select:focus-visible { outline: none; border-color: var(--accent); box-shadow: v
 
   .staging-item { grid-template-columns: 1fr auto; gap: var(--s-1) var(--s-3); padding: var(--s-3); }
   .staging-name { grid-column: 1 / -1; }
+  /* Two columns are not enough for a reason and a button as well, so they
+     take a row of their own rather than squeezing the name off screen. */
+  .staging-actions {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    margin-top: var(--s-1);
+  }
+  .staging-actions button { min-height: 38px; }
 
   /* Long words - paths, album names, URLs - must not push the page wide. */
   .check-detail, .dupe-path, .dupe-album, .staging-name,
