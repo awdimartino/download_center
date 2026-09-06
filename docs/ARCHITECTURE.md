@@ -189,16 +189,28 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
 
 ## Front end
 
-`app.js` is 1,215 lines in one global scope, organised by panel: queue,
-browse, staging, health, duplicates, playlists. Panels are shown by
-toggling `hidden` on `#view-<name>` sections, driven off the tab buttons
-themselves rather than a hand-kept list — an earlier version named a view
-that no longer existed and the resulting throw hid every panel at once.
+`app.js` is one global scope, organised by panel: queue, browse, staging,
+health, duplicates, playlists. It still wants splitting (FIXES item 29).
+
+Navigation is a single menu at every width: a button in the header opens a
+full-height overlay listing the panels. Panels are shown by toggling
+`hidden` on `#view-<name>` sections, driven off the nav buttons themselves
+rather than a hand-kept list — an earlier version named a view that no
+longer existed and the resulting throw hid every panel at once.
+
+The header carries the menu button, the current view's name and the
+connection pill; Settings, the username and Sign out live in the overlay.
+The view name matters: with no tabs on screen it is the only thing saying
+where you are.
 
 `style.css` is token-based: colours, spacing scale, radii and shadow all
 come from `:root`, with one button in three weights (filled, outlined,
-bare). A `@media (max-width: 720px)` block turns the tabs into a fixed
-bottom bar. All of this is scheduled to change with the burger rewrite.
+bare). The `@media (max-width: 720px)` block is now only about *content* —
+forms stacking, grids collapsing, long strings wrapping. Navigation is the
+same at every width, which is what the burger bought: roughly ninety lines
+of phone-only nav went with it, including a 6rem overhang to cover the iOS
+home indicator, a `font-size: 0` trick to swap in short labels, and absolute
+badge positioning that had already been wrong twice.
 
 ---
 
@@ -258,10 +270,16 @@ Each of these cost real time or caused a real bug.
   `position: fixed` loose. `clip` breaks sticky in Chromium too. Do not set
   it; handle long strings with `overflow-wrap`.
 - `backdrop-filter` makes an element a containing block for `position: fixed`
-  descendants. Blurring the header pinned the bottom tab bar inside it.
+  descendants. Blurring the header pinned the bottom tab bar inside it. The
+  bar is gone, but the menu overlay is fixed too, so the header is still
+  deliberately unfiltered.
 - On iOS a fixed bottom bar sits at the *layout* viewport bottom, which is
   not the screen bottom. Extend the element's own box past it; a
-  same-coloured `box-shadow` is not painted there.
+  same-coloured `box-shadow` is not painted there. **No longer in play** —
+  the burger replaced the bottom bar and took this workaround with it. Kept
+  because anything pinned to the bottom on iOS will meet it again.
+- `env(safe-area-inset-*)` is still needed without a bottom bar: the header
+  pads for the notch and the menu panel is full-height, so it pads for both.
 
 **Container boundaries — a path that resolves is not a path that persists**
 

@@ -314,6 +314,10 @@ const settingsForm = document.getElementById("settings");
 const settingsNote = document.getElementById("settings-note");
 
 document.getElementById("settings-toggle").addEventListener("click", async () => {
+  // Settings lives in the menu now, but the form it reveals is in the page
+  // behind it - so the menu has to get out of the way or the form opens
+  // underneath an opaque overlay.
+  closeMenu();
   settingsForm.hidden = !settingsForm.hidden;
   if (settingsForm.hidden) return;
   settingsNote.textContent = "";
@@ -400,32 +404,120 @@ const searchForm = document.getElementById("search-form");
 let kind = "album";
 let searchToken = 0;
 
-document.querySelectorAll(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
-    const view = tab.dataset.view;
-    // Driven off the tabs themselves rather than a hand-kept list: a view
-    // removed from the markup used to leave a name here that resolved to
-    // null, and the resulting throw hid every panel at once.
-    document.querySelectorAll(".tab").forEach((other) => {
-      const section = document.getElementById(`view-${other.dataset.view}`);
-      if (section) section.hidden = other.dataset.view !== view;
-    });
-    // Focus the search box only where a keyboard is already there. On a
-    // phone this summoned the on-screen one the instant the tab was
-    // tapped, covering half the screen and scrolling the page out from
-    // under the thumb that tapped it. Asked of the pointer rather than
-    // the width: a tablet in a wide window is still a touch device, and
-    // a laptop in a narrow one still has a real keyboard.
-    if (view === "browse" && matchMedia("(hover: hover) and (pointer: fine)").matches) {
-      queryInput.focus();
-    }
-    if (view === "staging") loadStaging();
-    if (view === "health") loadHealth();
-    if (view === "dupes") loadDupes();
-    if (view === "playlists") loadPlaylists();
+/* --- navigation ----------------------------------------------------------
+   One menu at every width, replacing the desktop tabs and the fixed bottom
+   bar. The bar needed a 6rem overhang to cover the iOS home indicator, short
+   labels behind a font-size:0 trick and badge positioning of its own; none
+   of that survives, and there is one layout to keep working instead of two. */
+
+const menu = document.getElementById("menu");
+const menuToggle = document.getElementById("menu-toggle");
+const menuBackdrop = document.getElementById("menu-backdrop");
+const menuClose = document.getElementById("menu-close");
+const menuDot = document.getElementById("menu-dot");
+const viewTitle = document.getElementById("view-title");
+const navItems = () => document.querySelectorAll(".nav-item[data-view]");
+
+function openMenu() {
+  menu.hidden = false;
+  menuToggle.setAttribute("aria-expanded", "true");
+  menuToggle.setAttribute("aria-label", "Close menu");
+  // The active section, so the menu opens on where you already are rather
+  // than at the top of the list.
+  const current = document.querySelector(".nav-item.active") || menuClose;
+  current.focus();
+}
+
+function closeMenu() {
+  if (menu.hidden) return;
+  menu.hidden = true;
+  menuToggle.setAttribute("aria-expanded", "false");
+  menuToggle.setAttribute("aria-label", "Open menu");
+  // Back to the control that opened it, or the focus ring is left on an
+  // element that is now display:none and the next Tab starts from the top.
+  menuToggle.focus();
+}
+
+menuToggle.addEventListener("click", () => {
+  if (menu.hidden) openMenu();
+  else closeMenu();
+});
+menuClose.addEventListener("click", closeMenu);
+menuBackdrop.addEventListener("click", closeMenu);
+
+document.addEventListener("keydown", (event) => {
+  if (menu.hidden) return;
+  if (event.key === "Escape") {
+    closeMenu();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  // Keep Tab inside the panel while it is open. Without this the focus ring
+  // walks off into the page behind an opaque overlay, where it cannot be
+  // seen and Enter presses something invisible.
+  const focusable = menu.querySelectorAll("button:not([disabled])");
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+function showView(view) {
+  // Driven off the buttons themselves rather than a hand-kept list: a view
+  // removed from the markup used to leave a name here that resolved to
+  // null, and the resulting throw hid every panel at once.
+  navItems().forEach((item) => {
+    const section = document.getElementById(`view-${item.dataset.view}`);
+    if (section) section.hidden = item.dataset.view !== view;
+    item.classList.toggle("active", item.dataset.view === view);
+  });
+
+  const active = document.querySelector(`.nav-item[data-view="${view}"]`);
+  const label = active && active.querySelector(".nav-label");
+  // With the tabs gone this is the only thing saying where you are.
+  if (label) viewTitle.textContent = label.textContent;
+
+  // Focus the search box only where a keyboard is already there. On a phone
+  // this summoned the on-screen one the instant the tab was tapped, covering
+  // half the screen and scrolling the page out from under the thumb that
+  // tapped it. Asked of the pointer rather than the width: a tablet in a
+  // wide window is still a touch device, and a laptop in a narrow one still
+  // has a real keyboard.
+  if (view === "browse" && matchMedia("(hover: hover) and (pointer: fine)").matches) {
+    queryInput.focus();
+  }
+  if (view === "staging") loadStaging();
+  if (view === "health") loadHealth();
+  if (view === "dupes") loadDupes();
+  if (view === "playlists") loadPlaylists();
+}
+
+navItems().forEach((item) => {
+  item.addEventListener("click", () => {
+    showView(item.dataset.view);
+    closeMenu();
   });
 });
+
+// One place that sets a nav count, so the attention dot cannot fall out of
+// step with the badges it summarises.
+function setBadge(element, count) {
+  element.textContent = count || "";
+  element.hidden = !count;
+  updateAttentionDot();
+}
+
+function updateAttentionDot() {
+  const anything = [...document.querySelectorAll(".nav-item .badge")]
+    .some((badge) => !badge.hidden);
+  menuDot.hidden = !anything;
+}
 
 document.querySelectorAll(".kind").forEach((button) => {
   button.addEventListener("click", () => {
@@ -692,8 +784,7 @@ async function loadStaging() {
     stagingEmpty.textContent = entries.length
       ? "" : `Nothing waiting in ${data.staging || "staging"}.`;
     stagingEmpty.hidden = entries.length > 0;
-    stagingBadge.textContent = entries.length || "";
-    stagingBadge.hidden = !entries.length;
+    setBadge(stagingBadge, entries.length);
   } catch (err) {
     stagingEmpty.textContent = `Could not read staging: ${err.message}`;
     stagingEmpty.hidden = false;
@@ -800,8 +891,7 @@ function renderHealth(report) {
   );
   healthEmpty.hidden = report.sections.length > 0;
 
-  healthBadge.textContent = report.problems || "";
-  healthBadge.hidden = !report.problems;
+  setBadge(healthBadge, report.problems);
 }
 
 async function loadHealth() {
@@ -986,8 +1076,7 @@ function renderDupes(payload) {
   dupesEmpty.textContent = dupeGroups.length ? "" : "No duplicates found.";
   dupesEmpty.hidden = dupeGroups.length > 0;
 
-  dupeBadge.textContent = dupeGroups.length || "";
-  dupeBadge.hidden = !dupeGroups.length;
+  setBadge(dupeBadge, dupeGroups.length);
 
   dupeNote.textContent = payload.confident
     ? `${payload.confident} group(s) share a MusicBrainz recording id and can be resolved in one go.`
@@ -1115,6 +1204,9 @@ const whoamiEl = document.getElementById("whoami");
 let session = null;
 
 function showSignin(show) {
+  // A restart signs everyone out. Leaving the menu up over the sign-in form
+  // would hide the only thing there is to do.
+  if (show) closeMenu();
   signinEl.hidden = !show;
   document.querySelector("header").hidden = show;
   document.querySelector("main").hidden = show;
