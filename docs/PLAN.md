@@ -91,12 +91,18 @@ account's listening).
 Verified against a copy of the live database before shipping: 2,429
 (track, user) pairs carrying 6,568 plays, alex 3,479 and kelly 3,089.
 
-**50 annotation rows cannot be tracked**, and that is worth fixing: 49 mp3s
-whose files are stamped on disk but whose UUID is not in Navidrome's index -
-the "stamped but not yet scanned" case, which a full scan fixes - and one
-`.wav`, which can never carry the tag and whose 6 plays are permanently
-untrackable. Every day before that full scan is 55 plays of history filed
-against nothing.
+**50 annotation rows cannot be tracked, and a full scan does not help.**
+The first guess was "stamped on disk but not yet in the index"; a full scan
+was run and changed nothing, because the files are simply *gone* - deleted
+during the migration. 49 of them sit in directories Navidrome has marked
+`folder.missing = 1` while leaving `media_file.missing = 0`, which is the
+documented gotcha, and the snapshot query was not joining `folder`. Fixed:
+snapshots now count only genuinely live tracks.
+
+Their 51 plays are real history of tracks that no longer exist. Nothing
+recovers those files; the rows could be purged in Navidrome if the clutter
+matters. The remaining one is a `.wav` whose 6 plays are permanently
+untrackable, because the format cannot carry the tag.
 
 **Last.fm's place.** It has genuine per-scrobble timestamps going back
 further than any snapshot could, so it is the better source for *history*.
@@ -105,7 +111,7 @@ one account. Kelly has 3,089 plays. Snapshots cover both users uniformly and
 depend on nothing external. Use Last.fm to backfill, snapshots as the
 ongoing truth.
 
-### 2. Last.fm backfill — one time only
+### 2. Last.fm backfill — one time only — SHIPPED 2026-09-06
 
 Snapshots start history from tonight. Last.fm already holds the part that
 came before, with genuine per-scrobble timestamps, and importing it once
