@@ -164,6 +164,15 @@ CREATE TABLE IF NOT EXISTS import_refusal (
     mtime   REAL NOT NULL
 );
 
+-- Which nights the staging sweep has run. Without it a restart repeats the
+-- night's sweep, and beets competing with playback is exactly what moving it
+-- to once a night was meant to stop.
+CREATE TABLE IF NOT EXISTS sweep_run (
+    day      TEXT PRIMARY KEY,
+    ran_at   REAL NOT NULL,
+    summary  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS play_anomaly (
     noticed_on  TEXT NOT NULL,
     track_uuid  TEXT NOT NULL,

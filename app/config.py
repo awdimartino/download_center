@@ -28,7 +28,7 @@ _ENV_OVERRIDES = {
     "navidrome_url": "DC_NAVIDROME_URL",
     "navidrome_user": "DC_NAVIDROME_USER",
     "navidrome_password": "DC_NAVIDROME_PASSWORD",
-    "staging_sweep_minutes": "DC_STAGING_SWEEP_MINUTES",
+    "staging_sweep_hour": "DC_STAGING_SWEEP_HOUR",
     "play_day_timezone": "DC_PLAY_DAY_TIMEZONE",
 }
 
@@ -66,10 +66,16 @@ class Settings(BaseModel):
     navidrome_user: str = ""
     navidrome_password: str = ""
 
-    # How often to look for anything sitting in staging that no download job
-    # put there - a manual drop, or a job that finished while beets was busy.
-    # Zero disables the sweep.
-    staging_sweep_minutes: int = Field(default=15, ge=0)
+    # The local hour at which to look for anything sitting in staging that no
+    # download job put there - a manual drop, or a job that finished while
+    # beets was busy. Once a night, not every quarter of an hour: beets does
+    # a MusicBrainz lookup per item and moves files about, and on a machine
+    # serving music over a marginal wifi link that is felt as stuttering
+    # playback. `beets_enabled` turns it off entirely.
+    #
+    # Local means `play_day_timezone`, the same setting the nightly play-count
+    # snapshot uses. Midnight by default.
+    staging_sweep_hour: int = Field(default=0, ge=0, le=23)
 
     # How long a file must sit unchanged before it is considered finished.
     # Importing a directory still being written to gets a partial album.
@@ -113,7 +119,7 @@ EDITABLE = (
     "spotify_client_id", "spotify_client_secret", "concurrency",
     "audio_bitrate", "max_attempts", "rate_limit_sleep", "beets_enabled",
     "navidrome_url", "navidrome_user", "navidrome_password",
-    "staging_sweep_minutes",
+    "staging_sweep_hour",
 )
 
 

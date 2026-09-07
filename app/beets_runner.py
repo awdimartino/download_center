@@ -527,6 +527,28 @@ def waiting_in(space: workspace.Workspace) -> list[Path]:
     return candidates
 
 
+def swept_on(day: str) -> bool:
+    """Whether the sweep has already run for a given local day."""
+    try:
+        row = ledger.connection().execute(
+            "SELECT 1 FROM sweep_run WHERE day = ?", (day,)).fetchone()
+    except sqlite3.Error:
+        log.debug("could not read sweep history", exc_info=True)
+        return False
+    return row is not None
+
+
+def record_sweep(day: str, summary: dict[str, Any]) -> None:
+    try:
+        with ledger.connection() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO sweep_run (day, ran_at, summary)"
+                " VALUES (?, ?, ?)",
+                (day, time.time(), json.dumps(summary)[:2000]))
+    except sqlite3.Error:
+        log.warning("could not record the sweep for %s", day, exc_info=True)
+
+
 def sweep_staging() -> dict[str, Any]:
     """Import anything sitting in staging that no download job put there.
 

@@ -46,9 +46,10 @@ STARTED_AT = time.time()
 # acting on.
 NEXT_SWEEP: float | None = None
 
-# How soon after startup the first staging sweep runs, rather than a whole
-# interval later. See _sweep_loop.
-FIRST_SWEEP_SECONDS = 90
+# When the next nightly sweep is due, as a unix timestamp; None while one is
+# running. The Staging panel counts down to it, because "beets has not looked
+# at this yet" and "beets looked and refused" leave a folder in exactly the
+# same state, and only one of them is worth acting on.
 
 
 # --- job state ------------------------------------------------------------
@@ -249,41 +250,55 @@ async def lifespan(app: FastAPI):
                 await task
 
 
-async def _sweep_loop() -> None:
-    """Import anything that arrives in staging without a download job.
+def next_sweep_at() -> float:
+    """When the next nightly sweep is due, as a unix timestamp."""
+    zone = playcounts.zone()
+    now = datetime.now(zone)
+    due = now.replace(hour=settings.staging_sweep_hour, minute=0, second=0,
+                      microsecond=0)
+    if due <= now:
+        due += timedelta(days=1)
+    return due.timestamp()
 
-    Files reach staging by other routes - dropped in by hand, copied from
-    elsewhere, or left behind by a job that finished while beets was busy.
-    Without this they would sit there forever, which was survivable only while
-    something outside this process was also running beets.
+
+async def _sweep_loop() -> None:
+    """Import anything sitting in staging that no download job put there.
+
+    Once a night rather than every quarter of an hour. Beets does a
+    MusicBrainz lookup per item and moves files about, and on a machine
+    serving music over a marginal wifi link that is felt directly as
+    stuttering playback - the sweep was competing with the thing the
+    application exists to provide.
+
+    Driven by "has tonight been done" rather than by sleeping until a clock
+    time, for the reason the snapshot loop is: a container restarting at
+    midnight would otherwise skip the night entirely, and one that restarts
+    at noon would sweep again for no reason.
     """
     global NEXT_SWEEP
-    # The first pass is soon, not a full interval away. The loop used to
-    # sleep the whole interval before ever sweeping, so every restart bought
-    # staging another fifteen minutes of nothing - and on an afternoon of
-    # deploys, each one landing inside the previous wait, the sweep never ran
-    # at all. From the outside that is indistinguishable from an importer
-    # that does not work. Long enough after startup to be past the opening
-    # rush of requests, short enough that a deploy is not a reset.
-    delay = FIRST_SWEEP_SECONDS
     while True:
-        minutes = settings.staging_sweep_minutes
-        if minutes <= 0:
-            NEXT_SWEEP = None
-            await asyncio.sleep(300)
-            continue
-        NEXT_SWEEP = time.time() + delay
-        await asyncio.sleep(delay)
-        delay = minutes * 60
-        # Cleared while it runs, so the panel says "sweeping now" rather than
-        # counting down to a moment that has already passed.
-        NEXT_SWEEP = None
         try:
-            result = await asyncio.to_thread(beets_runner.sweep_staging)
-            if result.get("ran"):
-                log.info("staging sweep: %s", result)
+            zone = playcounts.zone()
+            now = datetime.now(zone)
+            today = now.strftime("%Y-%m-%d")
+            due = now.replace(hour=settings.staging_sweep_hour, minute=0,
+                              second=0, microsecond=0)
+            owed = now >= due and not await asyncio.to_thread(
+                beets_runner.swept_on, today)
+            if owed and settings.beets_enabled:
+                NEXT_SWEEP = None
+                result = await asyncio.to_thread(beets_runner.sweep_staging)
+                await asyncio.to_thread(beets_runner.record_sweep, today, result)
+                log.info("nightly staging sweep: %s", result)
+            NEXT_SWEEP = next_sweep_at()
         except Exception:
             log.exception("staging sweep failed")
+        await asyncio.sleep(SWEEP_CHECK_MINUTES * 60)
+
+
+# How often to ask whether tonight's sweep is owed. Cheap - one row from
+# state.db - and nothing like the sweep itself.
+SWEEP_CHECK_MINUTES = 15
 
 
 # How often to check whether today's snapshot has been taken. Not a clock
@@ -771,7 +786,7 @@ class SettingsUpdate(BaseModel):
     navidrome_url: str | None = None
     navidrome_user: str | None = None
     navidrome_password: str | None = None
-    staging_sweep_minutes: int | None = None
+    staging_sweep_hour: int | None = None
     # Listed in config.EDITABLE and returned by GET, so it has to be settable
     # or the two disagree about what "editable" means.
     beets_enabled: bool | None = None
@@ -1214,7 +1229,7 @@ async def staging_contents(
         return {"library": space.library_name,
                 "staging": str(space.staging), "entries": entries,
                 "next_sweep": NEXT_SWEEP,
-                "sweep_minutes": settings.staging_sweep_minutes,
+                "sweep_hour": settings.staging_sweep_hour,
                 # What beets is doing right now. A sweep with a hundred items
                 # to walk is otherwise indistinguishable from a wedged one,
                 # and the difference decides whether to wait or go and look.

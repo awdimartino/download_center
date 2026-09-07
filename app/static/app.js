@@ -371,7 +371,7 @@ settingsForm.addEventListener("submit", async (event) => {
   const payload = {};
   new FormData(settingsForm).forEach((value, key) => {
     if (value === "") return;
-    payload[key] = ["concurrency", "max_attempts", "staging_sweep_minutes"].includes(key)
+    payload[key] = ["concurrency", "max_attempts", "staging_sweep_hour"].includes(key)
       ? parseInt(value, 10)
       : key === "rate_limit_sleep"
       ? parseFloat(value)
@@ -995,17 +995,10 @@ function stagingRow(entry) {
 // polled: the number only has to be roughly right, and asking every second
 // for a value that changes by one second is a poor trade on a phone.
 let nextSweepAt = null;
-let sweepMinutes = 0;
+let sweepHour = null;
 let sweeping = null;
 
 function renderNextSweep() {
-  if (stagingNext.hidden && !nextSweepAt && !sweepMinutes) return;
-  if (!sweepMinutes) {
-    stagingNext.textContent = "Automatic importing is off — "
-      + "nothing here will be filed until you ask.";
-    stagingNext.hidden = false;
-    return;
-  }
   if (sweeping && sweeping.running) {
     // Which item, and how far in. "Beets is busy" and "beets is stuck" look
     // identical otherwise, and only one of them is worth waiting out.
@@ -1017,17 +1010,27 @@ function renderNextSweep() {
     stagingNext.hidden = false;
     return;
   }
+  if (sweepHour === null || sweepHour === undefined) {
+    stagingNext.hidden = true;
+    return;
+  }
   if (!nextSweepAt) {
     stagingNext.textContent = "Beets is sweeping now.";
     stagingNext.hidden = false;
     return;
   }
   const left = Math.max(0, Math.round((nextSweepAt * 1000 - Date.now()) / 1000));
-  const shown = left >= 60
-    ? `${Math.floor(left / 60)}m ${String(left % 60).padStart(2, "0")}s`
-    : `${left}s`;
-  stagingNext.textContent = `Beets sweeps every ${sweepMinutes} minutes; `
-    + `next in ${shown}.`;
+  const hours = Math.floor(left / 3600);
+  const minutes = Math.floor((left % 3600) / 60);
+  const when = hours
+    ? `${hours}h ${String(minutes).padStart(2, "0")}m`
+    : `${minutes}m ${String(left % 60).padStart(2, "0")}s`;
+  const at = `${String(sweepHour).padStart(2, "0")}:00`;
+  // Once a night, not every quarter hour: beets competes with playback, and
+  // this machine serves music.
+  stagingNext.textContent =
+    `Beets imports nightly at ${at}; next in ${when}. `
+    + "Try importing now does it immediately.";
   stagingNext.hidden = false;
 }
 
@@ -1041,7 +1044,7 @@ async function loadStaging() {
     const data = await fetch("/api/staging").then((r) => r.json());
     const entries = data.entries || [];
     nextSweepAt = data.next_sweep || null;
-    sweepMinutes = data.sweep_minutes || 0;
+    sweepHour = data.sweep_hour;
     sweeping = data.sweeping || null;
     renderNextSweep();
     stagingEl.replaceChildren(...entries.map(stagingRow));

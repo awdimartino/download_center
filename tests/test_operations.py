@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import UTC
 
 import pytest
 
@@ -180,3 +181,42 @@ def test_a_walk_for_a_different_root_is_not_blocked(tmp_path, monkeypatch):
 
     assert audit is not None
     assert str(kelly) in diskaudit._cache
+
+
+# --- the nightly sweep ------------------------------------------------------
+# Once a night, not every quarter of an hour. Beets does a MusicBrainz lookup
+# per item and moves files about, and on a machine serving music over a weak
+# wifi link that is felt as stuttering playback.
+
+def test_a_swept_night_is_remembered(state_db):
+    """A restart must not repeat the night's sweep, which is exactly the
+    competing-with-playback that moving it off a timer was meant to stop."""
+    from app import beets_runner
+
+    assert beets_runner.swept_on("2026-09-07") is False
+    beets_runner.record_sweep("2026-09-07", {"ran": True, "by_user": {}})
+    assert beets_runner.swept_on("2026-09-07") is True
+
+
+def test_each_night_is_its_own_question(state_db):
+    from app import beets_runner
+
+    beets_runner.record_sweep("2026-09-07", {"ran": True})
+    assert beets_runner.swept_on("2026-09-08") is False
+
+
+def test_the_next_sweep_is_the_configured_hour(monkeypatch):
+    """The countdown in the panel reads this, so it has to be the real next
+    occurrence rather than an interval from now."""
+    from datetime import datetime
+
+    from app import main
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "staging_sweep_hour", 3)
+    monkeypatch.setattr(settings, "play_day_timezone", "UTC")
+
+    due = datetime.fromtimestamp(main.next_sweep_at(), tz=UTC)
+
+    assert (due.hour, due.minute) == (3, 0)
+    assert due > datetime.now(UTC), "always the next one, never one gone by"
