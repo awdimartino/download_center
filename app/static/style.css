@@ -1391,9 +1391,24 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 @media (max-width: 640px) {
   /* The bar is the first thing to give: it is decoration over a number that
      is already there. */
-  .listen-row { grid-template-columns: 1.6rem 1fr 3rem; gap: var(--s-1) var(--s-3); }
-  .listen-artist { grid-column: 2 / -1; }
+  /* Placed explicitly, every one of them. Hiding the bar and giving the
+     artist `grid-column: 2 / -1` left the play count to auto-placement:
+     the artist needs two free columns so it wraps to row two, and the count
+     then lands on a *third* row, in the 1.6rem rank column, right-aligned
+     into nothing. Auto-placement is fine until one child spans; after that
+     the rest need telling where to go. */
+  .listen-row { grid-template-columns: 1.6rem 1fr auto; gap: var(--s-1) var(--s-3); }
+  .listen-rank { grid-column: 1; grid-row: 1; }
+  .listen-title { grid-column: 2; grid-row: 1; }
+  .listen-plays { grid-column: 3; grid-row: 1; }
+  .listen-artist { grid-column: 2 / -1; grid-row: 2; }
   .listen-bar { display: none; }
+
+  /* Full-width buttons are right for the one action a panel has - Try
+     importing now, Re-read files - and wrong for a set of three that are a
+     single choice. They were stacking into three big bars. */
+  .listen-range { width: 100%; }
+  .panel-note .listen-range button { width: auto; flex: 1 1 0; min-width: 0; }
 }
 
 /* --- choosing a match -----------------------------------------------------
