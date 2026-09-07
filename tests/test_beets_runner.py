@@ -189,3 +189,106 @@ def test_the_as_is_route_takes_a_kind_and_a_name():
     assert set(ImportAsIs.model_fields) == {"kind", "name"}
     with pytest.raises(ValidationError):
         ImportAsIs(kind="single")
+
+
+# --- choosing a match by hand -----------------------------------------------
+# Beets refuses whenever it cannot separate two releases, which for a popular
+# record means five near-identical pressings. It knows what the candidates
+# are; quiet_fallback throws the list away. These cover getting it back.
+
+def _fake_subprocess(monkeypatch, stdout, returncode=0):
+    seen = {}
+
+    class Result:
+        pass
+
+    def fake_run(command, **kwargs):
+        seen["command"] = command
+        result = Result()
+        result.returncode = returncode
+        result.stdout = stdout
+        result.stderr = ""
+        return result
+
+    monkeypatch.setattr(beets_runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(beets_runner, "ensure_config", lambda space: None)
+    return seen
+
+
+def _space(tmp_path):
+    return type("Space", (), {"beets_dir": tmp_path,
+                              "beets_library": tmp_path / "library.db"})()
+
+
+def test_candidates_are_read_from_the_last_line(monkeypatch, tmp_path):
+    """Beets and its plugins write to stdout as they load - fetchart alone
+    prints three lines about missing API keys. Taking the whole of stdout as
+    JSON would fail on every real invocation."""
+    _fake_subprocess(monkeypatch, stdout=(
+        "fetchart: lastfm: Disabling art source due to missing key\n"
+        '{"kind": "album", "candidates": [{"id": "mb-1", "title": "Thriller"}]}\n'
+    ))
+    answer = beets_runner.candidates(_space(tmp_path), tmp_path / "Thriller")
+
+    assert [c["title"] for c in answer["candidates"]] == ["Thriller"]
+    assert answer["name"] == "Thriller"
+
+
+def test_unreadable_match_output_is_reported_not_guessed(monkeypatch, tmp_path):
+    """An empty candidate list and a broken subprocess must not look the
+    same: one means "MusicBrainz has nothing", the other means "this is
+    broken", and only one of them is worth acting on."""
+    _fake_subprocess(monkeypatch, stdout="Traceback (most recent call last):")
+    answer = beets_runner.candidates(_space(tmp_path), tmp_path / "x")
+
+    assert answer["candidates"] == []
+    assert "could not read" in answer["error"] or "form this" in answer["error"]
+
+
+def test_choosing_a_release_asks_beets_rather_than_overruling_it(
+        monkeypatch, tmp_path):
+    """The chosen release is applied through beets' own choose_match, the
+    extension point its test suite uses, which applies a match whatever the
+    confidence numbers say.
+
+    Loosening the thresholds was tried first and measured: `--search-id`
+    with `strong_rec_thresh` raised *and* the `max_rec` caps lifted still
+    filed nothing, because quiet mode applies only on a strong
+    recommendation and missing tracks cap it at medium regardless."""
+    monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
+    monkeypatch.setattr(beets_runner, "_library_size", lambda space: 0)
+    seen = _fake_subprocess(monkeypatch, stdout="")
+
+    beets_runner.import_chosen(_space(tmp_path), tmp_path / "album", "mb-1")
+
+    command = seen["command"]
+    assert command[1:4] == ["-m", "app.beets_match", "--apply"]
+    assert command[4] == "mb-1"
+
+
+def test_the_sweep_never_loosens_the_thresholds(monkeypatch, tmp_path):
+    """Whatever a person is allowed to decide, the unattended sweep is not:
+    it has nobody to ask, and must keep refusing."""
+    # The words appear in the config, in a comment saying why not to touch
+    # them. What must not appear is a setting.
+    settings_only = "\n".join(
+        line for line in beets_runner.DEFAULT_CONFIG.splitlines()
+        if not line.lstrip().startswith("#"))
+    assert "strong_rec_thresh" not in settings_only
+
+    command = _command(monkeypatch, singleton=False, as_is=False)
+    assert "-c" not in command and "--search-id" not in command
+
+
+def test_a_chosen_release_that_files_nothing_says_so(monkeypatch, tmp_path):
+    """Reported rather than called success. The folder is still sitting
+    there either way, and "it worked" followed by an unchanged panel is the
+    silence this codebase keeps producing."""
+    monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
+    monkeypatch.setattr(beets_runner, "_library_size", lambda space: 7)
+    _fake_subprocess(monkeypatch, stdout="")
+
+    result = beets_runner.import_chosen(_space(tmp_path), tmp_path / "a", "mb-1")
+
+    assert result["imported"] == 0
+    assert result["skipped"] == 1

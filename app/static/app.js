@@ -860,6 +860,104 @@ async function importAsIs(entry, button) {
   if (!payload || payload.detail) loadStaging();
 }
 
+/* --- choosing a match by hand ---------------------------------------------
+   Beets refuses whenever it cannot tell two releases apart, which for a
+   popular record means five near-identical pressings and no winner. It knows
+   perfectly well what the candidates are; `quiet_fallback: skip` throws the
+   list away. This asks for the list back and lets a person point at one. */
+
+const candidatesEl = document.getElementById("candidates");
+// What the pending lookup was for. The answer arrives over the websocket,
+// by which time nothing in the message says which row asked.
+let candidatesFor = null;
+
+function closeCandidates() {
+  candidatesFor = null;
+  candidatesEl.replaceChildren();
+  candidatesEl.hidden = true;
+}
+
+function candidateRow(entry, candidate) {
+  const row = el("div", "candidate");
+  const title = candidate.title || "(untitled)";
+  const detail = [
+    candidate.artist,
+    candidate.year || null,
+    candidate.tracks ? `${candidate.tracks} tracks` : null,
+    candidate.album || null,
+  ].filter(Boolean).join(" · ");
+
+  const use = el("button", "ghost primary", "Use this");
+  use.addEventListener("click", () => useCandidate(entry, candidate, use));
+
+  row.append(
+    el("div", "candidate-title", title),
+    el("div", "candidate-detail", detail),
+    // Beets' own number. Lower is closer; it is shown because the gap
+    // between the first and second is usually the whole story.
+    el("div", "candidate-distance", candidate.distance.toFixed(2)),
+    use
+  );
+  if (candidate.penalties && candidate.penalties.length) {
+    const why = el("div", "candidate-why",
+                   `held against it: ${candidate.penalties.join(", ")}`);
+    row.append(why);
+  }
+  return row;
+}
+
+function showCandidates(result) {
+  const entry = candidatesFor;
+  if (!entry) return;
+  const head = el("div", "candidates-head");
+  head.append(el("span", "candidates-title", `Matches for ${entry.name}`));
+  const close = el("button", "ghost", "Close");
+  close.addEventListener("click", closeCandidates);
+  head.append(close);
+
+  const nodes = [head];
+  if (result.error) {
+    nodes.push(el("p", "candidates-empty", result.error));
+  } else if (!result.candidates.length) {
+    nodes.push(el("p", "candidates-empty",
+      "MusicBrainz has nothing close enough to offer. Import as-is files it "
+      + "with the tags it already has."));
+  } else {
+    nodes.push(...result.candidates.map((c) => candidateRow(entry, c)));
+  }
+  candidatesEl.replaceChildren(...nodes);
+  candidatesEl.hidden = false;
+}
+
+async function askForCandidates(entry, button) {
+  candidatesFor = entry;
+  button.disabled = true;
+  candidatesEl.replaceChildren(
+    el("p", "candidates-empty", `Asking MusicBrainz about ${entry.name}…`));
+  candidatesEl.hidden = false;
+  const payload = await startOperation(
+    "candidates", "/api/staging/candidates",
+    { kind: entry.kind, name: entry.name });
+  if (!payload || payload.detail) {
+    closeCandidates();
+    loadStaging();
+  }
+}
+
+async function useCandidate(entry, candidate, button) {
+  if (!confirm(
+    `File "${entry.name}" as "${candidate.title}"`
+    + `${candidate.artist ? ` by ${candidate.artist}` : ""}?\n\n`
+    + "Beets will tag it from this release and move it into your library.")) {
+    return;
+  }
+  button.disabled = true;
+  closeCandidates();
+  await startOperation("import", "/api/staging/import-chosen",
+                       { kind: entry.kind, name: entry.name,
+                         release_id: candidate.id });
+}
+
 function stagingRow(entry) {
   const row = el("div", `staging-item${entry.settled ? "" : " unsettled"}`);
   const actions = el("div", "staging-actions");
@@ -875,9 +973,11 @@ function stagingRow(entry) {
       note.title = entry.refused;
       actions.append(note);
     }
+    const choose = el("button", "ghost", "Choose match");
+    choose.addEventListener("click", () => askForCandidates(entry, choose));
     const button = el("button", "ghost", "Import as-is");
     button.addEventListener("click", () => importAsIs(entry, button));
-    actions.append(button);
+    actions.append(choose, button);
   }
   row.append(
     el("span", "staging-kind", entry.kind),
@@ -950,6 +1050,9 @@ const OPERATION_LABELS = {
             busy: "Importing…", note: "staging-op" },
   audit: { button: "health-audit", idle: "Re-read files", busy: "Reading…",
            note: "health-op" },
+  // No button of its own: it is started from a row, and its result is a
+  // list rather than a message.
+  candidates: { note: "staging-op" },
 };
 
 // An operation's outcome belongs to the panel that started it. The banner at
@@ -994,10 +1097,17 @@ function showOperation(operation) {
   if (running) return;
 
   if (operation.status === "failed") {
+    if (operation.name === "candidates") closeCandidates();
     setNote(spec.note, `${operation.name} failed: ${operation.error}`, "warn");
     return;
   }
   const result = operation.result || {};
+  if (operation.name === "candidates") {
+    showCandidates(result);
+    // The staging rows re-render with their buttons live again.
+    loadStaging();
+    return;
+  }
   if (operation.name === "import") {
     if (result.busy) {
       setNote(spec.note,
