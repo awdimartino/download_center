@@ -340,3 +340,82 @@ def test_the_owner_marker_is_left_alone(tmp_path, monkeypatch):
     staging.regroup(space)
 
     assert marker.exists()
+
+
+# --- editions of one record -------------------------------------------------
+# Tags disagree about editions far more often than they disagree about
+# records. Splitting on that hands beets two fragments where it could have
+# had one album to match, which is how one Eagles record became three
+# folders in staging.
+
+def test_a_remaster_is_the_same_album(tmp_path, monkeypatch):
+    """The real case: "One of These Nights" and "One of These Nights (2013
+    Remaster)" as two folders, seven files and nine, neither matchable."""
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "a.mp3", album="One of These Nights",
+            artist="Eagles", albumartist="Eagles")
+    _staged(space.singles_dir / "b.mp3",
+            album="One of These Nights (2013 Remaster)",
+            artist="Eagles", albumartist="Eagles")
+
+    staging.regroup(space)
+
+    folders = [p.name for p in space.albums_dir.iterdir() if p.is_dir()]
+    assert folders == ["Eagles - One of These Nights"], \
+        "the folder keeps the plain title, not the remaster suffix"
+
+
+def test_discs_of_one_album_come_together(tmp_path, monkeypatch):
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "a.mp3", album="The Wall (Disc 1)",
+            artist="Pink Floyd", albumartist="Pink Floyd")
+    _staged(space.singles_dir / "b.mp3", album="The Wall (Disc 2)",
+            artist="Pink Floyd", albumartist="Pink Floyd")
+
+    staging.regroup(space)
+
+    folders = [p.name for p in space.albums_dir.iterdir() if p.is_dir()]
+    assert len(folders) == 1
+
+
+def test_a_live_album_is_a_different_record(tmp_path, monkeypatch):
+    """Over-merging is the worse mistake: it invents an album that does not
+    exist. Only markers meaning "another pressing of this" are stripped."""
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "a.mp3", album="Unplugged",
+            artist="Nirvana", albumartist="Nirvana")
+    _staged(space.singles_dir / "b.mp3", album="Unplugged (Live)",
+            artist="Nirvana", albumartist="Nirvana")
+
+    staging.regroup(space)
+
+    assert len({p.name for p in space.albums_dir.iterdir() if p.is_dir()}) == 2
+
+
+def test_a_numbered_sequel_is_a_different_record(tmp_path, monkeypatch):
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "a.mp3", album="Greatest Hits",
+            artist="Queen", albumartist="Queen")
+    _staged(space.singles_dir / "b.mp3", album="Greatest Hits Vol. 2",
+            artist="Queen", albumartist="Queen")
+
+    staging.regroup(space)
+
+    assert len({p.name for p in space.albums_dir.iterdir() if p.is_dir()}) == 2
+
+
+def test_a_missing_album_artist_still_groups(tmp_path, monkeypatch):
+    """The other half of the Eagles split: seven of the files carried no
+    album artist at all, so they fell back to the track artist and landed
+    somewhere else."""
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "a.mp3", album="One of These Nights",
+            artist="Eagles", albumartist=None)
+    _staged(space.singles_dir / "b.mp3",
+            album="One of These Nights (2013 Remaster)",
+            artist="Eagles", albumartist="Eagles")
+
+    staging.regroup(space)
+
+    folders = [p.name for p in space.albums_dir.iterdir() if p.is_dir()]
+    assert folders == ["Eagles - One of These Nights"]

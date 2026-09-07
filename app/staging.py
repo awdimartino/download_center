@@ -211,8 +211,52 @@ def _album_of(path: Path) -> tuple[str, str] | None:
     return artist, album
 
 
+# Edition markers: the same record, pressed again. Stripped only for the
+# purpose of deciding which files belong together - "One of These Nights" and
+# "One of These Nights (2013 Remaster)" are one album split by a suffix, and
+# splitting them hands beets two fragments where it could have had one album
+# to match.
+#
+# Deliberately not stripped: "(Live)", "Vol. 2", "(Acoustic)" and anything
+# else naming a *different* record. Over-merging is the worse mistake - it
+# invents an album that does not exist - so this list only grows for markers
+# that mean "another pressing of this".
+_EDITION = re.compile(
+    r"""\s*[\(\[]\s*(?:\d{4}\s*)?
+        (?:re-?master(?:ed)?|remaster|deluxe|expanded|anniversary|
+           special\s+edition|collector'?s|bonus\s+track|legacy|reissue|
+           mono|stereo)
+        [^\)\]]*[\)\]]""",
+    re.I | re.X)
+_DISC = re.compile(r"\s*[\(\[]?\s*(?:disc|disk|cd)\s*\d+\s*[\)\]]?\s*$",
+                   re.I)
+_TRAILING_EDITION = re.compile(
+    r"""\s*[-–—]\s*(?:\d{4}\s*)?
+        (?:re-?master(?:ed)?|remaster|deluxe\s+edition|mono\s+version|
+           stereo\s+version|single\s+version|bonus\s+track\s+version)
+        \s*$""",
+    re.I | re.X)
+
+
+def album_key(album: str) -> str:
+    """What counts as the same album, for grouping only.
+
+    Never used as a name - the folder keeps a real title. This is the
+    comparison that decides which files are handed to beets together, and
+    it exists because tags disagree about editions far more often than they
+    disagree about records.
+    """
+    cleaned = _EDITION.sub("", album)
+    cleaned = _DISC.sub("", cleaned)
+    cleaned = _TRAILING_EDITION.sub("", cleaned)
+    return re.sub(r"[^\w]+", " ", cleaned, flags=re.UNICODE).strip().lower()
+
+
 def _canonical_artists(albums: dict[str, set[str]]) -> dict[tuple[str, str], str]:
     """One album artist per album, collapsing the featured-artist variants.
+
+    Keyed by the grouping key rather than the raw title, so the editions of
+    one record agree about who made it.
 
     The same trap as the `artist` tag, one level up: a dump of these files
     carries "Drake", "Drake, Detail" and "Drake, JAŸ-Z" as the *album*
@@ -259,7 +303,10 @@ def regroup(space: workspace.Workspace) -> dict[str, int]:
     can run before every import.
     """
     staged: list[tuple[Path, tuple[str, str] | None]] = []
-    albums: dict[str, set[str]] = {}
+    # Grouping key -> the titles seen under it, so the folder can be named
+    # with a real one rather than the stripped comparison string.
+    titles: dict[str, Counter] = {}
+    artists: dict[str, set[str]] = {}
     for parent in (space.albums_dir, space.singles_dir):
         if not parent.is_dir():
             continue
@@ -277,17 +324,25 @@ def regroup(space: workspace.Workspace) -> dict[str, int]:
             album = _album_of(path)
             staged.append((path, album))
             if album is not None:
-                albums.setdefault(album[1], set()).add(album[0])
+                key = album_key(album[1])
+                titles.setdefault(key, Counter())[album[1]] += 1
+                artists.setdefault(key, set()).add(album[0])
 
-    canonical = _canonical_artists(albums)
+    canonical = _canonical_artists(artists)
 
     grouped = singled = 0
     for path, album in staged:
         if album is None:
             target_dir = space.singles_dir
         else:
-            artist = canonical.get((album[1], album[0]), album[0])
-            target_dir = space.albums_dir / sanitize(f"{artist} - {album[1]}")
+            key = album_key(album[1])
+            artist = canonical.get((key, album[0]), album[0])
+            # The shortest title that was actually written on a file. The
+            # edition suffixes are what differ, so the shortest is the plain
+            # one - "One of These Nights", not "One of These Nights (2013
+            # Remaster)" - and it is a real title either way.
+            title = min(sorted(titles[key]), key=len)
+            target_dir = space.albums_dir / sanitize(f"{artist} - {title}")
         if path.parent == target_dir:
             continue
         target_dir.mkdir(parents=True, exist_ok=True)
