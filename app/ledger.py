@@ -145,6 +145,25 @@ CREATE TABLE IF NOT EXISTS play_snapshot_run (
     anomalies  INTEGER NOT NULL
 );
 
+-- What beets looked at and would not file, so the sweep stops asking.
+--
+-- It used to retry every stuck item on every run. With a backlog of things
+-- that will never match - obscure releases, albums MusicBrainz does not have
+-- - the sweep therefore ran continuously, and since one beets process holds
+-- the import lock, every manual import and every candidate lookup was
+-- refused with "an import is already running". The staging tab became
+-- unusable in proportion to how much was stuck in it.
+--
+-- `mtime` is what makes this safe to remember: if the file changes - retagged
+-- by hand, or its tags normalised - it is a different question and gets
+-- asked again.
+CREATE TABLE IF NOT EXISTS import_refusal (
+    path    TEXT PRIMARY KEY,
+    reason  TEXT NOT NULL,
+    at      REAL NOT NULL,
+    mtime   REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS play_anomaly (
     noticed_on  TEXT NOT NULL,
     track_uuid  TEXT NOT NULL,

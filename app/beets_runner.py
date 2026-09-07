@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import navidrome, stamp, uuidtags, workspace
+from . import ledger, navidrome, stamp, uuidtags, workspace
 from .config import CONFIG_DIR, settings
 
 log = logging.getLogger("download_center.beets")
@@ -44,16 +44,25 @@ log = logging.getLogger("download_center.beets")
 # and moving files into the same tree is how things get lost.
 _import_lock = threading.Lock()
 
-# path -> {"reason", "at"} for everything beets looked at and would not file.
-# A refusal is otherwise invisible: the folder simply stays where it is,
-# which looks identical to nothing having run. Guarded by its own lock
-# because the sweep writes it from a worker thread while a request reads it.
+# What beets looked at and would not file. Kept in state.db rather than in
+# memory, because the sweep has to know it across a restart: it used to retry
+# every stuck item every run, so a backlog of things that will never match
+# meant the sweep ran continuously - and one beets process holds the import
+# lock, so every manual import and every candidate lookup was refused with
+# "an import is already running". Staging became unusable in proportion to
+# how much was stuck in it.
 #
-# Deliberately in memory. It is a note about the last attempt, not a fact
-# about the library, and the next sweep rebuilds it; persisting it would
-# mean a schema migration for something that is allowed to be missing.
-_refused: dict[str, dict[str, Any]] = {}
-_refused_lock = threading.Lock()
+# A refusal is remembered against the file's mtime. Change the file and it is
+# a different question, asked again.
+
+# How long a refusal stands before the sweep tries once more. MusicBrainz
+# gains releases; an album nobody had entered in March may be there in June.
+RETRY_REFUSED_AFTER = 7 * 24 * 3600
+
+# What the sweep is doing right now, for the panel. A sweep with a hundred
+# items to walk is otherwise indistinguishable from a wedged one.
+_progress: dict[str, Any] = {}
+_progress_lock = threading.Lock()
 
 
 def _key(path: Path) -> str:
@@ -70,23 +79,87 @@ def _key(path: Path) -> str:
 
 
 def refusal(path: Path) -> dict[str, Any] | None:
-    """Why beets last refused this path, if it did and it is still there."""
-    with _refused_lock:
-        return _refused.get(_key(path))
+    """Why beets last refused this path, if it did and it still stands."""
+    try:
+        row = ledger.connection().execute(
+            "SELECT reason, at, mtime FROM import_refusal WHERE path = ?",
+            (_key(path),)).fetchone()
+    except sqlite3.Error:
+        log.debug("could not read refusals", exc_info=True)
+        return None
+    if row is None:
+        return None
+    return {"reason": row[0], "at": row[1], "mtime": row[2]}
 
 
 def _remember_refusal(path: Path, reason: str) -> None:
-    with _refused_lock:
-        _refused[_key(path)] = {"reason": reason, "at": time.time()}
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    try:
+        with ledger.connection() as connection:
+            connection.execute(
+                "INSERT INTO import_refusal (path, reason, at, mtime)"
+                " VALUES (?, ?, ?, ?)"
+                " ON CONFLICT(path) DO UPDATE SET"
+                " reason = excluded.reason, at = excluded.at,"
+                " mtime = excluded.mtime",
+                (_key(path), reason, time.time(), mtime))
+    except sqlite3.Error:
+        log.warning("could not record a refusal for %s", path.name,
+                    exc_info=True)
 
 
 def _forget_refusals(paths: list[Path]) -> None:
     """Drop notes for paths that were filed, or have otherwise gone."""
-    with _refused_lock:
-        for path in paths:
-            _refused.pop(_key(path), None)
-        for key in [k for k in _refused if not Path(k).exists()]:
-            del _refused[key]
+    try:
+        with ledger.connection() as connection:
+            for path in paths:
+                connection.execute("DELETE FROM import_refusal WHERE path = ?",
+                                   (_key(path),))
+            # Staging names get reused. A note left behind would attach
+            # itself to the next thing to arrive under the same name.
+            for (recorded,) in connection.execute(
+                    "SELECT path FROM import_refusal").fetchall():
+                if not Path(recorded).exists():
+                    connection.execute(
+                        "DELETE FROM import_refusal WHERE path = ?", (recorded,))
+    except sqlite3.Error:
+        log.warning("could not clear refusals", exc_info=True)
+
+
+def worth_trying(path: Path) -> bool:
+    """Whether the *unattended* sweep should offer this to beets again.
+
+    Only the sweep asks. Anything a person presses - Try importing now,
+    Import as-is, choosing a release - goes ahead regardless: they can see
+    the item and they are allowed to disagree.
+    """
+    record = refusal(path)
+    if record is None:
+        return True
+    try:
+        if path.stat().st_mtime > record["mtime"]:
+            return True
+    except OSError:
+        return True
+    return (time.time() - record["at"]) > RETRY_REFUSED_AFTER
+
+
+def progress() -> dict[str, Any]:
+    """What the sweep is working on, if anything."""
+    with _progress_lock:
+        return dict(_progress)
+
+
+def _set_progress(**fields: Any) -> None:
+    with _progress_lock:
+        if fields:
+            _progress.update(fields)
+        else:
+            _progress.clear()
+
 
 # Kept for the one-off migration of the single-user layout; every other
 # reference goes through a workspace.
@@ -95,6 +168,11 @@ LEGACY_BEETS_DIR = CONFIG_DIR / "beets"
 # Long enough for art fetching and MusicBrainz lookups on a slow connection,
 # short enough that a wedged import cannot block the queue forever.
 TIMEOUT = 900
+
+# How long a caller waits for the import lock before reporting it busy. Long
+# enough to outlast one ordinary item, short enough that a threadpool worker
+# blocked here is never a problem.
+LOCK_WAIT = 45
 
 DEFAULT_CONFIG = """\
 # Written by Download Center on first run. Edit freely - it is never
@@ -307,26 +385,7 @@ def import_paths(space: workspace.Workspace, published: list[Path],
     """
     if not settings.beets_enabled:
         return {"ran": False, "reason": "disabled"}
-
-    # Two beets processes moving files into one tree is a way to lose things.
-    # Held across every workspace rather than per user: they have separate
-    # databases but the machine has one disk, and a sweep plus a finishing
-    # job is the collision worth avoiding.
-    #
-    # Acquired without blocking. Waiting here meant a threadpool worker sat
-    # on this lock for as long as the running import took - up to 900s per
-    # path - and enough of those starve every other `to_thread` call in the
-    # application. Refusing is honest and costs nothing: an import is a sweep
-    # over whatever is waiting, so the one already running will pick up this
-    # caller's paths too if they have settled, and the timer catches the rest.
-    if not _import_lock.acquire(blocking=False):
-        log.info("an import is already running; not starting another")
-        return {"ran": False, "reason": "an import is already running",
-                "busy": True}
-    try:
-        return _import_paths(space, published, as_is)
-    finally:
-        _import_lock.release()
+    return _import_paths(space, published, as_is)
 
 
 def _import_paths(space: workspace.Workspace, published: list[Path],
@@ -338,39 +397,69 @@ def _import_paths(space: workspace.Workspace, published: list[Path],
     # missed, at the cost of occasionally re-checking a file already stamped.
     started = time.time()
 
-    for path in published:
+    for index, path in enumerate(published, start=1):
         if not path.exists():
             continue
-        singleton = _singleton_mode(path, as_is)
-        before = _library_size(space)
-        ok, output = _run(space, path, singleton, as_is)
-        if not ok:
-            detail = output.splitlines()[-1] if output else "failed"
-            failed.append(f"{path.name}: {detail}")
-            _remember_refusal(path, f"beets could not import this: {detail}")
-            log.warning("beets import failed for %s: %s", path.name, output)
-            continue
-        # Asked of beets' own database rather than of its console output.
-        # This used to test `"Skipping" in output`, which is a human-readable
-        # message that changes between versions and matches any path with the
-        # word in it. Stamping and the Navidrome scan are both gated on the
-        # answer, so getting it wrong silently switched off identity tagging
-        # for the import.
-        if _library_size(space) > before:
-            imported += 1
-            filed.append(path)
-            log.info("beets imported %s", path.name)
-        else:
-            skipped += 1
-            # An as-is import that files nothing is not "no confident match"
-            # - there was no matching. Something else stopped it, and saying
-            # the wrong reason is worse than saying little.
-            _remember_refusal(path, "nothing was filed, and beets said why in the log"
-                              if as_is else "beets found no confident match")
-            log.info("beets skipped %s (%s)", path.name,
-                     "as-is import filed nothing" if as_is
-                     else "no confident match")
+        # Said out loud: a sweep with a hundred items to walk looks exactly
+        # like a wedged one from the panel.
+        _set_progress(running=True, name=path.name, done=index - 1,
+                      total=len(published), user=space.username)
 
+        # One item, one turn with the lock.
+        #
+        # Two beets processes moving files into one tree is a way to lose
+        # things, so only one runs at a time - across every workspace,
+        # because they have separate databases but the machine has one disk.
+        # What changed is the *granularity*: the lock used to be held for a
+        # whole run, which was defensible when a sweep was three albums and
+        # became absurd once one could walk a hundred stuck items for an
+        # hour. Everything a person pressed in that hour answered "an import
+        # is already running". Now the wait is one item long.
+        if not _import_lock.acquire(timeout=LOCK_WAIT):
+            if not (imported or skipped or failed):
+                _set_progress()
+                log.info("an import is already running; not starting another")
+                return {"ran": False, "reason": "an import is already running",
+                        "busy": True}
+            log.info("stopping this run at %d of %d: something else wants beets",
+                     index, len(published))
+            break
+        try:
+            singleton = _singleton_mode(path, as_is)
+            before = _library_size(space)
+            ok, output = _run(space, path, singleton, as_is)
+            if not ok:
+                detail = output.splitlines()[-1] if output else "failed"
+                failed.append(f"{path.name}: {detail}")
+                _remember_refusal(path, f"beets could not import this: {detail}")
+                log.warning("beets import failed for %s: %s", path.name, output)
+                continue
+            # Asked of beets' own database rather than of its console output.
+            # This used to test `"Skipping" in output`, which is a
+            # human-readable message that changes between versions and matches
+            # any path with the word in it. Stamping and the Navidrome scan are
+            # both gated on the answer, so getting it wrong silently switched
+            # off identity tagging for the import.
+            if _library_size(space) > before:
+                imported += 1
+                filed.append(path)
+                log.info("beets imported %s", path.name)
+            else:
+                skipped += 1
+                # An as-is import that files nothing is not "no confident
+                # match" - there was no matching. Something else stopped it,
+                # and the wrong reason is worse than a vague one.
+                _remember_refusal(
+                    path,
+                    "nothing was filed, and beets said why in the log" if as_is
+                    else "beets found no confident match")
+                log.info("beets skipped %s (%s)", path.name,
+                         "as-is import filed nothing" if as_is
+                         else "no confident match")
+        finally:
+            _import_lock.release()
+
+    _set_progress()
     # Only what was filed: a path that was refused again this run has just
     # had its note rewritten, and must keep it.
     _forget_refusals(filed)
@@ -443,8 +532,14 @@ def sweep_staging() -> dict[str, Any]:
 
     Files arrive by other routes - a manual drop, a job that finished while
     beets was busy, something copied in from elsewhere - and without this they
-    would sit in staging indefinitely. Beets moves out what it can match, so
-    whatever remains afterwards is by definition something that needs a human.
+    would sit in staging indefinitely.
+
+    Only what is worth asking about. Beets is deterministic: an item it
+    refused an hour ago, unchanged, gets refused again, and the sweep used to
+    walk the whole backlog every time and hold the import lock for as long as
+    that took. Everything a person pressed in the meantime came back "an
+    import is already running". So a refusal stands until the file changes or
+    a week passes; anything a person asks for ignores this entirely.
 
     Runs on a timer with nobody signed in, which is exactly why staging is
     split by person: the folder is the only remaining record of whose files
@@ -454,17 +549,21 @@ def sweep_staging() -> dict[str, Any]:
         return {"ran": False, "reason": "disabled"}
 
     results: dict[str, Any] = {}
+    skipped_known = 0
     for space in workspace.existing():
-        candidates = waiting_in(space)
+        waiting = waiting_in(space)
+        candidates = [p for p in waiting if worth_trying(p)]
+        skipped_known += len(waiting) - len(candidates)
         if not candidates:
             continue
-        log.info("sweeping %d item(s) from %s's staging",
-                 len(candidates), space.username)
+        log.info("sweeping %d of %d item(s) from %s's staging",
+                 len(candidates), len(waiting), space.username)
         results[space.username] = import_paths(space, candidates)
 
     if not results:
-        return {"ran": False, "reason": "nothing waiting"}
-    return {"ran": True, "by_user": results}
+        return {"ran": False, "reason": "nothing new waiting",
+                "already_refused": skipped_known}
+    return {"ran": True, "by_user": results, "already_refused": skipped_known}
 
 
 def _prune_empty(space: workspace.Workspace) -> None:

@@ -996,12 +996,24 @@ function stagingRow(entry) {
 // for a value that changes by one second is a poor trade on a phone.
 let nextSweepAt = null;
 let sweepMinutes = 0;
+let sweeping = null;
 
 function renderNextSweep() {
   if (stagingNext.hidden && !nextSweepAt && !sweepMinutes) return;
   if (!sweepMinutes) {
     stagingNext.textContent = "Automatic importing is off — "
       + "nothing here will be filed until you ask.";
+    stagingNext.hidden = false;
+    return;
+  }
+  if (sweeping && sweeping.running) {
+    // Which item, and how far in. "Beets is busy" and "beets is stuck" look
+    // identical otherwise, and only one of them is worth waiting out.
+    const position = sweeping.total
+      ? ` (${(sweeping.done || 0) + 1} of ${sweeping.total})` : "";
+    stagingNext.textContent =
+      `Beets is filing ${sweeping.name}${position}. Buttons here wait for it `
+      + "to finish the current item.";
     stagingNext.hidden = false;
     return;
   }
@@ -1030,6 +1042,7 @@ async function loadStaging() {
     const entries = data.entries || [];
     nextSweepAt = data.next_sweep || null;
     sweepMinutes = data.sweep_minutes || 0;
+    sweeping = data.sweeping || null;
     renderNextSweep();
     stagingEl.replaceChildren(...entries.map(stagingRow));
     stagingEmpty.textContent = entries.length

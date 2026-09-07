@@ -1214,7 +1214,11 @@ async def staging_contents(
         return {"library": space.library_name,
                 "staging": str(space.staging), "entries": entries,
                 "next_sweep": NEXT_SWEEP,
-                "sweep_minutes": settings.staging_sweep_minutes}
+                "sweep_minutes": settings.staging_sweep_minutes,
+                # What beets is doing right now. A sweep with a hundred items
+                # to walk is otherwise indistinguishable from a wedged one,
+                # and the difference decides whether to wait or go and look.
+                "sweeping": beets_runner.progress()}
 
     try:
         return await asyncio.to_thread(collect)

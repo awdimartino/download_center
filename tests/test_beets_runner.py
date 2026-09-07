@@ -14,21 +14,25 @@ absent - which is the exact answer the code under test is asking for.
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 
 import pytest
 from mutagen.easyid3 import EasyID3
 
-from app import beets_runner
+from app import beets_runner, ledger
 
 SILENCE = Path(__file__).parent / "fixtures" / "silence.mp3"
 
 
 @pytest.fixture(autouse=True)
-def forget_refusals():
-    beets_runner._refused.clear()
+def refusals(state_db):
+    """Refusals live in state.db now rather than in memory.
+
+    They had to: the sweep needs to know across a restart what beets already
+    turned down, or it walks the whole backlog again on every run and holds
+    the import lock while it does."""
     yield
-    beets_runner._refused.clear()
 
 
 def track(directory: Path, name: str, album: str | None = None) -> Path:
@@ -292,3 +296,76 @@ def test_a_chosen_release_that_files_nothing_says_so(monkeypatch, tmp_path):
 
     assert result["imported"] == 0
     assert result["skipped"] == 1
+
+
+# --- not asking beets the same question for ever ----------------------------
+# The sweep used to retry every stuck item on every run. With a backlog of
+# things that will never match, it therefore ran continuously - and one beets
+# process holds the import lock, so every button in the staging tab answered
+# "an import is already running". This is the fix.
+
+def test_a_fresh_item_is_worth_trying(tmp_path):
+    assert beets_runner.worth_trying(track(tmp_path, "new.mp3")) is True
+
+
+def test_something_beets_already_refused_is_not_asked_again(tmp_path):
+    """Beets is deterministic. The same file, unchanged, gets the same
+    answer, and the asking is what was making staging unusable."""
+    path = track(tmp_path, "stuck.mp3")
+    beets_runner._remember_refusal(path, "no confident match")
+
+    assert beets_runner.worth_trying(path) is False
+
+
+def test_a_changed_file_is_a_different_question(tmp_path):
+    """Retagged by hand, or normalised by a script - whatever beets thought
+    about the old bytes does not apply."""
+    path = track(tmp_path, "stuck.mp3")
+    beets_runner._remember_refusal(path, "no confident match")
+
+    import os
+    later = path.stat().st_mtime + 60
+    os.utime(path, (later, later))
+
+    assert beets_runner.worth_trying(path) is True
+
+
+def test_a_refusal_expires_eventually(tmp_path):
+    """MusicBrainz gains releases. An album nobody had entered in March may
+    be there in June, and never asking again would be its own trap."""
+    path = track(tmp_path, "stuck.mp3")
+    beets_runner._remember_refusal(path, "no confident match")
+    ledger.connection().execute(
+        "UPDATE import_refusal SET at = ?",
+        (time.time() - beets_runner.RETRY_REFUSED_AFTER - 1,))
+    ledger.connection().commit()
+
+    assert beets_runner.worth_trying(path) is True
+
+
+def test_a_refusal_survives_a_restart(tmp_path):
+    """The whole point of moving this out of memory: a restart used to mean
+    the next sweep re-walked the entire backlog."""
+    path = track(tmp_path, "stuck.mp3")
+    beets_runner._remember_refusal(path, "no confident match")
+
+    stored = ledger.connection().execute(
+        "SELECT reason FROM import_refusal WHERE path = ?",
+        (str(path.resolve()),)).fetchone()
+    assert stored[0] == "no confident match"
+
+
+def test_only_the_sweep_second_guesses_beets():
+    """`worth_trying` gates the unattended sweep and nothing else. Import
+    as-is, Choose match and Try importing now go straight to beets: the
+    person can see the item and is allowed to disagree about it."""
+    import inspect
+
+    source = inspect.getsource(beets_runner)
+    sweep = source[source.index("def sweep_staging"):
+                   source.index("def _prune_empty")]
+    importer = source[source.index("def _import_paths"):
+                      source.index("def settled")]
+
+    assert "worth_trying" in sweep
+    assert "worth_trying" not in importer

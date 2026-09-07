@@ -104,18 +104,33 @@ async def test_an_unstarted_operation_reads_as_idle():
 
 # --- the locks that used to block a threadpool worker ---------------------
 
-def test_a_second_import_is_refused_rather_than_queued(tmp_path, monkeypatch):
-    """It used to wait on the lock from inside a threadpool worker, for as
-    long as the running import took - up to 900s per path."""
+def test_a_second_import_waits_briefly_then_reports_busy(tmp_path, monkeypatch):
+    """Once it waited unboundedly, from inside a threadpool worker, for as
+    long as the running import took - up to 900s per path. Then it refused
+    the instant the lock was held, which was fine until a sweep could run for
+    an hour and every button in the staging tab answered "an import is
+    already running".
+
+    Now: a bounded wait, about one item long. The sweep releases the lock
+    between items, so that is usually all it takes."""
     monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
+    monkeypatch.setattr(beets_runner, "ensure_config", lambda space: None)
+    monkeypatch.setattr(beets_runner, "LOCK_WAIT", 0.05)
+    waiting = tmp_path / "x.mp3"
+    waiting.write_bytes(b"")
+
     beets_runner._import_lock.acquire()
     try:
-        result = beets_runner.import_paths(object(), [tmp_path / "x.mp3"])
+        started = time.monotonic()
+        space = type("Space", (), {"username": "alex"})()
+        result = beets_runner.import_paths(space, [waiting])
+        waited = time.monotonic() - started
     finally:
         beets_runner._import_lock.release()
 
     assert result["ran"] is False
     assert result["busy"] is True
+    assert waited < 5, "a caller must not sit on this lock indefinitely"
 
 
 def test_concurrent_audits_share_one_walk(tmp_path, monkeypatch):
