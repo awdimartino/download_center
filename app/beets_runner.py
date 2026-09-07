@@ -24,6 +24,7 @@ untouched.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sqlite3
@@ -478,3 +479,117 @@ def _prune_empty(space: workspace.Workspace) -> None:
         for entry in parent.iterdir():
             if entry.is_dir() and not any(entry.rglob("*")):
                 entry.rmdir()
+
+
+# --- choosing a match by hand ----------------------------------------------
+# The other half of the escape hatch. Import as-is says "file it with what it
+# has"; this says "it is *this* release, use that". Wanted where the seeded
+# tags are wrong rather than merely unconfirmed.
+
+# Beets gets a while: a candidate lookup is several MusicBrainz round trips
+# and this runs on a Raspberry Pi. Shorter than the import timeout because
+# nothing is being written and a person is watching a spinner.
+MATCH_TIMEOUT = 180
+
+
+def candidates(space: workspace.Workspace, path: Path) -> dict[str, Any]:
+    """What beets would match this staged path against, in its own order."""
+    ensure_config(space)
+    command = [sys.executable, "-m", "app.beets_match", str(path)]
+    environment = {**os.environ, "BEETSDIR": str(space.beets_dir)}
+    try:
+        result = subprocess.run(
+            command, env=environment, capture_output=True, text=True,
+            timeout=MATCH_TIMEOUT, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"error": f"looking for matches took longer than "
+                         f"{MATCH_TIMEOUT}s", "candidates": []}
+    except FileNotFoundError:
+        return {"error": "beets is not available here", "candidates": []}
+
+    # Scanned backwards for the answer rather than assuming it is the last
+    # line. Beets talks on the way past - plugins announce missing API keys,
+    # and a database migration prints a backup path per table - and it does
+    # some of it *after* the command has run. Anchoring on either end of the
+    # output is a silent failure waiting for the next beets release.
+    answer = None
+    for line in reversed((result.stdout or "").splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            answer = json.loads(line)
+            break
+        except json.JSONDecodeError:
+            continue
+    if answer is None:
+        log.warning("could not read the match output for %s: %s",
+                    path.name, (result.stdout or result.stderr)[-300:])
+        return {"error": "beets did not answer in a form this could read",
+                "candidates": []}
+    answer.setdefault("candidates", [])
+    answer["name"] = path.name
+    return answer
+
+
+def import_chosen(space: workspace.Workspace, path: Path,
+                  release_id: str) -> dict[str, Any]:
+    """File a staged path as the release a person picked.
+
+    Beets is asked rather than overruled: `app.beets_match --apply` answers
+    its own choose_match with the release named here, which applies that
+    match whatever the confidence numbers say. Loosening the thresholds
+    instead was tried first and does not even work - measured against a real
+    staged album, `--search-id` with `strong_rec_thresh` raised *and* the
+    `max_rec` caps lifted still filed nothing, because quiet mode applies
+    only on a strong recommendation and missing tracks cap it at medium.
+    """
+    if not settings.beets_enabled:
+        return {"ran": False, "reason": "disabled"}
+    if not _import_lock.acquire(blocking=False):
+        return {"ran": False, "reason": "an import is already running",
+                "busy": True}
+    try:
+        ensure_config(space)
+        before = _library_size(space)
+        started = time.time()
+        command = [sys.executable, "-m", "app.beets_match",
+                   "--apply", release_id, str(path)]
+        try:
+            result = subprocess.run(
+                command, env={**os.environ, "BEETSDIR": str(space.beets_dir)},
+                capture_output=True, text=True, timeout=TIMEOUT, check=False)
+        except subprocess.TimeoutExpired:
+            return {"ran": True, "imported": 0, "skipped": 0,
+                    "failed": [f"{path.name}: timed out after {TIMEOUT}s"]}
+
+        output = (result.stdout + result.stderr).strip()
+        if result.returncode != 0:
+            detail = output.splitlines()[-1] if output else "failed"
+            _remember_refusal(path, f"beets could not import this: {detail}")
+            log.warning("choosing a release failed for %s: %s", path.name, output)
+            return {"ran": True, "imported": 0, "skipped": 0,
+                    "failed": [f"{path.name}: {detail}"]}
+
+        # Asked of the library, not of the subprocess: it reports what it
+        # chose, and this reports what actually arrived.
+        if _library_size(space) <= before:
+            _remember_refusal(
+                path, "the chosen release did not file it; beets said why in "
+                      "the log")
+            log.info("chosen release %s filed nothing for %s",
+                     release_id, path.name)
+            return {"ran": True, "imported": 0, "skipped": 1, "failed": [],
+                    "chosen": release_id}
+
+        _forget_refusals([path])
+        _prune_empty(space)
+        stamped = stamp.stamp(filed_since(space, started))
+        navidrome.notify()
+        log.info("filed %s as %s", path.name, release_id)
+        return {"ran": True, "imported": 1, "skipped": 0, "failed": [],
+                "chosen": release_id, "stamped": stamped.tracks_written,
+                "stamp_failures": stamped.failures}
+    finally:
+        _import_lock.release()

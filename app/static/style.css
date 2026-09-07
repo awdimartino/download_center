@@ -1395,3 +1395,69 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   .listen-artist { grid-column: 2 / -1; }
   .listen-bar { display: none; }
 }
+
+/* --- choosing a match -----------------------------------------------------
+   The releases beets found and would not decide between. In the panel, not a
+   dialog: a modal over a list on a phone is where several of this project's
+   layout bugs came from. */
+
+.candidates {
+  margin-top: var(--s-3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.candidates-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel-2);
+}
+.candidates-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
+  overflow-wrap: anywhere;
+}
+.candidates-empty {
+  margin: 0;
+  padding: var(--s-4);
+  color: var(--faint);
+  font-size: var(--t-sm);
+}
+
+.candidate {
+  display: grid;
+  grid-template-columns: minmax(9rem, 2fr) minmax(8rem, 3fr) 3rem auto;
+  gap: var(--s-1) var(--s-3);
+  align-items: center;
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--line-soft);
+}
+.candidate:last-child { border-bottom: 0; }
+.candidate-title { font-size: var(--t-md); overflow-wrap: anywhere; }
+.candidate-detail { font-size: var(--t-sm); color: var(--muted); overflow-wrap: anywhere; }
+/* Beets' own distance. Lower is closer, and the gap between the first and
+   the second is usually the whole story. */
+.candidate-distance {
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  text-align: right;
+}
+.candidate-why {
+  grid-column: 1 / -1;
+  font-size: var(--t-xs);
+  color: var(--faint);
+}
+
+@media (max-width: 640px) {
+  .candidate { grid-template-columns: 1fr auto; }
+  .candidate-detail { grid-column: 1 / -1; }
+  .candidate-distance { grid-column: 1; text-align: left; }
+}

@@ -1291,6 +1291,69 @@ async def staging_import_as_is(
     return {"started": started, "operation": operation.as_dict()}
 
 
+@app.post("/api/staging/candidates")
+async def staging_candidates(
+    body: ImportAsIs,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """What beets would match this item against.
+
+    An operation rather than a plain request: a candidate lookup is several
+    MusicBrainz round trips and took up to seventy seconds against the real
+    backlog, which is far longer than a request should be held open. The
+    answer arrives over the websocket.
+    """
+    try:
+        space = workspace.for_session(session.identity)
+        path = space.staged(body.kind, body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def run() -> dict[str, Any]:
+        return beets_runner.candidates(space, path)
+
+    operation, started = operations.start(
+        "candidates", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
+class ImportChosen(BaseModel):
+    kind: str
+    name: str
+    release_id: str
+
+
+@app.post("/api/staging/import-chosen")
+async def staging_import_chosen(
+    body: ImportChosen,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """File a staged item as the release the caller picked.
+
+    The judgement is theirs: beets is told which release it is and asked to
+    do the filing. Nothing here is reachable without someone choosing from a
+    list they were shown.
+    """
+    try:
+        space = workspace.for_session(session.identity)
+        path = space.staged(body.kind, body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not beets_runner.settled(path):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{body.name} is still arriving; try again shortly.")
+
+    def run() -> dict[str, Any]:
+        return beets_runner.import_chosen(space, path, body.release_id)
+
+    # Shares the import gate: it is a beets run over the same tree.
+    operation, started = operations.start(
+        "import", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
 @app.get("/api/operations")
 async def list_operations(
     session: auth.Session = Depends(current_session),
