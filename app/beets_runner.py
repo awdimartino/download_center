@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import ledger, navidrome, stamp, uuidtags, workspace
+from . import ledger, navidrome, stamp, staging, uuidtags, workspace
 from .config import CONFIG_DIR, settings
 
 log = logging.getLogger("download_center.beets")
@@ -551,6 +551,11 @@ def sweep_staging() -> dict[str, Any]:
     results: dict[str, Any] = {}
     skipped_known = 0
     for space in workspace.existing():
+        # One folder per album before anything is handed over. Files arrive
+        # by routes that know nothing about each other - a job, a hand drop,
+        # a copy from somewhere else - and what beets is asked about should
+        # be decided by the tags rather than by which of those it came from.
+        staging.regroup(space)
         waiting = waiting_in(space)
         candidates = [p for p in waiting if worth_trying(p)]
         skipped_known += len(waiting) - len(candidates)

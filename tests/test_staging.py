@@ -117,3 +117,226 @@ def test_a_multi_disc_track_carries_its_disc_number():
 def test_a_track_with_no_number_still_produces_a_filename():
     item = {"title": "Song", "artist": "A", "track_no": None, "disc_no": None}
     assert staging.track_filename(item, multi_disc=False).endswith(".mp3")
+
+
+# --- where a track is staged ------------------------------------------------
+# One folder per album, decided by what the track says it is on. A singleton
+# import files to `Non-Album/$artist/$title` whatever the album tag says -
+# measured against beets, not assumed - so sending a fragment to singles put
+# it nowhere near the rest of its record.
+
+def _item(number, *, album="Thriller", album_id="a1", total=9, title=None):
+    return {
+        "id": f"i{number}", "album_id": album_id, "album": album,
+        "album_total": total, "album_artist": "Michael Jackson",
+        "artist": "Michael Jackson", "title": title or f"Track {number}",
+        "track_no": number, "disc_no": 1,
+    }
+
+
+def _space(tmp_path, monkeypatch):
+    from app import workspace
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "output_dir", tmp_path / "untagged")
+    monkeypatch.setattr(workspace, "CONFIG_DIR", tmp_path / "config")
+    library = tmp_path / "music"
+    library.mkdir()
+    space = workspace.Workspace(username="alex", library_id=1,
+                                library_name="Music", library_path=library)
+    space.prepare()
+    return space
+
+
+def test_a_complete_album_is_staged_as_an_album(tmp_path, monkeypatch):
+    space = _space(tmp_path, monkeypatch)
+    items = [_item(n) for n in range(1, 10)]
+
+    layout = staging.plan(space, "job1", items)
+
+    assert all(space.albums_dir in plan["final"].parents
+               for plan in layout.values())
+    assert all(plan["complete_album"] for plan in layout.values())
+
+
+def test_a_fragment_is_still_staged_under_its_album(tmp_path, monkeypatch):
+    """Two tracks of a twelve track record. Beets will not match that
+    unattended and they wait for someone to choose the release - but they
+    wait *together*, under the album they belong to."""
+    space = _space(tmp_path, monkeypatch)
+    items = [_item(1), _item(2)]
+
+    layout = staging.plan(space, "job1", items)
+
+    for plan in layout.values():
+        assert plan["final"].parent.name == "Michael Jackson - Thriller"
+        assert plan["complete_album"] is False
+
+
+def test_a_track_with_no_album_is_a_single(tmp_path, monkeypatch):
+    """A yt-dlp download of something that is not on a record. Non-Album is
+    where that belongs and a single is what it is."""
+    space = _space(tmp_path, monkeypatch)
+    loose = _item(1, album=None, album_id=None, total=0)
+
+    layout = staging.plan(space, "job1", [loose])
+
+    assert layout["i1"]["final"].parent == space.singles_dir
+
+
+# --- regrouping what is already there ---------------------------------------
+
+def _staged(path, album=None, artist="Michael Jackson", albumartist=None):
+    import shutil
+
+    from mutagen.easyid3 import EasyID3
+
+    fixture = Path(__file__).parent / "fixtures" / "silence.mp3"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(fixture, path)
+    tags = EasyID3(path)
+    tags["title"] = path.stem
+    tags["artist"] = artist
+    if albumartist:
+        tags["albumartist"] = albumartist
+    if album:
+        tags["album"] = album
+    tags.save()
+    return path
+
+
+def test_loose_singles_are_grouped_into_their_album(tmp_path, monkeypatch):
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "one.mp3", album="Thriller")
+    _staged(space.singles_dir / "two.mp3", album="Thriller")
+
+    staging.regroup(space)
+
+    folder = space.albums_dir / "Michael Jackson - Thriller"
+    assert sorted(p.name for p in folder.iterdir()) == ["one.mp3", "two.mp3"]
+    assert not any(space.singles_dir.iterdir())
+
+
+def test_a_dump_of_many_albums_is_split_up(tmp_path, monkeypatch):
+    """The case this was written for: a folder of loose tracks spanning a
+    hundred albums, which staging handed to beets as a single release."""
+    space = _space(tmp_path, monkeypatch)
+    dump = space.albums_dir / "8-28"
+    _staged(dump / "a.mp3", album="Thriller")
+    _staged(dump / "b.mp3", album="Bad")
+
+    staging.regroup(space)
+
+    assert (space.albums_dir / "Michael Jackson - Thriller" / "a.mp3").exists()
+    assert (space.albums_dir / "Michael Jackson - Bad" / "b.mp3").exists()
+    assert not dump.exists(), "the emptied folder is not left to be imported"
+
+
+def test_an_untagged_file_stays_a_single(tmp_path, monkeypatch):
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "mystery.mp3", album=None)
+
+    staging.regroup(space)
+
+    assert (space.singles_dir / "mystery.mp3").exists()
+
+
+def test_grouping_uses_the_album_artist(tmp_path, monkeypatch):
+    """A guest on one track must not split an album in two - the same trap
+    that made beets read a downloaded Thriller as a compilation."""
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "solo.mp3", album="Thriller",
+            artist="Michael Jackson", albumartist="Michael Jackson")
+    _staged(space.singles_dir / "duet.mp3", album="Thriller",
+            artist="Michael Jackson, Paul McCartney",
+            albumartist="Michael Jackson")
+
+    staging.regroup(space)
+
+    folder = space.albums_dir / "Michael Jackson - Thriller"
+    assert sorted(p.name for p in folder.iterdir()) == ["duet.mp3", "solo.mp3"]
+
+
+def test_regrouping_twice_changes_nothing(tmp_path, monkeypatch):
+    """It runs before every import, so it has to be a no-op once settled."""
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "one.mp3", album="Thriller")
+    staging.regroup(space)
+
+    second = staging.regroup(space)
+
+    assert second == {"grouped": 0, "singles": 0}
+    assert (space.albums_dir / "Michael Jackson - Thriller" / "one.mp3").exists()
+
+
+def test_a_guest_on_the_album_artist_does_not_split_the_album(tmp_path,
+                                                              monkeypatch):
+    """The Thriller trap one level up. A dump of real files carries "Drake",
+    "Drake, Detail" and "Drake, JAŸ-Z" as the *album* artist of one record;
+    grouping on the raw string filed Nothing Was The Same into three
+    folders. Measured on the real backlog: 123 folders for 102 albums."""
+    space = _space(tmp_path, monkeypatch)
+    for name, credited in (("a.mp3", "Drake"),
+                           ("b.mp3", "Drake, Detail"),
+                           ("c.mp3", "Drake, JAY-Z")):
+        _staged(space.singles_dir / name, album="Nothing Was The Same",
+                artist=credited, albumartist=credited)
+
+    staging.regroup(space)
+
+    folders = [p.name for p in space.albums_dir.iterdir() if p.is_dir()]
+    assert folders == ["Drake - Nothing Was The Same"]
+
+
+def test_an_artist_with_a_comma_in_their_name_survives(tmp_path, monkeypatch):
+    """Nothing is split on a comma. "Tyler, The Creator" is one artist."""
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "a.mp3", album="IGOR",
+            artist="Tyler, The Creator", albumartist="Tyler, The Creator")
+
+    staging.regroup(space)
+
+    assert (space.albums_dir / "Tyler, The Creator - IGOR" / "a.mp3").exists()
+
+
+def test_genuinely_different_artists_stay_apart(tmp_path, monkeypatch):
+    """A soundtrack with three composers shares no prefix. Keeping the parts
+    separate is the safe way to be wrong: they wait for review rather than
+    being merged into a record that does not exist."""
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "a.mp3", album="Greatest Hits",
+            artist="Queen", albumartist="Queen")
+    _staged(space.singles_dir / "b.mp3", album="Greatest Hits",
+            artist="Sade", albumartist="Sade")
+
+    staging.regroup(space)
+
+    folders = sorted(p.name for p in space.albums_dir.iterdir() if p.is_dir())
+    assert folders == ["Queen - Greatest Hits", "Sade - Greatest Hits"]
+
+
+def test_a_track_called_dots_is_not_mistaken_for_a_dotfile(tmp_path,
+                                                           monkeypatch):
+    """Portraits Of Tracy have tracks called "..." and "... (Continued)".
+    A `name.startswith(".")` guard reads those as dotfiles and skips them,
+    which left two real songs sitting in staging with nothing to explain
+    why - found only by counting the files in and the files out."""
+    space = _space(tmp_path, monkeypatch)
+    _staged(space.singles_dir / "... - Portraits Of Tracy.mp3",
+            album="Drive Home", artist="Portraits Of Tracy")
+
+    staging.regroup(space)
+
+    assert (space.albums_dir / "Portraits Of Tracy - Drive Home"
+            / "... - Portraits Of Tracy.mp3").exists()
+
+
+def test_the_owner_marker_is_left_alone(tmp_path, monkeypatch):
+    """The reason the dot check existed. It is a suffix question, not a
+    name question: .owner is not audio."""
+    space = _space(tmp_path, monkeypatch)
+    marker = space.staging / ".owner"
+
+    staging.regroup(space)
+
+    assert marker.exists()

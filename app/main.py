@@ -1242,6 +1242,10 @@ async def staging_import(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def run() -> dict[str, Any]:
+        # Grouped first, for the same reason the sweep does it: what beets is
+        # asked about should be decided by the tags, not by how the files
+        # happened to arrive.
+        staging.regroup(space)
         waiting = beets_runner.waiting_in(space)
         if not waiting:
             return {"ran": False, "reason": "nothing waiting"}

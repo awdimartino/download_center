@@ -249,12 +249,12 @@ async def run_job(job: dict[str, Any], push: Push,
     finally:
         ticker.cancel()
 
-    demoted = await asyncio.to_thread(
-        staging.demote_partial_albums, space, job["id"], pending, layout
-    )
-    if demoted:
-        log.info("%s: %d track(s) demoted to singles (album incomplete)",
-                 job["title"], demoted)
+    # An album that came up short used to be broken apart into singles here,
+    # because beets cannot album-match nine tracks of a twelve track record.
+    # It stays together now: a singleton import files a track to
+    # `Non-Album/$artist/$title` whatever its album tag says, so demoting
+    # scattered an album's fragments across the library instead of keeping
+    # them in one place for someone to look at.
 
     published: list = []
     try:
