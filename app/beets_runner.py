@@ -447,16 +447,24 @@ def held_release(space: workspace.Workspace, path: Path) -> str | None:
     day.
 
     Returns None when the album is unknown, or known but without a release
-    id to reuse - both mean "match this normally".
+    id to reuse - both mean "match this normally". Being wrong in that
+    direction costs a refusal somebody can act on; being wrong the other way
+    writes a release id onto an album it does not belong to.
     """
-    names = {uuidtags.album_name(p) for p in path.rglob("*")
-             if p.is_file() and uuidtags.is_audio(p)} if path.is_dir() else set()
-    names = {n for n in names if n}
-    # Two albums in one folder is not a fragment of either, and picking one
-    # of them would file the other under the wrong record.
-    if len(names) != 1:
+    if not path.is_dir():
         return None
-    album = names.pop()
+    # Artist *and* title. On the title alone this found an unrelated one-track
+    # single called "sunburn" by almost monday for a staged thirteen-track
+    # "Fuel - Sunburn", and would have filed the album as that single - which
+    # is the same split-release damage this exists to prevent, only automated.
+    described = {staging._album_of(p) for p in path.rglob("*")
+                 if p.is_file() and p.suffix.lower() in staging.AUDIO_SUFFIXES}
+    described = {d for d in described if d}
+    # Two records in one folder is not a fragment of either, and picking one
+    # of them would file the other under the wrong release.
+    if len(described) != 1:
+        return None
+    artist, album = described.pop()
 
     library_db = space.beets_library
     if not library_db.exists():
@@ -467,9 +475,10 @@ def held_release(space: workspace.Workspace, path: Path) -> str | None:
         try:
             rows = connection.execute(
                 "SELECT mb_albumid, COUNT(*) FROM albums"
-                " WHERE lower(album) = lower(?) AND mb_albumid != ''"
+                " WHERE lower(album) = lower(?)"
+                "   AND lower(albumartist) = lower(?) AND mb_albumid != ''"
                 " GROUP BY mb_albumid ORDER BY COUNT(*) DESC",
-                (album,)).fetchall()
+                (album, artist)).fetchall()
         finally:
             connection.close()
     except sqlite3.Error:

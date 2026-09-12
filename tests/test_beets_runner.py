@@ -411,11 +411,17 @@ def test_a_genuine_refusal_still_says_so():
 # --- filing a fragment as the release its siblings already use --------------
 
 def _library_with(tmp_path: Path, rows: list[tuple[str, str]]) -> Path:
+    """rows are (album, mb_albumid) and are credited to the track() artist."""
+    return _library_rows(tmp_path, [("Radiohead", a, m) for a, m in rows])
+
+
+def _library_rows(tmp_path: Path, rows: list[tuple[str, str, str]]) -> Path:
     import sqlite3
     db = tmp_path / "library.db"
     connection = sqlite3.connect(db)
-    connection.execute("CREATE TABLE albums (album TEXT, mb_albumid TEXT)")
-    connection.executemany("INSERT INTO albums VALUES (?, ?)", rows)
+    connection.execute(
+        "CREATE TABLE albums (albumartist TEXT, album TEXT, mb_albumid TEXT)")
+    connection.executemany("INSERT INTO albums VALUES (?, ?, ?)", rows)
     connection.commit()
     connection.close()
     return db
@@ -507,3 +513,30 @@ def test_fingerprinting_is_enabled():
     """Tag matching cannot help a file whose tags are wrong, which most
     hand-dropped rips are."""
     assert "chroma" in _config()["plugins"]
+
+
+def test_the_same_title_by_another_artist_is_a_different_record(tmp_path):
+    """Measured on the real library: matching on title alone found a one-track
+    single called "sunburn" by almost monday for a staged thirteen-track
+    "Fuel - Sunburn", and would have filed the album as that single."""
+    folder = tmp_path / "staged"
+    track(folder, "01.mp3", "Sunburn")          # credited to Radiohead by track()
+    space = _Space(_library_rows(
+        tmp_path, [("almost monday", "sunburn", "rel-single")]))
+    assert beets_runner.held_release(space, folder) is None
+
+
+def test_the_same_record_by_the_same_artist_is_reused(tmp_path):
+    folder = tmp_path / "staged"
+    track(folder, "01.mp3", "OK Computer")
+    space = _Space(_library_rows(
+        tmp_path, [("Radiohead", "OK Computer", "rel-ok")]))
+    assert beets_runner.held_release(space, folder) == "rel-ok"
+
+
+def test_a_loose_file_is_never_given_a_held_release(tmp_path):
+    """A single file is a singleton, matched as a recording. Applying an album
+    release to one would file it as a one-track copy of that album."""
+    path = track(tmp_path, "loose.mp3", "OK Computer")
+    space = _Space(_library_rows(tmp_path, [("Radiohead", "OK Computer", "r")]))
+    assert beets_runner.held_release(space, path) is None
