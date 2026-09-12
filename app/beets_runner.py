@@ -263,6 +263,27 @@ embedart:
 
 chroma:
   auto: yes
+
+# Switching chroma on quietly made every match worse, and this puts it back.
+#
+# Beets penalises a candidate whose data source differs from the file's - but
+# only once more than one metadata source plugin is loaded, which is exactly
+# what adding chroma did. The files carry no data_source tag at all, so from
+# then on *every* track scored a mismatch against MusicBrainz. Measured on
+# C418's Minecraft Volume Alpha, a 24 file folder against the 24 track
+# release, titles and track numbers matching exactly:
+#
+#     chroma off                     distance 0.0003   strong   imports
+#     chroma on                      distance 0.1113   medium   skipped
+#     chroma on, this penalty at 0   distance 0.0002   strong   imports
+#
+# The penalty read is the one belonging to the source being matched against,
+# so it is musicbrainz's value that has to be zeroed, not chroma's. Nothing
+# is lost by it here: MusicBrainz is the only release source configured, so
+# "the data came from somewhere else" is not a distinction this setup can
+# draw, and charging 0.5 for it only ever punished correct matches.
+musicbrainz:
+  data_source_mismatch_penalty: 0
 """
 
 

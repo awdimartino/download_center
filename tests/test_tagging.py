@@ -19,7 +19,7 @@ from pathlib import Path
 
 from mutagen.easyid3 import EasyID3
 
-from app import spotify, tagger
+from app import spotify, stamp, tagger
 
 SILENCE = Path(__file__).parent / "fixtures" / "silence.mp3"
 
@@ -123,3 +123,49 @@ def test_an_item_without_a_primary_artist_falls_back(tmp_path):
     del item["primary_artist"]
     tags = _tag(tmp_path, item)
     assert tags["artist"] == ["Michael Jackson, Paul McCartney"]
+
+
+# --- which album UUID a group settles on ------------------------------------
+# Only arrivals can be written to. Files already in the library are read and
+# never rewritten, so choosing a newcomer's value does not move the album - it
+# splits it, and Navidrome shows the record twice with no overlap.
+
+def _stamped(tmp_path, name, uuid_value, age=0):
+    import os
+    p = tmp_path / name
+    p.write_bytes(b"x")
+    os.utime(p, (age, age))
+    return (p, uuid_value)
+
+
+def test_the_album_already_in_the_library_wins_however_outnumbered(tmp_path):
+    """Measured: nine arriving tracks of Mk.gee's A Museum of Contradiction
+    outvoted the one already filed, and the directory ended up holding two
+    album UUIDs."""
+    incumbent = _stamped(tmp_path, "held.mp3", "incumbent", age=1000)
+    arrivals = [_stamped(tmp_path, f"new{i}.mp3", "newcomer", age=2000)
+                for i in range(9)]
+    chosen = stamp._choose_album_uuid(
+        [incumbent, *arrivals], incumbents={incumbent[0]})
+    assert chosen == "incumbent"
+
+
+def test_with_no_incumbent_the_commonest_value_still_wins(tmp_path):
+    a = [_stamped(tmp_path, f"a{i}.mp3", "common", age=2000) for i in range(3)]
+    b = _stamped(tmp_path, "b.mp3", "rare", age=2000)
+    assert stamp._choose_album_uuid([*a, b], incumbents=set()) == "common"
+
+
+def test_several_incumbents_disagreeing_go_to_the_oldest(tmp_path):
+    old = _stamped(tmp_path, "old.mp3", "older", age=1000)
+    new = _stamped(tmp_path, "new.mp3", "newer", age=5000)
+    chosen = stamp._choose_album_uuid(
+        [old, new], incumbents={old[0], new[0]})
+    assert chosen == "older"
+
+
+def test_the_old_behaviour_is_kept_when_nothing_is_held(tmp_path):
+    """Called without incumbents at all, it must still answer - the whole
+    group being new is the ordinary case for a fresh album."""
+    a = [_stamped(tmp_path, f"a{i}.mp3", "x", age=2000) for i in range(2)]
+    assert stamp._choose_album_uuid(a) == "x"

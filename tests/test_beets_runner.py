@@ -540,3 +540,19 @@ def test_a_loose_file_is_never_given_a_held_release(tmp_path):
     path = track(tmp_path, "loose.mp3", "OK Computer")
     space = _Space(_library_rows(tmp_path, [("Radiohead", "OK Computer", "r")]))
     assert beets_runner.held_release(space, path) is None
+
+
+def test_musicbrainz_matches_are_not_penalised_for_their_source():
+    """Adding chroma made beets count two metadata source plugins, which
+    switched on a data_source penalty against every track - the files carry
+    no data_source tag, so each one scored a mismatch. Measured on a 24 file
+    folder against the 24 track release, titles and track numbers exact:
+    0.0003/strong without chroma, 0.1113/medium with it, 0.0002/strong with
+    this set. The penalty read belongs to the source being matched against,
+    so it is musicbrainz's that has to be zero."""
+    import yaml
+    config = yaml.safe_load(beets_runner.DEFAULT_CONFIG
+                            .replace("__DIRECTORY__", "/music")
+                            .replace("__LIBRARY__", "/l.db")
+                            .replace("__LOG__", "/i.log"))
+    assert config["musicbrainz"]["data_source_mismatch_penalty"] == 0

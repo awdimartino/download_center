@@ -54,22 +54,40 @@ def _album_key(path: Path, album: str) -> tuple:
     return (path.parent, album) if album else (path.parent, path.name)
 
 
-def _choose_album_uuid(existing: list[tuple[Path, str]]) -> str:
+def _choose_album_uuid(existing: list[tuple[Path, str]],
+                       incumbents: set[Path] | None = None) -> str:
     """Pick the UUID a group should settle on.
 
-    The value most files already carry wins, so the fewest files are touched.
-    Ties go to the oldest file: at one existing track and one arrival, a
-    straight count is a coin flip that could rename an album Navidrome
-    already knows, and an established record should always beat a newcomer.
+    An album already in the library wins outright, however few of its tracks
+    are left and however many are arriving. Only the arrivals can be written
+    to - the files already filed are read, never rewritten - so picking a
+    newcomer's value does not move the album, it *splits* it: the arrivals
+    keep theirs, the incumbent keeps its own, and one directory ends up
+    holding two album UUIDs, which Navidrome shows as the same record twice
+    with no overlap.
+
+    This used to be a straight majority with ties going to the oldest file,
+    and the tiebreak was the whole of the protection. That held at one
+    against one and failed at everything else: measured, nine arriving
+    tracks of Mk.gee's A Museum of Contradiction outvoted the one already
+    filed, and fifteen of Room For Squares outvoted one, splitting both.
+
+    Among incumbents, or when there are none, the commonest value wins and
+    ties go to the oldest file - the fewest writes, and an established
+    record ahead of a newcomer.
     """
-    counts = collections.Counter(value for _, value in existing)
+    pool = [pair for pair in existing if incumbents and pair[0] in incumbents]
+    if not pool:
+        pool = existing
+
+    counts = collections.Counter(value for _, value in pool)
     best = max(counts.values())
     contenders = {value for value, n in counts.items() if n == best}
     if len(contenders) == 1:
         return contenders.pop()
 
     oldest = min(
-        (pair for pair in existing if pair[1] in contenders),
+        (pair for pair in pool if pair[1] in contenders),
         key=lambda pair: pair[0].stat().st_mtime,
     )
     return oldest[1]
@@ -117,7 +135,11 @@ def stamp(paths: list[Path]) -> Result:
 
     for members in groups.values():
         known = [(path, value) for path, _, value in members if value]
-        album_uuid = _choose_album_uuid(known) if known else str(uuid.uuid4())
+        # Anything not asked about is already in the library: read, never
+        # written, and so the one value this group has no way to change.
+        incumbents = {path for path, _, _ in members if path not in requested}
+        album_uuid = (_choose_album_uuid(known, incumbents) if known
+                      else str(uuid.uuid4()))
 
         for path, track_uuid, current_album in members:
             if path not in requested:
