@@ -369,3 +369,141 @@ def test_only_the_sweep_second_guesses_beets():
 
     assert "worth_trying" in sweep
     assert "worth_trying" not in importer
+
+
+# --- why an import filed nothing --------------------------------------------
+# Four different failures used to arrive as one sentence, and each of them
+# sends you somewhere else. A whole staging backlog was read as unmatchable
+# music when the container simply had no DNS.
+
+def test_a_broken_resolver_is_not_a_tagging_failure():
+    reason = beets_runner._why_nothing_filed(
+        "ConnectionError: Failed to resolve 'musicbrainz.org'", as_is=False)
+    assert "network" in reason
+    assert "no confident match" not in reason
+
+
+def test_a_duplicate_is_not_a_failure_at_all():
+    reason = beets_runner._why_nothing_filed(
+        "duplicate-keep /downloads/alex/albums/Xscape", as_is=False)
+    assert "already in the library" in reason
+
+
+def test_no_release_in_musicbrainz_is_not_low_confidence():
+    """A doujin release nobody has entered is a different problem from a
+    release that was found and doubted; only one of them is worth retrying."""
+    reason = beets_runner._why_nothing_filed(
+        "No matching release found for 6 tracks.", as_is=False)
+    assert "no release" in reason.lower()
+
+
+def test_an_as_is_import_never_reports_a_match_problem():
+    reason = beets_runner._why_nothing_filed("something odd", as_is=True)
+    assert "match" not in reason
+
+
+def test_a_genuine_refusal_still_says_so():
+    reason = beets_runner._why_nothing_filed(
+        "Evaluating 5 candidates.", as_is=False)
+    assert reason == "beets found no confident match"
+
+
+# --- filing a fragment as the release its siblings already use --------------
+
+def _library_with(tmp_path: Path, rows: list[tuple[str, str]]) -> Path:
+    import sqlite3
+    db = tmp_path / "library.db"
+    connection = sqlite3.connect(db)
+    connection.execute("CREATE TABLE albums (album TEXT, mb_albumid TEXT)")
+    connection.executemany("INSERT INTO albums VALUES (?, ?)", rows)
+    connection.commit()
+    connection.close()
+    return db
+
+
+class _Space:
+    def __init__(self, db: Path) -> None:
+        self.beets_library = db
+
+
+def test_a_fragment_joins_the_release_the_library_already_holds(tmp_path):
+    """Beets matches a staging folder alone and cannot know the rest of the
+    record is already filed. The library does know."""
+    folder = tmp_path / "staged"
+    track(folder, "01.mp3", "OK Computer")
+    track(folder, "02.mp3", "OK Computer")
+    space = _Space(_library_with(tmp_path, [("OK Computer", "rel-123")]))
+    assert beets_runner.held_release(space, folder) == "rel-123"
+
+
+def test_an_album_the_library_does_not_have_is_matched_normally(tmp_path):
+    folder = tmp_path / "staged"
+    track(folder, "01.mp3", "Kid A")
+    space = _Space(_library_with(tmp_path, [("OK Computer", "rel-123")]))
+    assert beets_runner.held_release(space, folder) is None
+
+
+def test_a_library_that_disagrees_with_itself_is_left_alone(tmp_path):
+    """Two releases for one title means the library is already split. Adding
+    a fragment to whichever is commonest entrenches that rather than fixing
+    it, so this declines to choose."""
+    folder = tmp_path / "staged"
+    track(folder, "01.mp3", "Pet Sounds")
+    space = _Space(_library_with(
+        tmp_path, [("Pet Sounds", "rel-a"), ("Pet Sounds", "rel-b")]))
+    assert beets_runner.held_release(space, folder) is None
+
+
+def test_two_albums_in_one_folder_are_not_a_fragment_of_either(tmp_path):
+    folder = tmp_path / "staged"
+    track(folder, "01.mp3", "OK Computer")
+    track(folder, "02.mp3", "Kid A")
+    space = _Space(_library_with(tmp_path, [("OK Computer", "rel-123")]))
+    assert beets_runner.held_release(space, folder) is None
+
+
+# --- the config beets is actually given -------------------------------------
+# It is a string constant, so a typo in it is not a syntax error anywhere -
+# it surfaces as beets quietly behaving differently on the next import.
+
+def test_the_default_config_is_valid_yaml():
+    import yaml
+    rendered = (beets_runner.DEFAULT_CONFIG
+                .replace("__DIRECTORY__", "/music")
+                .replace("__LIBRARY__", "/library.db")
+                .replace("__LOG__", "/import.log"))
+    assert yaml.safe_load(rendered)["directory"] == "/music"
+
+
+def _config() -> dict:
+    import yaml
+    return yaml.safe_load(beets_runner.DEFAULT_CONFIG
+                          .replace("__DIRECTORY__", "/music")
+                          .replace("__LIBRARY__", "/l.db")
+                          .replace("__LOG__", "/i.log"))
+
+
+def test_an_album_missing_a_track_is_still_allowed_to_file():
+    """The cap this lifts was discarding albums beets had identified
+    correctly. Distance still gates: measured, one track of a ten track
+    release scores 0.5031 and is refused, nine of ten scores 0.0011."""
+    assert _config()["match"]["max_rec"]["missing_tracks"] == "strong"
+
+
+def test_extra_unrelated_tracks_are_still_capped():
+    """The other half of max_rec must stay put - it is what stops a folder of
+    loose tracks being filed as an album."""
+    assert "unmatched_tracks" not in _config()["match"]["max_rec"]
+
+
+def test_the_distance_gate_is_never_loosened():
+    """max_rec caps a recommendation; strong_rec_thresh moves the gate. Only
+    the first is safe to touch, and the second must stay absent."""
+    config = _config()
+    assert "strong_rec_thresh" not in config.get("match", {})
+
+
+def test_fingerprinting_is_enabled():
+    """Tag matching cannot help a file whose tags are wrong, which most
+    hand-dropped rips are."""
+    assert "chroma" in _config()["plugins"]

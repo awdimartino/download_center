@@ -273,6 +273,13 @@
       <label>Navidrome URL<input name="navidrome_url" type="text" spellcheck="false" placeholder="http://localhost:4533"></label>
       <label>Navidrome username<input name="navidrome_user" type="text" spellcheck="false"></label>
       <label>Navidrome password<input name="navidrome_password" type="password" placeholder="unchanged"></label>
+      <label>AcoustID key
+        <input name="acoustid_key" type="password" placeholder="unchanged" spellcheck="false">
+        <small>Only for the fingerprint backfill, which identifies already-filed
+        music by what it sounds like. New downloads are fingerprinted without
+        it. Free from <a href="https://acoustid.org/new-application"
+        target="_blank" rel="noopener noreferrer">acoustid.org</a>.</small>
+      </label>
       <div class="settings-actions">
         <button type="submit">Save</button>
         <span id="settings-note"></span>

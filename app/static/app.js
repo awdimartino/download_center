@@ -342,7 +342,7 @@ const settingsNote = document.getElementById("settings-note");
 async function loadSettings() {
   settingsNote.textContent = "";
   const values = await fetch("/api/settings").then((r) => r.json());
-  const secrets = ["spotify_client_secret", "navidrome_password"];
+  const secrets = ["spotify_client_secret", "navidrome_password", "acoustid_key"];
   // A non-admin is sent nothing but `editable: false` - these settings hold
   // the service credentials and decide where every library lives, so there
   // is nothing here for them to see and something to leak.
@@ -384,7 +384,14 @@ settingsForm.addEventListener("submit", async (event) => {
   });
   if (response.ok) {
     settingsNote.textContent = "Saved.";
-    settingsForm.elements.spotify_client_secret.value = "";
+    // Every secret field, not just the Spotify one. A value left sitting in
+    // the form is submitted again on the next save, and a field the server
+    // deliberately never sends back should not keep holding one either.
+    ["spotify_client_secret", "navidrome_password", "acoustid_key"].forEach((key) => {
+      const field = settingsForm.elements[key];
+      if (field) field.value = "";
+    });
+    loadSettings();
     setBanner(warnEl, "");
   } else {
     const body = await response.json().catch(() => ({}));

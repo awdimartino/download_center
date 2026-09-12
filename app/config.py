@@ -30,6 +30,7 @@ _ENV_OVERRIDES = {
     "navidrome_password": "DC_NAVIDROME_PASSWORD",
     "staging_sweep_hour": "DC_STAGING_SWEEP_HOUR",
     "play_day_timezone": "DC_PLAY_DAY_TIMEZONE",
+    "acoustid_key": "DC_ACOUSTID_KEY",
 }
 
 
@@ -89,6 +90,17 @@ class Settings(BaseModel):
     # were.
     play_day_timezone: str = "UTC"
 
+    # An AcoustID application key, for `tools/fingerprint.py` - the backfill
+    # that identifies already-filed files by what they sound like, for the
+    # ones whose tags are too poor to match on.
+    #
+    # Not needed for ordinary imports. The beets chroma plugin carries its
+    # own client key and identifies new music without this being set; only
+    # the bulk backfill, which is a separate application making its own
+    # requests, needs one of your own. Free, from
+    # https://acoustid.org/new-application - and left blank, the backfill
+    # simply says so rather than running against somebody else's key.
+    acoustid_key: str = ""
 
     @property
     def albums_dir(self) -> Path:
@@ -119,7 +131,7 @@ EDITABLE = (
     "spotify_client_id", "spotify_client_secret", "concurrency",
     "audio_bitrate", "max_attempts", "rate_limit_sleep", "beets_enabled",
     "navidrome_url", "navidrome_user", "navidrome_password",
-    "staging_sweep_hour",
+    "staging_sweep_hour", "acoustid_key",
 )
 
 

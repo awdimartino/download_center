@@ -72,6 +72,27 @@ def test_beets_enabled_is_editable_and_settable():
     assert "beets_enabled" in SettingsUpdate.model_fields
 
 
+def test_the_acoustid_key_is_editable_and_settable():
+    from app.main import SettingsUpdate
+    assert "acoustid_key" in config.EDITABLE
+    assert "acoustid_key" in SettingsUpdate.model_fields
+
+
+def test_the_acoustid_key_is_never_sent_to_a_browser():
+    """It identifies an application to a service that rate-limits and bans by
+    key. Nothing in the page needs to read it back, so it goes out masked with
+    the passwords rather than in the clear with the Spotify client id."""
+    from app.main import SECRETS
+    assert "acoustid_key" in SECRETS
+
+
+def test_every_secret_is_an_editable_setting():
+    """A key in SECRETS but not in EDITABLE is masked on a form that cannot
+    save it, which reads as the field being broken."""
+    for key in __import__("app.main", fromlist=["SECRETS"]).SECRETS:
+        assert key in config.EDITABLE, key
+
+
 # --- sessions ---------------------------------------------------------------
 
 def _identity(name="alex"):

@@ -19,3 +19,10 @@ PyYAML==6.0.3
 # image may not - and a lookup that fails there fails for every zone name,
 # including UTC.
 tzdata==2026.2
+
+# The chroma plugin identifies a recording by acoustic fingerprint rather
+# than by its tags, which is the only thing that helps a file whose tags are
+# wrong or absent. fpcalc (libchromaprint-tools) is already in the image, but
+# beets reaches it through this library - without it `plugins: chroma` fails
+# to load and the config silently falls back to tag matching.
+pyacoustid==1.3.0

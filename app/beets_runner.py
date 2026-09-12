@@ -202,11 +202,32 @@ import:
   duplicate_action: merge
   log: __LOG__
 
-# Left at the defaults deliberately. Loosening strong_rec_thresh, or telling
-# beets to ignore the missing_tracks penalty, lets a single downloaded song
-# match a whole release confidently - and it is then filed as a one-track
-# album under that release's name. Do that twice for the same record against
-# two different releases and the album exists twice, permanently.
+# strong_rec_thresh is left at its default, and must stay there. Loosening it
+# moves the distance gate itself, which really would let a single downloaded
+# song match a whole release confidently and be filed as a one-track album
+# under that release's name - twice over, against two releases, and the album
+# exists twice permanently.
+#
+# max_rec is a different lever and is safe to lift. It caps the
+# *recommendation* and does nothing to the distance, so the gate still holds.
+# This used to be left alone out of the fear above, which measurement does not
+# support - a fragment's distance rises steeply with what is missing:
+#
+#     1 of 10 tracks   distance 0.5031   rec none     not filed
+#     5 of 10 tracks   distance 0.2195   rec medium   not filed
+#     9 of 10 tracks   distance 0.0011   rec strong   filed
+#
+# So the cap was not protecting against one-track albums - distance already
+# does that, by an order of magnitude. What it did instead was throw away
+# albums missing a single track, which is most of what used to pile up in
+# staging: correctly identified, then discarded for being one track short.
+#
+# unmatched_tracks stays capped. That penalty is what stops a folder holding
+# extra, unrelated tracks from being filed as an album, and staging is full of
+# loose tracks that would hit exactly that case.
+match:
+  max_rec:
+    missing_tracks: strong
 
 paths:
   # No year in the album directory, and no %aunique{}: both would file two
@@ -225,7 +246,14 @@ paths:
 # naming any plugins here replaces the default list rather than adding to it.
 # Omitting it disables album matching entirely, and every import silently
 # skips with "Evaluating 0 candidates".
-plugins: musicbrainz fetchart embedart
+#
+# chroma identifies a recording by what it sounds like rather than by what its
+# tags claim, which is the only thing that helps a file whose tags are wrong or
+# absent - and most hand-dropped rips are. It needs fpcalc, from
+# libchromaprint-tools in the image, *and* pyacoustid, which it reaches fpcalc
+# through; the dependency was missing for a long time while a comment here
+# claimed the feature was ready to switch on.
+plugins: musicbrainz fetchart embedart chroma
 
 fetchart:
   auto: yes
@@ -233,9 +261,8 @@ fetchart:
 embedart:
   auto: yes
 
-# Uncomment to verify audio by acoustic fingerprint rather than by tags.
-# Requires the chromaprint tools, which are already in the image.
-# plugins: musicbrainz fetchart embedart chroma
+chroma:
+  auto: yes
 """
 
 
@@ -264,7 +291,26 @@ def ensure_config(space: workspace.Workspace) -> Path:
 
 
 def _run(space: workspace.Workspace, path: Path, singleton: bool,
-         as_is: bool = False) -> tuple[bool, str]:
+         as_is: bool = False, release_id: str | None = None) -> tuple[bool, str]:
+    # A release the library already agreed on is applied rather than searched
+    # for. Beets is still asked - `--apply` answers its own choose_match with
+    # this release - so the file is tagged from MusicBrainz exactly as a
+    # matched import would be; what is skipped is only the confidence test,
+    # which a fragment cannot pass and does not need to. See held_release.
+    if release_id:
+        command = [sys.executable, "-m", "app.beets_match",
+                   "--apply", release_id, str(path)]
+        environment = {**os.environ, "BEETSDIR": str(space.beets_dir)}
+        try:
+            result = subprocess.run(
+                command, env=environment, capture_output=True, text=True,
+                timeout=TIMEOUT, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return False, f"timed out after {TIMEOUT}s"
+        output = (result.stdout + result.stderr).strip()
+        return result.returncode == 0, output[-400:]
+
     # Invoked through the interpreter rather than the `beet` script, which
     # is only on PATH when beets is installed system-wide.
     flags = ["-q"]
@@ -372,6 +418,97 @@ def _singleton_mode(path: Path, as_is: bool) -> bool:
     return not uuidtags.album_name(path) if as_is else True
 
 
+# Signatures in beets' own output for the ways an import can file nothing.
+# Ordered: the first match wins, so the specific causes are tested before the
+# catch-all.
+_NETWORK_SIGNS = (
+    "temporary failure in name resolution", "failed to resolve",
+    "network is unreachable", "connectionerror", "max retries exceeded",
+    "connection refused", "timed out",
+)
+_DUPLICATE_SIGNS = ("duplicate-keep", "duplicate-replace", "skipping duplicate")
+_NO_CANDIDATE_SIGNS = ("no matching release found", "no match found")
+
+
+def held_release(space: workspace.Workspace, path: Path) -> str | None:
+    """The MusicBrainz release this staged folder's album is already filed as.
+
+    Beets matches a staging folder against MusicBrainz in isolation: it has
+    no idea the rest of the record is already in the library. So downloading
+    the four tracks of a twelve track album you own eight of asks it to match
+    four tracks against a twelve track release, which scores badly and is
+    refused - and the fragment waits in staging next to its own siblings.
+
+    Asked here instead, of the library, which does know. When the answer is
+    yes the release is not in question any more and does not need matching
+    again; `app.beets_match --apply` files the fragment as that exact
+    release, which is also what keeps every track of one record on one
+    release rather than scattered across whichever edition matched best that
+    day.
+
+    Returns None when the album is unknown, or known but without a release
+    id to reuse - both mean "match this normally".
+    """
+    names = {uuidtags.album_name(p) for p in path.rglob("*")
+             if p.is_file() and uuidtags.is_audio(p)} if path.is_dir() else set()
+    names = {n for n in names if n}
+    # Two albums in one folder is not a fragment of either, and picking one
+    # of them would file the other under the wrong record.
+    if len(names) != 1:
+        return None
+    album = names.pop()
+
+    library_db = space.beets_library
+    if not library_db.exists():
+        return None
+    try:
+        connection = sqlite3.connect(f"file:{library_db}?mode=ro", uri=True,
+                                     timeout=5)
+        try:
+            rows = connection.execute(
+                "SELECT mb_albumid, COUNT(*) FROM albums"
+                " WHERE lower(album) = lower(?) AND mb_albumid != ''"
+                " GROUP BY mb_albumid ORDER BY COUNT(*) DESC",
+                (album,)).fetchall()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        log.debug("could not ask the library about %s", album, exc_info=True)
+        return None
+
+    # Exactly one release, or none. Several means the library itself already
+    # disagrees about which release this record is, and adding a fragment to
+    # whichever is commonest would entrench a split rather than resolve it.
+    if len(rows) != 1:
+        return None
+    return rows[0][0]
+
+
+def _why_nothing_filed(output: str, as_is: bool) -> str:
+    """Why beets filed nothing, distinguished rather than guessed at.
+
+    Four very different things used to arrive as one sentence, "beets found
+    no confident match", and each of them sends you somewhere else: a broken
+    resolver is not a tagging problem, and a duplicate is not a failure at
+    all. A whole staging backlog was mis-read as unmatchable music when the
+    container simply had no DNS, so the wrong reason is worse than a vague
+    one - it is a wrong instruction about what to do next.
+    """
+    lowered = output.lower()
+    if any(sign in lowered for sign in _NETWORK_SIGNS):
+        return ("could not reach MusicBrainz - this is a network problem, "
+                "not a tagging one")
+    if any(sign in lowered for sign in _DUPLICATE_SIGNS):
+        return "already in the library; beets kept the copy it had"
+    if as_is:
+        # An as-is import does no matching at all, so "no confident match"
+        # was never a possible answer for it.
+        return "nothing was filed, and beets said why in the log"
+    if any(sign in lowered for sign in _NO_CANDIDATE_SIGNS):
+        return "MusicBrainz has no release matching this"
+    return "beets found no confident match"
+
+
 def import_paths(space: workspace.Workspace, published: list[Path],
                  as_is: bool = False) -> dict[str, Any]:
     """Import freshly published paths, returning a summary for the UI.
@@ -426,8 +563,16 @@ def _import_paths(space: workspace.Workspace, published: list[Path],
             break
         try:
             singleton = _singleton_mode(path, as_is)
+            # Only for a real match. An as-is import is someone saying "file
+            # it with what it has", and quietly tagging it from MusicBrainz
+            # instead would be answering a different question.
+            release = None if as_is else held_release(space, path)
+            if release:
+                log.info("%s belongs to a release the library already holds "
+                         "(%s); filing it as that rather than matching it "
+                         "alone", path.name, release[:8])
             before = _library_size(space)
-            ok, output = _run(space, path, singleton, as_is)
+            ok, output = _run(space, path, singleton, as_is, release)
             if not ok:
                 detail = output.splitlines()[-1] if output else "failed"
                 failed.append(f"{path.name}: {detail}")
@@ -446,16 +591,9 @@ def _import_paths(space: workspace.Workspace, published: list[Path],
                 log.info("beets imported %s", path.name)
             else:
                 skipped += 1
-                # An as-is import that files nothing is not "no confident
-                # match" - there was no matching. Something else stopped it,
-                # and the wrong reason is worse than a vague one.
-                _remember_refusal(
-                    path,
-                    "nothing was filed, and beets said why in the log" if as_is
-                    else "beets found no confident match")
-                log.info("beets skipped %s (%s)", path.name,
-                         "as-is import filed nothing" if as_is
-                         else "no confident match")
+                reason = _why_nothing_filed(output, as_is)
+                _remember_refusal(path, reason)
+                log.info("beets skipped %s (%s)", path.name, reason)
         finally:
             _import_lock.release()
 

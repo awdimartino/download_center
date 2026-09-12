@@ -787,6 +787,7 @@ class SettingsUpdate(BaseModel):
     navidrome_user: str | None = None
     navidrome_password: str | None = None
     staging_sweep_hour: int | None = None
+    acoustid_key: str | None = None
     # Listed in config.EDITABLE and returned by GET, so it has to be settable
     # or the two disagree about what "editable" means.
     beets_enabled: bool | None = None
@@ -794,7 +795,13 @@ class SettingsUpdate(BaseModel):
 
 # Values the browser must never be sent back. Reported as a boolean instead,
 # so a form can show whether one is set without ever holding it.
-SECRETS = ("spotify_client_secret", "navidrome_password")
+#
+# The AcoustID key is here with the passwords rather than with the Spotify
+# client id. It identifies an application to a service that rate-limits and
+# can ban by key, so handing it to every admin's browser session is a way to
+# lose it - and unlike the client id, nothing in the page needs to read it
+# back.
+SECRETS = ("spotify_client_secret", "navidrome_password", "acoustid_key")
 
 
 @app.get("/api/settings")
