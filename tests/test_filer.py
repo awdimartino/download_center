@@ -314,3 +314,102 @@ def test_a_move_across_filesystems_still_works(space, tmp_path, monkeypatch):
     assert filed.path.is_file()
     assert not source.exists()
     assert real_os.path.getsize(filed.path) > 0
+
+
+# --- retagging --------------------------------------------------------------
+#
+# The one thing allowed to move a file after it is written, because a person
+# confirmed it in the review page.
+
+def retag(path: Path, **tags) -> None:
+    audio = EasyID3(path)
+    for key, value in tags.items():
+        audio[key] = str(value)
+    audio.save()
+
+
+def test_a_retag_keeps_the_album_uuid(space, tmp_path):
+    """The album keeps its Navidrome identity, so album-level stars and play
+    counts survive and no file needs its UUID rewritten."""
+    filed = filer.file_track(space, track(
+        tmp_path, albumartist="Unknown Artist", album="Unknown Album",
+        title="Come Together", tracknumber="1"))
+    was = filer.album_key_of(filed.path.parent)
+
+    retag(filed.path, albumartist="The Beatles", album="Abbey Road")
+    settled = filer.after_retag(space, [filed.path], was)
+
+    assert settled == filed.album_uuid
+    assert uuidtags.read(filed.path)[0] == filed.track_uuid
+
+
+def test_a_retag_moves_the_key_not_the_identity(space, tmp_path):
+    filed = filer.file_track(space, track(
+        tmp_path, albumartist="The Beatels", album="Abbey Road",
+        title="Come Together", tracknumber="1"))
+    was = filer.album_key_of(filed.path.parent)
+
+    retag(filed.path, albumartist="The Beatles")
+    filer.after_retag(space, [filed.path], was)
+
+    assert registry.known(space.library_id, was) is None
+    assert registry.album_uuid_for(space.library_id, "The Beatles",
+                                   "Abbey Road") == filed.album_uuid
+
+
+def test_a_retag_onto_an_album_already_there_merges_into_it(space, tmp_path):
+    """Only the newcomer can be rewritten, so choosing its value would not
+    move the established album - it would split it."""
+    incumbent = filer.file_track(space, track(
+        tmp_path, name="a.mp3", albumartist="The Beatles", album="Abbey Road",
+        title="Come Together", tracknumber="1"))
+    stray = filer.file_track(space, track(
+        tmp_path, name="b.mp3", albumartist="Unknown Artist",
+        album="Unknown Album", title="Something", tracknumber="2"))
+    was = filer.album_key_of(stray.path.parent)
+
+    retag(stray.path, albumartist="The Beatles", album="Abbey Road")
+    settled = filer.after_retag(space, [stray.path], was)
+
+    assert settled == incumbent.album_uuid
+    assert uuidtags.read(stray.path)[1] == incumbent.album_uuid
+
+
+def test_an_album_never_registered_keeps_the_uuid_on_its_files(space,
+                                                               tmp_path):
+    """The migration case: music filed before the registry existed carries a
+    UUID and has no row. Minting a fresh one would orphan the stars."""
+    existing = "66666666-6666-4666-8666-666666666666"
+    path = track(tmp_path, albumartist="The Beatles", album="Abbey Rd",
+                 title="Come Together", tracknumber="1")
+    uuidtags.write(path, "77777777-7777-4777-8777-777777777777", existing)
+    was = registry.album_key("The Beatles", "Abbey Rd")
+
+    retag(path, album="Abbey Road")
+    settled = filer.after_retag(space, [path], was)
+
+    assert settled == existing
+    assert registry.album_uuid_for(space.library_id, "The Beatles",
+                                   "Abbey Road") == existing
+
+
+def test_every_track_of_a_retagged_album_ends_up_on_one_uuid(space, tmp_path):
+    one = filer.file_track(space, track(
+        tmp_path, name="a.mp3", albumartist="A", album="X", title="One",
+        tracknumber="1"))
+    two = filer.file_track(space, track(
+        tmp_path, name="b.mp3", albumartist="A", album="X", title="Two",
+        tracknumber="2"))
+    was = filer.album_key_of(one.path.parent)
+
+    for path in (one.path, two.path):
+        retag(path, albumartist="The Beatles", album="Abbey Road")
+    filer.after_retag(space, [one.path, two.path], was)
+
+    assert (uuidtags.read(one.path)[1] == uuidtags.read(two.path)[1]
+            == one.album_uuid)
+
+
+def test_a_retag_of_nothing_does_nothing(space, tmp_path):
+    assert filer.after_retag(space, [], "some key") == ""
+    assert registry.count(space.library_id) == 0

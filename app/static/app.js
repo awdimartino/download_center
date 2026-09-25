@@ -538,7 +538,7 @@ function showView(view) {
   if (view === "browse" && matchMedia("(hover: hover) and (pointer: fine)").matches) {
     queryInput.focus();
   }
-  if (view === "staging") loadStaging();
+  if (view === "review") loadReview();
   if (view === "health") loadHealth();
   if (view === "dupes") loadDupes();
   if (view === "playlists") loadPlaylists();
@@ -838,34 +838,22 @@ searchForm.addEventListener("submit", (event) => {
   runSearch();
 });
 
-/* --- staging -------------------------------------------------------------
-   What beets has not been able to file. There is no separate to-do list: the
-   folder is the queue, so it cannot disagree with what is actually there. */
+/* --- review ---------------------------------------------------------------
+   Everything listed here is already filed and playing. The row says only
+   that no MusicBrainz recording ID is written on it, which is read off the
+   file every time - so a track leaves the list by gaining an ID, and there
+   is no flag anywhere that can fall out of step with what is true. */
 
-const stagingEl = document.getElementById("staging");
-const stagingEmpty = document.getElementById("staging-empty");
-const stagingBadge = document.getElementById("staging-badge");
-const stagingNext = document.getElementById("staging-next");
+const reviewEl = document.getElementById("review");
+const reviewEmpty = document.getElementById("review-empty");
+const reviewBadge = document.getElementById("review-badge");
+const reviewCount = document.getElementById("review-count");
+const reviewMore = document.getElementById("review-more");
 
-// Files it under the tags it already has. Beets is configured never to
-// guess, which is right, and used to be a dead end: what it would not place
-// stayed here for ever with nothing in the app able to move it.
-async function importAsIs(entry, button) {
-  const held = entry.kind === "album"
-    ? `the ${entry.tracks} files in "${entry.name}"` : `"${entry.name}"`;
-  if (!confirm(
-    `File ${held} using the tags already on it?\n\n` +
-    `Beets will not match it against MusicBrainz, so it is filed exactly as ` +
-    `tagged — and if you already hold this recording, this adds a second ` +
-    `copy for the Duplicates tab to catch.`)) return;
-  button.disabled = true;
-  const payload = await startOperation("import", "/api/staging/import-as-is",
-                                       { kind: entry.kind, name: entry.name });
-  // Nothing was started - the item is still arriving, or has gone. Re-render
-  // so the button works again; leaving it disabled means the only way to try
-  // again is to leave the tab and come back.
-  if (!payload || payload.detail) loadStaging();
-}
+// How much of the list is on screen. Day one is a few hundred albums and a
+// phone should not be handed all of it at once.
+const REVIEW_PAGE = 50;
+let reviewShown = REVIEW_PAGE;
 
 /* --- choosing a match by hand ---------------------------------------------
    Beets refuses whenever it cannot tell two releases apart, which for a
@@ -884,6 +872,11 @@ function closeCandidates() {
   candidatesEl.hidden = true;
 }
 
+function entryName(entry) {
+  return [entry.artist, entry.album].filter(Boolean).join(" - ")
+    || entry.folder || "this album";
+}
+
 function candidateRow(entry, candidate) {
   const row = el("div", "candidate");
   const title = candidate.title || "(untitled)";
@@ -892,7 +885,7 @@ function candidateRow(entry, candidate) {
     candidate.year || null,
     candidate.tracks ? `${candidate.tracks} tracks` : null,
     candidate.album || null,
-  ].filter(Boolean).join(" · ");
+  ].filter(Boolean).join(" \u00b7 ");
 
   const use = el("button", "ghost primary", "Use this");
   use.addEventListener("click", () => useCandidate(entry, candidate, use));
@@ -917,7 +910,7 @@ function showCandidates(result) {
   const entry = candidatesFor;
   if (!entry) return;
   const head = el("div", "candidates-head");
-  head.append(el("span", "candidates-title", `Matches for ${entry.name}`));
+  head.append(el("span", "candidates-title", `Matches for ${entryName(entry)}`));
   const close = el("button", "ghost", "Close");
   close.addEventListener("click", closeCandidates);
   head.append(close);
@@ -927,8 +920,8 @@ function showCandidates(result) {
     nodes.push(el("p", "candidates-empty", result.error));
   } else if (!result.candidates.length) {
     nodes.push(el("p", "candidates-empty",
-      "MusicBrainz has nothing close enough to offer. Import as-is files it "
-      + "with the tags it already has."));
+      "MusicBrainz has nothing close enough to offer. The album stays as it "
+      + "is, tagged the way it arrived."));
   } else {
     nodes.push(...result.candidates.map((c) => candidateRow(entry, c)));
   }
@@ -940,142 +933,109 @@ async function askForCandidates(entry, button) {
   candidatesFor = entry;
   button.disabled = true;
   candidatesEl.replaceChildren(
-    el("p", "candidates-empty", `Asking MusicBrainz about ${entry.name}…`));
+    el("p", "candidates-empty",
+       `Asking MusicBrainz about ${entryName(entry)}\u2026`));
   candidatesEl.hidden = false;
   const payload = await startOperation(
-    "candidates", "/api/staging/candidates",
-    { kind: entry.kind, name: entry.name });
+    "candidates", "/api/review/match",
+    { library_id: entry.library_id, folder: entry.folder });
   if (!payload || payload.detail) {
     closeCandidates();
-    loadStaging();
+    loadReview();
   }
 }
 
 async function useCandidate(entry, candidate, button) {
   if (!confirm(
-    `File "${entry.name}" as "${candidate.title}"`
+    `Tag "${entryName(entry)}" as "${candidate.title}"`
     + `${candidate.artist ? ` by ${candidate.artist}` : ""}?\n\n`
-    + "Beets will tag it from this release and move it into your library.")) {
+    + "The files are retagged where they are. If the artist or album changes "
+    + "they move to match, and the album keeps its identity \u2014 stars and "
+    + "play counts survive.")) {
     return;
   }
   button.disabled = true;
   closeCandidates();
-  await startOperation("import", "/api/staging/import-chosen",
-                       { kind: entry.kind, name: entry.name,
+  await startOperation("import", "/api/review/match/apply",
+                       { library_id: entry.library_id, folder: entry.folder,
                          release_id: candidate.id });
 }
 
-function stagingRow(entry) {
-  const row = el("div", `staging-item${entry.settled ? "" : " unsettled"}`);
+function reviewRow(entry) {
+  const row = el("div", "staging-item");
   const actions = el("div", "staging-actions");
-  if (!entry.settled) {
-    // Still being written to. Importing now would file a partial album, so
-    // there is nothing to offer yet.
-    actions.append(el("span", "staging-note", "still arriving"));
-  } else {
-    if (entry.refused) {
-      const note = el("span", "staging-note",
-                      entry.refused.length > 90
-                        ? `${entry.refused.slice(0, 90)}…` : entry.refused);
-      note.title = entry.refused;
-      actions.append(note);
-    }
-    const choose = el("button", "ghost", "Choose match");
-    choose.addEventListener("click", () => askForCandidates(entry, choose));
-    const button = el("button", "ghost", "Import as-is");
-    button.addEventListener("click", () => importAsIs(entry, button));
-    actions.append(choose, button);
-  }
+  const match = el("button", "ghost", "Find matches");
+  match.addEventListener("click", () => askForCandidates(entry, match));
+  actions.append(match);
+
+  // "3 of 12" and "12 of 12" call for different answers: the first is a
+  // download that joined an album already matched, the second is a record
+  // nobody has looked at.
+  const counted = entry.partial
+    ? `${entry.untagged} of ${entry.tracks} unconfirmed`
+    : `${entry.tracks} track${entry.tracks === 1 ? "" : "s"}, none confirmed`;
+
   row.append(
-    el("span", "staging-kind", entry.kind),
-    el("span", "staging-name", entry.name),
-    el("span", "staging-meta",
-       `${entry.tracks} file${entry.tracks === 1 ? "" : "s"} · ` +
-       `${(entry.bytes / 1e6).toFixed(0)} MB · ${entry.age_days}d`),
+    el("span", "staging-kind", entry.library || "library"),
+    el("span", "staging-name", entryName(entry)),
+    el("span", "staging-meta", counted),
     actions
   );
+  row.title = entry.folder;
   return row;
 }
 
-// When the server said the next sweep is due, and the ticker that keeps the
-// countdown honest. Read once per load and counted down locally rather than
-// polled: the number only has to be roughly right, and asking every second
-// for a value that changes by one second is a poor trade on a phone.
-let nextSweepAt = null;
-let sweepHour = null;
-let sweeping = null;
-
-function renderNextSweep() {
-  if (sweeping && sweeping.running) {
-    // Which item, and how far in. "Beets is busy" and "beets is stuck" look
-    // identical otherwise, and only one of them is worth waiting out.
-    const position = sweeping.total
-      ? ` (${(sweeping.done || 0) + 1} of ${sweeping.total})` : "";
-    stagingNext.textContent =
-      `Beets is filing ${sweeping.name}${position}. Buttons here wait for it `
-      + "to finish the current item.";
-    stagingNext.hidden = false;
-    return;
-  }
-  if (sweepHour === null || sweepHour === undefined) {
-    stagingNext.hidden = true;
-    return;
-  }
-  if (!nextSweepAt) {
-    stagingNext.textContent = "Beets is sweeping now.";
-    stagingNext.hidden = false;
-    return;
-  }
-  const left = Math.max(0, Math.round((nextSweepAt * 1000 - Date.now()) / 1000));
-  const hours = Math.floor(left / 3600);
-  const minutes = Math.floor((left % 3600) / 60);
-  const when = hours
-    ? `${hours}h ${String(minutes).padStart(2, "0")}m`
-    : `${minutes}m ${String(left % 60).padStart(2, "0")}s`;
-  const at = `${String(sweepHour).padStart(2, "0")}:00`;
-  // Once a night, not every quarter hour: beets competes with playback, and
-  // this machine serves music.
-  stagingNext.textContent =
-    `Beets imports nightly at ${at}; next in ${when}. `
-    + "Try importing now does it immediately.";
-  stagingNext.hidden = false;
-}
-
-// Ticks regardless of which panel is showing. One text node a second is
-// nothing, and starting and stopping it per view is more moving parts than
-// the saving is worth.
-setInterval(renderNextSweep, 1000);
-
-async function loadStaging() {
+async function loadReview() {
   try {
-    const data = await fetch("/api/staging").then((r) => r.json());
+    const data = await fetch(`/api/review?limit=${reviewShown}`)
+      .then((r) => r.json());
+    if (data.available === false) {
+      reviewEl.replaceChildren();
+      reviewCount.hidden = true;
+      reviewMore.hidden = true;
+      reviewEmpty.textContent =
+        `Navidrome's database could not be read: ${data.reason}`;
+      reviewEmpty.hidden = false;
+      return;
+    }
     const entries = data.entries || [];
-    nextSweepAt = data.next_sweep || null;
-    sweepHour = data.sweep_hour;
-    sweeping = data.sweeping || null;
-    renderNextSweep();
-    stagingEl.replaceChildren(...entries.map(stagingRow));
-    stagingEmpty.textContent = entries.length
-      ? "" : `Nothing waiting in ${data.staging || "staging"}.`;
-    stagingEmpty.hidden = entries.length > 0;
-    setBadge(stagingBadge, entries.length);
+    reviewEl.replaceChildren(...entries.map(reviewRow));
+    // The two numbers that say how far through this is. Large and honest on
+    // day one: the backlog was always this size, beets was just hiding it
+    // outside the library.
+    reviewCount.textContent =
+      `${data.untagged} of ${data.tracks} tracks unconfirmed, across `
+      + `${data.total} album${data.total === 1 ? "" : "s"}.`;
+    reviewCount.hidden = !data.tracks;
+    reviewEmpty.textContent = entries.length
+      ? "" : "Everything in your library has been matched.";
+    reviewEmpty.hidden = entries.length > 0;
+    reviewMore.hidden = entries.length >= data.total;
+    setBadge(reviewBadge, data.total);
   } catch (err) {
-    stagingEmpty.textContent = `Could not read staging: ${err.message}`;
-    stagingEmpty.hidden = false;
+    reviewEmpty.textContent = `Could not read the review list: ${err.message}`;
+    reviewEmpty.hidden = false;
   }
 }
+
+reviewMore.addEventListener("click", () => {
+  reviewShown += REVIEW_PAGE;
+  loadReview();
+});
 
 // Import and audit are started, not awaited - beets gets 900s per path and
 // an audit reads every file in the library, both far longer than a browser
 // will hold a request open. The server pushes the outcome over the socket.
 const OPERATION_LABELS = {
-  import: { button: "staging-import", idle: "Try importing now",
-            busy: "Importing…", note: "staging-op" },
+  // Applying a chosen match runs beets, which takes far longer than a
+  // request should be held open. It has no button of its own - it is started
+  // from a candidate row - so only the note is named here.
+  import: { note: "review-op" },
   audit: { button: "health-audit", idle: "Re-read files", busy: "Reading…",
            note: "health-op" },
   // No button of its own: it is started from a row, and its result is a
   // list rather than a message.
-  candidates: { note: "staging-op" },
+  candidates: { note: "review-op" },
 };
 
 // An operation's outcome belongs to the panel that started it. The banner at
@@ -1089,16 +1049,15 @@ function setNote(id, message, tone) {
 
 function importSummary(result) {
   const failed = result.failed || [];
-  if (failed.length) return [`Import problems: ${failed.join("; ")}`, "warn"];
+  if (failed.length) return [`Retagging problems: ${failed.join("; ")}`, "warn"];
   if (result.imported) {
-    const rest = result.skipped ? `, ${result.skipped} still waiting` : "";
-    return [`Filed ${result.imported} item${result.imported === 1 ? "" : "s"}` +
-            `${result.as_is ? " as tagged" : ""}${rest}.`, "notice"];
+    return ["Retagged. It keeps the album identity it had, so nothing "
+            + "starred was lost.", "notice"];
   }
-  // Nothing filed and nothing failed: beets ran and refused. Said plainly,
-  // because the folder looking untouched is exactly how this used to hide.
+  // Nothing changed and nothing failed: beets ran and refused. Said plainly,
+  // because the album looking untouched is exactly how this used to hide.
   if (result.skipped) {
-    return [`Nothing could be filed; ${result.skipped} still waiting.`, "warn"];
+    return ["That release did not tag it; the album is unchanged.", "warn"];
   }
   return ["", "notice"];
 }
@@ -1114,8 +1073,8 @@ function showOperation(operation) {
   }
   if (operation.name === "import") {
     // The per-row buttons run the same beets lock, so they cannot be live
-    // while an import is in flight. A finished one re-renders them.
-    stagingEl.querySelectorAll("button").forEach((b) => { b.disabled = running; });
+    // while a retag is in flight. A finished one re-renders them.
+    reviewEl.querySelectorAll("button").forEach((b) => { b.disabled = running; });
   }
   if (running) return;
 
@@ -1127,8 +1086,8 @@ function showOperation(operation) {
   const result = operation.result || {};
   if (operation.name === "candidates") {
     showCandidates(result);
-    // The staging rows re-render with their buttons live again.
-    loadStaging();
+    // The review rows re-render with their buttons live again.
+    loadReview();
     return;
   }
   if (operation.name === "import") {
@@ -1141,7 +1100,7 @@ function showOperation(operation) {
       const [message, tone] = importSummary(result);
       setNote(spec.note, message, tone);
     }
-    loadStaging();
+    loadReview();
   } else {
     setNote(spec.note, "");
     loadHealth();
@@ -1174,8 +1133,24 @@ async function startOperation(name, path, body) {
   }
 }
 
-document.getElementById("staging-import").addEventListener("click", () => {
-  startOperation("import", "/api/staging/import");
+// The list is read from Navidrome's database, which refreshes on scan, so it
+// can be a few minutes behind the disk. That is fine for a page somebody
+// opens deliberately and not fine when they have just fixed something.
+document.getElementById("review-rescan").addEventListener("click", async () => {
+  const button = document.getElementById("review-rescan");
+  button.disabled = true;
+  button.textContent = "Scanning…";
+  try {
+    const payload = await fetch("/api/review/rescan", { method: "POST" })
+      .then((r) => r.json());
+    setNote("review-op", payload.detail || "", payload.detail ? "warn" : "");
+  } catch (err) {
+    setNote("review-op", `Could not ask for a scan: ${err.message}`, "warn");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Rescan";
+    loadReview();
+  }
 });
 
 /* --- listening -----------------------------------------------------------
@@ -2037,7 +2012,7 @@ function start() {
   started = true;
   connect();
   loadHealth();
-  loadStaging();
+  loadReview();
   checkSpotify();
   healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
 }

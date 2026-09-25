@@ -48,9 +48,9 @@
     <button class="nav-item" data-view="browse" type="button">
       <span class="nav-label">Browse</span>
     </button>
-    <button class="nav-item" data-view="staging" type="button">
-      <span class="nav-label">Staging</span>
-      <span id="staging-badge" class="badge" hidden></span>
+    <button class="nav-item" data-view="review" type="button">
+      <span class="nav-label">Review</span>
+      <span id="review-badge" class="badge" hidden></span>
     </button>
     <button class="nav-item" data-view="health" type="button">
       <span class="nav-label">Health</span>
@@ -111,27 +111,30 @@
     <p id="browse-empty" class="empty">Search for an artist, album, or track.</p>
   </section>
 
-  <section id="view-staging" hidden>
+  <!-- Everything listed here is already in your library and playing. The
+       row only says nobody has confirmed it against MusicBrainz yet, which
+       is a very different thing from the staging list this replaces - that
+       one was music that had not arrived. -->
+  <section id="view-review" hidden>
     <div class="panel-note">
       <p>
-        Waiting to be filed. Beets moves out everything it can match, so what
-        is left here is what it would not guess at.
+        In your library and playable now, but never matched against
+        MusicBrainz. Nothing here is waiting for permission.
       </p>
-      <button id="staging-import" class="ghost" type="button">Try importing now</button>
+      <button id="review-rescan" class="ghost" type="button">Rescan</button>
     </div>
-    <!-- When beets will look next. Without it, a folder waiting to be swept
-         and a folder beets has already refused look identical. -->
-    <p id="staging-next" class="panel-sub" hidden></p>
-    <!-- How the last import went. In the panel that started it, not in the
+    <p id="review-count" class="panel-sub" hidden></p>
+    <!-- How the last match went. In the panel that started it, not in the
          banner at the top of the page: that one sits outside every section,
          so a message left there followed you onto every other tab. -->
-    <p id="staging-op" class="warn" hidden></p>
+    <p id="review-op" class="warn" hidden></p>
     <!-- The releases beets found and would not choose between. Shown in the
          panel rather than a dialog: a modal over a list on a phone is how
          the last three layout bugs happened. -->
     <section id="candidates" class="candidates" hidden></section>
-    <div id="staging"></div>
-    <p id="staging-empty" class="empty">Nothing waiting.</p>
+    <div id="review"></div>
+    <p id="review-empty" class="empty">Nothing waiting.</p>
+    <button id="review-more" class="ghost" type="button" hidden>Show more</button>
   </section>
 
   <section id="view-health" hidden>

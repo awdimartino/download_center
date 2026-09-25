@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, ledger, navidrome, operations, playcounts
 from . import playlists as smart_playlists
-from . import filer, inbox, spotify, staging, worker, workspace
+from . import filer, inbox, review, spotify, staging, worker, workspace
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -1397,6 +1397,138 @@ async def staging_import_chosen(
         return beets_runner.import_chosen(space, path, body.release_id)
 
     # Shares the import gate: it is a beets run over the same tree.
+    operation, started = operations.start(
+        "import", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
+# --- review ----------------------------------------------------------------
+
+
+@app.get("/api/review")
+async def review_list(
+    limit: int = review.PAGE,
+    offset: int = 0,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Music that is in the library and playable, but never confirmed.
+
+    Nothing like the staging list it replaces. That one was the music that
+    had not arrived; this one is the music that has, listed because no
+    MusicBrainz recording ID is written on it. Derived from the file every
+    time, so a track leaves the list by gaining an ID and no flag is ever
+    cleared.
+    """
+    return await asyncio.to_thread(
+        review.listing, session.identity, limit, offset)
+
+
+@app.get("/api/review/album")
+async def review_album(
+    library_id: int,
+    folder: str,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """One album from the list, with its tracks."""
+    try:
+        return await asyncio.to_thread(
+            review.entry, session.identity, library_id, folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/review/rescan")
+async def review_rescan(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Ask Navidrome to look again, now.
+
+    The list is read from Navidrome's database, which refreshes on scan, so
+    it can be a few minutes behind what is on disk. That is fine for a page
+    somebody opens deliberately and not fine when they have just fixed
+    something and want to see it go.
+    """
+    asked = await asyncio.to_thread(navidrome.notify)
+    if not asked:
+        raise HTTPException(
+            status_code=400,
+            detail="Navidrome's address and service credentials are not set, "
+                   "so a scan cannot be requested from here.")
+    return {"scanning": True}
+
+
+class ReviewMatch(BaseModel):
+    library_id: int
+    folder: str
+
+
+@app.post("/api/review/match")
+async def review_match(
+    body: ReviewMatch,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """What this album would match against, asked on demand.
+
+    Matching is manual now, one item at a time, from this page. Nothing here
+    writes anything: the caller gets the candidate list that `quiet_fallback:
+    skip` used to throw away, and a person picks from it. Applying a choice
+    belongs to the tagging page, which is designed separately.
+
+    An operation rather than a plain request: a candidate lookup is several
+    MusicBrainz round trips and took up to seventy seconds against the real
+    backlog, which is far longer than a request should be held open. The
+    answer arrives over the websocket.
+    """
+    try:
+        space = workspace.for_session(session.identity, body.library_id)
+        path = review.album_dir(session.identity, body.library_id, body.folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def run() -> dict[str, Any]:
+        return beets_runner.candidates(space, path)
+
+    operation, started = operations.start(
+        "candidates", session.identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
+class ReviewChoice(BaseModel):
+    library_id: int
+    folder: str
+    release_id: str
+
+
+@app.post("/api/review/match/apply")
+async def review_match_apply(
+    body: ReviewChoice,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Tag an album as the release somebody picked from the candidate list.
+
+    The one thing allowed to move a file after it is written. It is
+    deliberate, rare and watched: a person looked at a list and pointed at a
+    row. The album UUID is re-pointed rather than reissued, so the record
+    keeps its Navidrome identity and album-level stars and play counts
+    survive the retag.
+    """
+    try:
+        space = workspace.for_session(session.identity, body.library_id)
+        path = review.album_dir(session.identity, body.library_id, body.folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def run() -> dict[str, Any]:
+        # Read before beets touches anything: once the tags are rewritten
+        # there is nothing left to say which album this used to be.
+        was = filer.album_key_of(path)
+        started = time.time()
+        result = beets_runner.import_chosen(space, path, body.release_id)
+        if result.get("imported"):
+            result["album_uuid"] = filer.after_retag(
+                space, beets_runner.filed_since(space, started), was)
+        return result
+
     operation, started = operations.start(
         "import", session.identity.username, run)
     return {"started": started, "operation": operation.as_dict()}

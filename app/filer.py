@@ -206,6 +206,85 @@ def discard(space: workspace.Workspace, job_id: str) -> None:
     shutil.rmtree(scratch_root(space, job_id), ignore_errors=True)
 
 
+# --- retagging --------------------------------------------------------------
+#
+# The one thing that is allowed to move a file after it is written, because a
+# person confirmed it. Everything else treats the path as frozen.
+
+def audio_in(folder: Path) -> list[Path]:
+    return sorted(p for p in folder.rglob("*")
+                  if p.is_file() and uuidtags.is_audio(p))
+
+
+def album_key_of(folder: Path) -> str:
+    """The registry key the files in a folder currently answer to.
+
+    Read before a retag, so the album can be followed to whatever it becomes.
+    Taken from the first file: they are one album, and after the filer put
+    them there they agree about which.
+    """
+    files = audio_in(folder)
+    if not files:
+        return ""
+    meta = read_meta(files[0])
+    return registry.album_key(meta.albumartist, meta.album)
+
+
+def after_retag(space: workspace.Workspace, paths: list[Path],
+                old_key: str) -> str:
+    """Follow a confirmed retag, and return the album UUID that settled.
+
+    Ordinarily the album keeps the UUID it has and only its key moves, so its
+    Navidrome identity survives and album-level stars and play counts survive
+    with it. If the new key is already registered - the record is in the
+    library, correctly tagged - the incumbent wins and these files are
+    rewritten to join it, because only the newcomer can be rewritten.
+    """
+    live = [path for path in paths
+            if path.is_file() and uuidtags.is_audio(path)]
+    if not live:
+        return ""
+
+    meta = read_meta(live[0])
+    new_key = registry.album_key(meta.albumartist, meta.album)
+
+    # An album filed before the registry existed has a UUID on disk and no
+    # row. Adopting it first is what makes the repoint a move rather than a
+    # mint, so the record keeps the identity Navidrome already knows it by.
+    if old_key and registry.known(space.library_id, old_key) is None:
+        carried = set()
+        for path in live:
+            try:
+                _, album_uuid = uuidtags.read(path)
+            except uuidtags.UnreadableFile:
+                continue
+            if album_uuid:
+                carried.add(album_uuid)
+        if len(carried) == 1:
+            registry.adopt(space.library_id, old_key, carried.pop())
+
+    settled = registry.repoint(space.library_id, old_key or new_key, new_key)
+
+    rewritten = 0
+    for path in live:
+        if not uuidtags.can_carry_tags(path):
+            continue
+        try:
+            existing_track, existing_album = uuidtags.read(path)
+            if existing_album == settled and existing_track:
+                continue
+            uuidtags.write(path, None if existing_track else str(uuid.uuid4()),
+                           settled)
+            rewritten += 1
+        except Exception as exc:
+            log.warning("could not re-identify %s after a retag: %s: %s",
+                        path.name, type(exc).__name__, exc)
+
+    if rewritten:
+        log.info("%d file(s) joined album %s after a retag", rewritten, settled)
+    return settled
+
+
 def _move_into_place(source: Path, target: Path) -> Path:
     """Move a file to target, never overwriting silently.
 

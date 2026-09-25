@@ -702,7 +702,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   gap: var(--s-4);
   /* Both margins. It had only the lower one, so the box sat flush against
      the paragraph explaining it while every other panel stood clear of its
-     note - the same value as #staging, #dupes and #health above. */
+     note - the same value as #review, #dupes and #health above. */
   margin: var(--s-4) 0;
   padding: var(--s-5);
   background: var(--panel);
@@ -884,15 +884,15 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
 /* --- staging -------------------------------------------------------------- */
 
-#staging, #dupes, #health { margin-top: var(--s-4); }
+#review, #dupes, #health { margin-top: var(--s-4); }
 
-#staging {
+#review {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   overflow: hidden;
 }
-#staging:empty { display: none; }
+#review:empty { display: none; }
 
 .staging-item {
   display: grid;
