@@ -263,11 +263,11 @@ async def test_every_track_of_one_album_shares_its_album_uuid(library):
 
 @pytest.mark.asyncio
 async def test_the_scratch_directory_is_cleared(library):
-    from app import filer
+    from app import inbox
 
     await _run(library, [_track(1, "Come Together")])
 
-    assert not filer.scratch_root(library, "job1").exists()
+    assert not inbox.scratch_root(library, "job1").exists()
 
 
 @pytest.mark.asyncio

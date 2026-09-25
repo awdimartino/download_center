@@ -19,7 +19,7 @@ import logging
 from typing import Any
 from collections.abc import Awaitable, Callable
 
-from . import downloader, filer, ledger, matcher, navidrome, tagger
+from . import downloader, inbox, ledger, matcher, navidrome, tagger
 from . import workspace
 from .config import settings
 
@@ -148,7 +148,7 @@ async def _process(item: dict[str, Any], space: workspace.Workspace,
             item["match_url"] = url
             item["match_score"] = round(score, 3)
 
-        temp = filer.scratch_path(space, job_id, item["id"])
+        temp = inbox.scratch_path(space, job_id, item["id"])
         try:
             path = await _download_with_retries(item, url, temp)
         except downloader.DownloadError as exc:
@@ -166,8 +166,11 @@ async def _process(item: dict[str, Any], space: workspace.Workspace,
             # review list, which is still better than discarding the audio.
             log.warning("tagging failed for %s: %s", item["title"], exc)
 
+        # Into the inbox, and filed from there - the same road a
+        # hand-dropped file takes. The worker only calls it directly rather
+        # than waiting for the poller to work out what it already knows.
         try:
-            filed = await asyncio.to_thread(filer.file_track, space, path)
+            filed = await asyncio.to_thread(inbox.deliver, space, path)
         except Exception as exc:
             log.exception("could not file %s", item["title"])
             _mark(item, "failed", error=f"Could not file the download: {exc}"[:200])
@@ -271,7 +274,7 @@ async def run_job(job: dict[str, Any], push: Push,
         await asyncio.to_thread(ledger.record, item, item.get("file_path"),
                                 space.library_id)
 
-    await asyncio.to_thread(filer.discard, space, job["id"])
+    await asyncio.to_thread(inbox.discard, space, job["id"])
 
     failed = sum(1 for item in items if item["status"] == "failed")
     done = sum(1 for item in items if item["status"] in ("complete", "skipped"))

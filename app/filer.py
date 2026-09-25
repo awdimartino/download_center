@@ -180,32 +180,6 @@ def destination(space: workspace.Workspace, meta: Meta, suffix: str) -> Path:
             / sanitize(meta.album) / track_filename(meta, suffix))
 
 
-# --- scratch space ----------------------------------------------------------
-#
-# A download is built somewhere Navidrome cannot see and filed once it is
-# whole, so a half-written file is never served. The scratch tree keeps its
-# old home under the workspace rather than inside the library: a hidden
-# directory in the music tree would be a scanner's problem, and the copy that
-# crossing the mount costs is a few megabytes per track.
-
-def scratch_root(space: workspace.Workspace, job_id: str) -> Path:
-    return space.incomplete_dir / job_id
-
-
-def scratch_path(space: workspace.Workspace, job_id: str, item_id: str) -> Path:
-    """Where one item is built. Named for the item, not for its tags.
-
-    The final name comes from the tags the download is given afterwards, and
-    those are not known until it has been fetched. Item ids are generated
-    hex, so this is always a legal filename.
-    """
-    return scratch_root(space, job_id) / f"{item_id}.mp3"
-
-
-def discard(space: workspace.Workspace, job_id: str) -> None:
-    shutil.rmtree(scratch_root(space, job_id), ignore_errors=True)
-
-
 # --- retagging --------------------------------------------------------------
 #
 # The one thing that is allowed to move a file after it is written, because a

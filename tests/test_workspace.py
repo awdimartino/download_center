@@ -125,15 +125,24 @@ def test_prepare_makes_every_directory_the_pipeline_writes_into(staging_root):
     space.prepare()
 
     for directory in (space.albums_dir, space.singles_dir,
-                      space.incomplete_dir, space.beets_dir):
+                      space.inbox_dir, space.incomplete_dir,
+                      space.beets_dir):
         assert directory.is_dir()
 
 
-def test_incomplete_sits_beside_the_finished_folders(staging_root):
-    """It has to be on the same filesystem, or publishing an album is a copy
-    rather than a rename and beets can see it half-written."""
+def test_a_download_is_built_inside_the_inbox(staging_root):
+    """The inbox is the one way into the library, so a finished download has
+    to arrive there like everything else - by a rename, which needs the same
+    filesystem."""
     space = workspace.for_session(_identity())
-    assert space.incomplete_dir.parent == space.albums_dir.parent
+    assert space.incomplete_dir.parent == space.inbox_dir
+
+
+def test_the_scratch_directory_is_hidden_from_the_watcher(staging_root):
+    """A file half written by yt-dlp is not a file to file. `inbox.waiting`
+    skips hidden directories, and this is why."""
+    space = workspace.for_session(_identity())
+    assert space.incomplete_dir.name.startswith(".")
 
 
 # --- reading workspaces back with nobody signed in --------------------------

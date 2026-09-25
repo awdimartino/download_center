@@ -1,15 +1,24 @@
-"""A drop point for music that did not come from a download job.
+"""The one way music gets into the library.
+
+Everything arrives here: a finished download, a folder dragged in over the
+network share, a file copied in by hand. There is no second road. That is the
+whole point - the album-versus-single routing, the completeness check and the
+regrouping pass all existed because a download and a hand-drop took different
+paths in, and every one of them was a place a track could end up somewhere
+nobody would look for it.
 
 Staging was a waiting room: files went in and stayed there until beets agreed
 to admit them, which for most of them was never. Alex's held 877 files and
 Kelly's 327. The inbox is the opposite - it is transient. Something appears,
-it stops changing, it is filed, and the inbox is empty again. At rest it holds
-nothing, which means "is there anything in the inbox" is a question with an
-obvious answer rather than a backlog nobody reads.
+it is filed by its own tags, and the inbox is empty again. At rest it holds
+nothing, which means "is anything waiting" has an obvious answer rather than
+a backlog nobody reads.
 
-Each file is filed by its own tags, exactly as a finished download is. There
-is no grouping pass and no album-versus-single decision, because there is no
-longer a difference between how the two arrive.
+Two ways in, one door. A download is built in `.incomplete/`, tagged, then
+delivered - moved into the inbox and filed on the spot, because the worker
+knows that file is finished. Anything else is found by the poller, which is
+also what catches a download the application died in the middle of: the file
+is already in the inbox, so a restart files it rather than losing it.
 
 Polled rather than watched through inotify. The inbox is meant to be written
 to over a network share, and inotify does not see a write that happens on the
@@ -20,6 +29,7 @@ size and works wherever the files come from.
 from __future__ import annotations
 
 import logging
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +53,70 @@ class Result:
     @property
     def changed(self) -> bool:
         return bool(self.filed)
+
+
+# --- a download on its way in -----------------------------------------------
+#
+# Built inside the inbox rather than beside it, so arriving is a rename on one
+# filesystem. Hidden, so the poller walks past a file yt-dlp is still writing.
+
+def scratch_root(space: workspace.Workspace, job_id: str) -> Path:
+    return space.incomplete_dir / job_id
+
+
+def scratch_path(space: workspace.Workspace, job_id: str, item_id: str) -> Path:
+    """Where one item is built. Named for the item, not for its tags.
+
+    The final name comes from the tags the download is given afterwards, and
+    those are not known until it has been fetched. Item ids are generated
+    hex, so this is always a legal filename.
+    """
+    return scratch_root(space, job_id) / f"{item_id}.mp3"
+
+
+def discard(space: workspace.Workspace, job_id: str) -> None:
+    """Throw away a job's unfinished downloads.
+
+    Only ever the scratch directory. A track that was already delivered is in
+    the library and is not this function's business - cancelling a job does
+    not un-download what it finished.
+    """
+    shutil.rmtree(scratch_root(space, job_id), ignore_errors=True)
+
+
+def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
+    """Put a finished download into the inbox, and file it straight away.
+
+    The move is what makes this the same road everything else takes; filing
+    it immediately is only the worker saying so, rather than waiting for the
+    poller to work out what it already knows.
+
+    The two cannot collide over the same file. A rename keeps the file's
+    mtime, so what lands here is seconds old and `settled` is false for it
+    for the whole quiet period - by which time this has long since filed it.
+    And if the application dies in between, that same quiet period is what
+    hands the file to the poller on the next start instead of losing it.
+    """
+    space.inbox_dir.mkdir(parents=True, exist_ok=True)
+    arrived = _move_in(source, space.inbox_dir / source.name)
+    return filer.file_track(space, arrived)
+
+
+def _move_in(source: Path, target: Path) -> Path:
+    """Move into the inbox without overwriting something already waiting."""
+    if target.exists():
+        stem, suffix = target.stem, target.suffix
+        for n in range(2, 100):
+            candidate = target.with_name(f"{stem} ({n}){suffix}")
+            if not candidate.exists():
+                target = candidate
+                break
+        else:
+            raise FileExistsError(
+                f"{target} and 98 numbered variants all exist; refusing to "
+                f"overwrite. Clear some out of {target.parent}.")
+    shutil.move(str(source), str(target))
+    return target
 
 
 def settled(path: Path, quiet_seconds: int | None = None) -> bool:
@@ -101,7 +175,14 @@ def _prune(root: Path) -> None:
     if not root.is_dir():
         return
     for entry in sorted(root.rglob("*"), reverse=True):
-        if entry.is_dir() and not any(entry.iterdir()):
+        if not entry.is_dir():
+            continue
+        # Never the scratch tree. It is empty between jobs and removing any
+        # of it would race a download about to write in there.
+        if any(part.startswith(".")
+               for part in entry.relative_to(root).parts):
+            continue
+        if not any(entry.iterdir()):
             try:
                 entry.rmdir()
             except OSError:

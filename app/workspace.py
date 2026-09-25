@@ -95,9 +95,16 @@ class Workspace:
 
     @property
     def incomplete_dir(self) -> Path:
-        # Beside the finished folders, on the same filesystem, so publishing
-        # an album is a rename rather than a copy.
-        return self.staging / ".incomplete"
+        """Where a download is built, before it is anything worth keeping.
+
+        Inside the inbox, not beside it, because the inbox is the one way
+        into the library and a finished download has to arrive there like
+        everything else - by a rename, which needs the same filesystem.
+
+        Hidden, so the inbox watcher walks straight past it: a file half
+        written by yt-dlp is not a file to file.
+        """
+        return self.inbox_dir / ".incomplete"
 
     @property
     def beets_dir(self) -> Path:

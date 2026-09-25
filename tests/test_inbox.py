@@ -110,12 +110,17 @@ def test_a_one_track_fragment_is_filed_like_anything_else(space):
 # --- what is left behind ----------------------------------------------------
 
 def test_the_inbox_is_empty_afterwards(space):
+    """No music left, and no tree of emptied folders either - a dragged-in
+    album leaves its own directory behind, and that reads as "something is
+    still in there". The hidden scratch directory stays: it is where the
+    next download will be built."""
     drop(space, into="an album", albumartist="Artist", album="Album",
          title="Song", tracknumber="1")
 
     inbox.drain(space)
 
-    assert list(space.inbox_dir.rglob("*")) == []
+    assert inbox.waiting(space) == []
+    assert [p.name for p in space.inbox_dir.iterdir()] == [".incomplete"]
 
 
 def test_a_file_still_being_written_is_left_alone(space, monkeypatch):
@@ -186,3 +191,126 @@ def test_an_unmounted_library_is_left_alone(space, monkeypatch):
 def test_nothing_in_the_inbox_is_not_an_error(space):
     assert inbox.drain(space).filed == []
     assert inbox.drain_all() == {}
+
+
+# --- a download coming in the same way --------------------------------------
+#
+# There is one road into the library. A download is built in the hidden
+# scratch directory, tagged, then delivered into the inbox like anything
+# else - the worker just files it on the spot rather than waiting for the
+# poller to work out what it already knows.
+
+def built(space, job="job1", item="i1", **tags) -> Path:
+    """A finished, tagged download sitting in scratch space."""
+    path = inbox.scratch_path(space, job, item)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(SILENCE, path)
+    if tags:
+        audio = EasyID3(path)
+        for key, value in tags.items():
+            audio[key] = str(value)
+        audio.save()
+    return path
+
+
+def test_a_download_is_filed_the_moment_it_is_delivered(space):
+    source = built(space, albumartist="The Beatles", album="Abbey Road",
+                   title="Come Together", tracknumber="1")
+
+    filed = inbox.deliver(space, source)
+
+    assert filed.path == (space.library_path / "The Beatles" / "Abbey Road"
+                          / "01 - Come Together.mp3")
+    assert filed.path.is_file()
+    assert not source.exists()
+
+
+def test_a_download_and_a_hand_drop_land_in_the_same_album(space):
+    """The whole reason there is one road. These used to be two, and the
+    difference between them is where `Non-Album/` came from."""
+    downloaded = inbox.deliver(space, built(
+        space, albumartist="The Beatles", album="Abbey Road",
+        title="Come Together", tracknumber="1"))
+
+    drop(space, name="b.mp3", albumartist="The Beatles", album="Abbey Road",
+         title="Something", tracknumber="2")
+    dropped = inbox.drain(space)
+
+    assert dropped.filed[0].parent == downloaded.path.parent
+    assert uuidtags.read(dropped.filed[0])[1] == downloaded.album_uuid
+
+
+def test_the_poller_cannot_grab_a_download_being_built(space, monkeypatch):
+    """Scratch space is hidden, so a file yt-dlp is still writing is not a
+    file to file. Without this the poller would file a partial MP3 under a
+    real name the moment it stopped changing."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "staging_quiet_seconds", 0)
+    half = built(space, albumartist="The Beatles", album="Abbey Road")
+
+    assert inbox.waiting(space) == []
+    assert inbox.drain(space).filed == []
+    assert half.exists()
+
+
+def test_the_poller_does_not_race_the_worker_for_a_delivered_file(space,
+                                                                  monkeypatch):
+    """A rename keeps the file's mtime, so what lands in the inbox is seconds
+    old and stays unsettled for the whole quiet period - long after the
+    worker has filed it."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "staging_quiet_seconds", 120)
+    source = built(space, albumartist="The Beatles", album="Abbey Road",
+                   title="Come Together", tracknumber="1")
+    arrived = inbox._move_in(source, space.inbox_dir / source.name)
+
+    assert inbox.settled(arrived) is False
+    assert inbox.drain(space).filed == []
+
+
+def test_a_download_orphaned_by_a_crash_is_picked_up_later(space, monkeypatch):
+    """The application died between delivering and filing. The file is in the
+    inbox, so a restart files it - where before it sat in scratch space and
+    was thrown away with the job."""
+    from app.config import settings
+
+    source = built(space, albumartist="The Beatles", album="Abbey Road",
+                   title="Come Together", tracknumber="1")
+    inbox._move_in(source, space.inbox_dir / source.name)
+
+    monkeypatch.setattr(settings, "staging_quiet_seconds", 0)
+    result = inbox.drain(space)
+
+    assert result.filed == [space.library_path / "The Beatles" / "Abbey Road"
+                            / "01 - Come Together.mp3"]
+
+
+def test_discarding_a_job_leaves_what_it_already_filed(space):
+    """Cancelling a job throws away its unfinished downloads. It does not
+    un-download the tracks that finished."""
+    filed = inbox.deliver(space, built(
+        space, item="i1", albumartist="Artist", album="Album", title="Done",
+        tracknumber="1"))
+    unfinished = built(space, item="i2", albumartist="Artist", album="Album")
+
+    inbox.discard(space, "job1")
+
+    assert not unfinished.exists()
+    assert filed.path.is_file()
+
+
+def test_delivering_two_files_of_the_same_name_keeps_both(space):
+    """Item ids make this impossible within a job, but two jobs can finish
+    into the inbox at once, and overwriting is how a download disappears."""
+    one = built(space, job="a", item="same", albumartist="Artist",
+                album="Album", title="One", tracknumber="1")
+    two = built(space, job="b", item="same", albumartist="Artist",
+                album="Album", title="Two", tracknumber="2")
+
+    first = inbox.deliver(space, one)
+    second = inbox.deliver(space, two)
+
+    assert first.path != second.path
+    assert first.path.is_file() and second.path.is_file()
