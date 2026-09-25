@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import ledger, navidrome, stamp, staging, uuidtags, workspace
+from . import inbox, ledger, navidrome, stamp, staging, uuidtags, workspace
 from .config import CONFIG_DIR, settings
 
 log = logging.getLogger("download_center.beets")
@@ -659,21 +659,10 @@ def _import_paths(space: workspace.Workspace, published: list[Path],
     }
 
 
-def settled(path: Path, quiet_seconds: int | None = None) -> bool:
-    """Whether a path has stopped changing and is safe to import.
-
-    A directory still being written to imports as a partial album, which is
-    exactly the mistake this pipeline exists to avoid. Nothing here can know
-    whether a downloader is mid-run, so it waits for stillness instead.
-    """
-    if quiet_seconds is None:
-        quiet_seconds = settings.staging_quiet_seconds
-    cutoff = time.time() - quiet_seconds
-    newest = path.stat().st_mtime
-    if path.is_dir():
-        for child in path.rglob("*"):
-            newest = max(newest, child.stat().st_mtime)
-    return newest <= cutoff
+# The quiet-period check lives with the inbox now, which is the only thing
+# that will still be waiting for files to stop changing once the staging
+# tree is gone. Re-exported so the staging endpoints keep working meanwhile.
+settled = inbox.settled
 
 
 def waiting_in(space: workspace.Workspace) -> list[Path]:

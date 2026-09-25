@@ -365,7 +365,7 @@ def test_only_the_sweep_second_guesses_beets():
     sweep = source[source.index("def sweep_staging"):
                    source.index("def _prune_empty")]
     importer = source[source.index("def _import_paths"):
-                      source.index("def settled")]
+                      source.index("def waiting_in")]
 
     assert "worth_trying" in sweep
     assert "worth_trying" not in importer

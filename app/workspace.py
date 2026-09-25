@@ -84,6 +84,16 @@ class Workspace:
         return self.staging / "singles"
 
     @property
+    def inbox_dir(self) -> Path:
+        """Where hand-added music is dropped, and never stays.
+
+        Transient by design, unlike the albums/ and singles/ folders it
+        replaces: a file here is filed by its own tags on sight, so at rest
+        this directory is empty.
+        """
+        return self.staging / "inbox"
+
+    @property
     def incomplete_dir(self) -> Path:
         # Beside the finished folders, on the same filesystem, so publishing
         # an album is a rename rather than a copy.
@@ -126,7 +136,7 @@ class Workspace:
         return path
 
     def prepare(self) -> None:
-        for directory in (self.albums_dir, self.singles_dir,
+        for directory in (self.albums_dir, self.singles_dir, self.inbox_dir,
                           self.incomplete_dir, self.beets_dir):
             directory.mkdir(parents=True, exist_ok=True)
         # A note of who this belongs to, for anyone reading the disk later.

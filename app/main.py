@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, ledger, navidrome, operations, playcounts
 from . import playlists as smart_playlists
-from . import filer, spotify, staging, worker, workspace
+from . import filer, inbox, spotify, staging, worker, workspace
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -238,6 +238,7 @@ async def lifespan(app: FastAPI):
         log.warning("Spotify credentials missing - add them to config/config.toml")
 
     background = [asyncio.create_task(_audit_loop()),
+                  asyncio.create_task(_inbox_loop()),
                   asyncio.create_task(_sweep_loop()),
                   asyncio.create_task(_snapshot_loop())]
     try:
@@ -248,6 +249,23 @@ async def lifespan(app: FastAPI):
         for task in background:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+
+async def _inbox_loop() -> None:
+    """File whatever has been dropped into an inbox, as soon as it settles.
+
+    Nothing like the nightly sweep this sits beside. The sweep ran beets,
+    which does a MusicBrainz lookup per item and moves files about, and on a
+    machine serving music over one link that was felt as stuttering playback
+    - so it was pushed to once a night and everything waited hours. Filing
+    reads tags and renames, so it can run whenever something appears.
+    """
+    while True:
+        try:
+            await asyncio.to_thread(inbox.drain_all)
+        except Exception:
+            log.exception("draining the inbox failed")
+        await asyncio.sleep(inbox.POLL_SECONDS)
 
 
 def next_sweep_at() -> float:
