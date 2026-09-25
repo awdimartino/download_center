@@ -1,8 +1,15 @@
 # Download Center — how the code works
 
-A reference for the codebase as it stands on 2026-09-06. For what it is
-*for* and where it is going, see [PLAN.md](PLAN.md); to pick up work, see
-[HANDOFF.md](HANDOFF.md).
+A reference for the codebase as it stands on 2026-09-25, after the
+direct-to-library redesign. For what it is *for* and where it is going, see
+[PLAN.md](PLAN.md); to pick up work, see [HANDOFF.md](HANDOFF.md).
+
+**Steps 5 and 6 of that redesign are not done.** `staging.py`, `stamp.py`,
+`ledger.py`, the nightly sweep and most of `beets_runner.py` still exist and
+the sweep still runs on its timer. Nothing in the live path uses them - they
+are there so the new path can be watched working before they are removed.
+Where this document describes something as gone, it means "no longer in the
+path a download or a drop takes", not "deleted from the tree".
 
 ---
 
@@ -18,7 +25,7 @@ browser  ──HTTP/WS──▶  download_center  ──read-only sqlite──�
                               │
                               ├──HTTP (native + Subsonic API)──▶  Navidrome
                               ├──subprocess──▶  yt-dlp, ffmpeg, beets
-                              └──filesystem──▶  staging/ ─▶ music/, kelly/
+                              └──filesystem──▶  inbox/ ─▶ music/, kelly/
 ```
 
 The front end is three files, no build step and no framework:
@@ -34,11 +41,16 @@ Knowing which store owns a fact is most of understanding this codebase.
 | Store | Owns | Access |
 |---|---|---|
 | `navidrome.db` | Accounts, libraries, stars, ratings, play counts, the scanned index | **Read-only.** Every write goes through Navidrome's API |
-| `config/state.db` | What has already been downloaded; dismissed duplicate groups | Read/write, ours alone |
+| `config/state.db` | Which album UUID an album key maps to; what has already been downloaded; dismissed duplicate groups | Read/write, ours alone |
 | `config/beets/<workspace>/library.db` | Beets' index of one person's filed music | One per workspace |
 | The audio files | `navidrome_uuid`, MusicBrainz ids, all tags | The truth. Everything else is a cache |
 
-`state.db` has six tables. `ledger` (source_id, **library_id**, isrc,
+`state.db`'s most important table is now `album_registry`
+(**library_id**, **album_key**, album_uuid, created_at). It is the answer to
+"which album is this track on", and it replaced inferring that from directory
+layout plus a majority vote among neighbours - see *Identity* below.
+
+`ledger` (source_id, **library_id**, isrc,
 title, artist, album, file_path, completed_at), keyed on the pair — the
 question is "is this recording already in this collection", and a collection
 is a library, so two accounts sharing one library share the answer and two
@@ -113,13 +125,17 @@ non-admins rather than over-sharing.
 
 - `Workspace.key` is `<username-slug>-<library_id>`. The *id*, not the name,
   because a renamed library must not abandon its index.
-- `staging/<key>/` holds `albums/`, `singles/`, `.incomplete/` and a
+- `staging/<key>/` holds `inbox/` (with `.incomplete/` inside it) and a
   four-line `.owner` marker naming the user, library name, library path and
-  library id.
+  library id. `albums/` and `singles/` are still created, and still hold
+  Alex's 877 un-migrated files, but nothing in the live path writes to them.
 - `config/beets/<key>/` holds that person's `config.yaml` and `library.db`.
 
-The `.owner` marker exists because the staging sweep runs on a timer with
-nobody signed in — the folder itself has to say who its files belong to.
+The `.owner` marker exists because the inbox is drained on a timer with
+nobody signed in — a file dropped in by hand has no session attached, so the
+folder itself has to say who its files belong to. `inbox.drain_all()` reads
+these back through `workspace.existing()`, and skips any workspace whose
+library is not mounted in this container.
 `prepare()` refuses if the marker names a different user, since two
 usernames can slug to the same directory name.
 
@@ -128,57 +144,179 @@ usernames can slug to the same directory name.
 
 ---
 
-## The download pipeline
+## Identity, continued: which album a track is on
+
+A track UUID says *which file*. An album UUID says *which record it belongs
+to*, and getting that second answer wrong is where every identity bug in this
+project came from.
+
+It used to be inferred: one UUID per directory, plus a majority vote among a
+file's neighbours. Both failed. `tools/ensure_uuid.py` run over a flat dump
+of 746 loose tracks gave one UUID to 745 files spanning 101 albums, and
+`stamp._choose_album_uuid` let nine arriving tracks outvote the one already
+filed, splitting two records in half.
+
+`registry.py` writes the answer down instead.
 
 ```
-URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
-                                        │
-                                   worker.py
-                                        │
-        ledger check ─▶ matcher.py ─▶ downloader.py ─▶ tagger.py
-                                        │
-                                   staging.py
-                          (.incomplete/ ─rename─▶ albums/ or singles/)
-                                        │
-                              beets_runner.py sweep
-                                        │
-                          beets moves it into the library
-                                        │
-                                    stamp.py
-                          (writes navidrome_uuid to filed files)
-                                        │
-                              navidrome.trigger_scan()
+album_registry(library_id, album_key, album_uuid, created_at)
 ```
+
+The first track of an album mints a `uuid4` and records it; every later track
+- same job or months later, downloaded or dropped in by hand - looks it up and
+gets the same answer. Membership stops depending on arrival order, directory
+layout, or how many tracks happen to be present.
+
+**The key normalises incidental variation only**: case, whitespace,
+punctuation, unicode compatibility forms, and apostrophes (`Don't`, `Dont` and
+the typographic spelling are one album - Spotify writes U+2019 and a
+hand-typed tag writes the plain one). It makes no semantic judgement.
+`Abbey Road` and `Abbey Road (Super Deluxe Edition)` stay **different**, which
+is the deliberate reversal of the old `staging.album_key`: Spotify presents
+them as two albums with two ids, and merging them puts two track 1s inside one
+record.
+
+**Per library by construction.** A UUID identifies a *file*, not a recording,
+so Alex's copy and Kelly's copy of one album are different files with
+different UUIDs, and an album key is only meaningful inside one library.
+
+`repoint(library_id, old_key, new_key)` follows a retag. Ordinarily the album
+keeps its UUID and only the key moves, so its Navidrome identity survives and
+album-level stars and play counts survive with it. If the new key is already
+mapped - that record is in the library, correctly tagged - **the incumbent
+wins** and the retagged files adopt its UUID. It has to be that way round:
+only the newcomer can be rewritten, so choosing the newcomer's value would not
+move the established album, it would split it.
+
+---
+
+## Ingestion: one road in
+
+Everything enters the library through one person's inbox, and one function
+does the filing. That is the whole design. The album-versus-single routing,
+the completeness check, the regrouping pass and `Non-Album/` were all
+consequences of a download and a hand-drop taking different paths in, and each
+was a place a track could end up somewhere nobody would look for it.
+
+```
+ a download                                   a hand-drop
+     |                                             |
+ spotify.py / generic.py                           |
+     |  resolved job (list of tracks)              |
+ worker.py                                         |
+     |  ledger check                               |
+     |  matcher.py   (skipped for a direct URL)    |
+     |  downloader.py -> inbox/.incomplete/<job>/<item>.mp3
+     |  tagger.py    (Spotify tags written on)     |
+     |                                             |
+     +--> inbox.deliver() --> inbox/ <-------------+   (SMB copy, drag-in)
+                                |
+                                |  inbox.drain(), polled every 15s, once a
+                                |  file has been still for
+                                |  staging_quiet_seconds
+                                |
+                         filer.file_track()
+                                |
+              +-----------------+------------------+
+         read_meta()      registry lookup     write both UUIDs
+         (its own tags)   (album_uuid)        (before the move)
+                                |
+                   $albumartist/$album/$disc-$track - $title.ext
+                                |
+                        navidrome.notify()
+```
+
+**Nothing gates it.** A finished track is playable within seconds, whether or
+not anything can identify it. Beets used to be the admission test and it
+refused 82% of what it was handed - 327 of Kelly's 400 tracks - almost all of
+it for mechanical reasons that had nothing to do with the music: no DNS in the
+container, a `max_rec.missing_tracks` cap, a `data_source` penalty against
+MusicBrainz itself.
 
 - **`spotify.py`** resolves a Spotify link to tracks with full metadata, and
   backs the Browse tab's search.
-- **`generic.py`** handles anything else yt-dlp understands.
+- **`generic.py`** handles anything else yt-dlp understands. Items carry a
+  `direct_url`, so the worker skips matching entirely.
 - **`matcher.py`** picks the YouTube Music recording corresponding to a
-  Spotify track, scored on title, artist and duration.
+  Spotify track, scored on title, artist and duration, with hard gates on
+  title and artist so one perfect signal cannot mask a fatal weakness in
+  another.
 - **`downloader.py`** fetches with yt-dlp and converts to MP3.
-- **`tagger.py`** writes Spotify metadata as seed data for beets. The
-  `artist` tag is the track's **primary** artist, not the full credit:
-  beets reads an album whose tracks disagree on `artist` as a Various
-  Artists release and searches MusicBrainz for a compilation, so one guest
-  appearance made the real record unfindable. The full credit stays in the
-  job for the browser and the YouTube Music search.
-- **`staging.py`** assembles albums in `.incomplete/` and *renames* them into
-  place — a rename, so beets never sees a half-written album. `settled`
-  requires a folder to be quiet for `staging_quiet_seconds` before import.
-- **`beets_runner.py`** — the escape hatch lives here.
-  `import_paths(..., as_is=True)` runs `beet import -A`: no matching at all,
-  filed under the tags the file already carries. Only ever reached by someone
-  pressing *Import as-is*; the sweep never passes it, because importing
-  without matching is a judgement about one item. A file with an album tag
-  goes to `$albumartist/$album/` — the folder its siblings land in, so a later
-  arrival joins it instead of founding a second copy — and one without goes to
-  `Non-Album/`. Which paths beets refused, and why, is remembered in memory so
-  the Staging tab can say so; a refusal otherwise looks exactly like nothing
-  having run. It also generates each workspace's config from a template
-  (placeholder substitution, **not** `str.format` — beets path templates are
-  full of braces) and runs the import.
-- **`stamp.py`** assigns identity tags *after* beets has filed a file, not at
-  download time, because beets moves and rewrites files.
+- **`tagger.py`** writes Spotify metadata. These used to be seed data for a
+  matcher that would overwrite them; they are now **what the file is filed
+  by** and what Navidrome shows. The `artist` tag is still the track's
+  **primary** artist rather than the full credit - the full credit stays on
+  the job, for the browser and the YouTube Music search.
+- **`inbox.py`** is the door. `scratch_path()` is where a download is built,
+  in a hidden `.incomplete/` *inside* the inbox, so arriving is a rename on
+  one filesystem and the poller walks straight past a file yt-dlp is still
+  writing. `deliver()` moves a finished download in and files it on the spot,
+  because the worker knows that file is finished. `drain()` is the poller,
+  for everything else.
+- **`filer.py`** computes the path from the file's own tags, writes both UUIDs
+  *before* the move so Navidrome never sees a track without one, and moves it
+  into place. `os.replace` first, falling back to copy-and-delete on `EXDEV`,
+  because scratch space and the library are separate bind mounts.
+
+**The poller cannot race the worker.** A rename preserves mtime, so a
+delivered file is seconds old and `settled()` is false for it for the whole
+quiet period - long after `deliver()` has filed it. The same property means a
+track the application died on is sitting in the inbox and gets filed on the
+next start, instead of being discarded with the job's scratch directory.
+
+### Paths are frozen
+
+`$albumartist/$album/$disc-$track - $title.ext`, rooted at the library. The
+disc prefix appears only on a multi-disc release; a file with no track number
+is named for its title alone, not `00 - Title`. Collisions are numbered,
+never overwritten.
+
+After that, **no automatic process moves a file**. Navidrome identifies a
+track by its UUID and groups albums by tag, never by path, so a path that
+drifts from the tags is cosmetic - it matters only to a human browsing the
+filesystem. Only a retag confirmed in the review page moves anything, and the
+UUID means nothing is lost when it does.
+
+Freezing paths is what removed most of the old machinery: `staging.regroup`,
+`_prune_empty`, `_singleton_mode`, the album/single routing in `staging.plan`,
+`stamp.resplit`, `spanning_albums` and the re-stamping after a move all
+existed only because files moved.
+
+---
+
+## Review: what has not been confirmed
+
+`review.py` and the Review panel replaced Staging. The distinction is the
+whole point of the redesign: the staging list was music that had **not
+arrived**, and every row on it was a failure. The review list is music that
+**has** arrived, is filed and playable, and simply has not been checked.
+
+**Untagged means no MusicBrainz recording id**, read off Navidrome's database
+every time. Nothing is stored, so a track leaves the list by gaining an id and
+no flag can fall out of step with reality - which is exactly how the
+`import_refusal` table went wrong.
+
+Grouped by folder, because the filer puts exactly one album in one directory,
+so the directory *is* the album. The action is album-level by default: a
+per-track correction is what splits an album. **Per user, strictly private**,
+scoped through `identity.libraries`; an admin does not see another person's
+list.
+
+Matching is manual, one album at a time. `POST /api/review/match` asks beets
+for the candidate list that `quiet_fallback: skip` throws away, and is the
+seam where Picard could replace beets later. `POST /api/review/match/apply`
+retags the files as the release somebody picked, then calls
+`filer.after_retag()` to re-point the album UUID rather than reissue it.
+
+On day one the list is large and honest: 1,113 of Alex's 6,495 tracks have no
+MusicBrainz id. That was always the number - beets was keeping it outside the
+library rather than making it smaller.
+
+**One consequence worth stating plainly.** This makes the library permissive:
+mistakes now land inside it rather than being held outside. That is clearly
+the right trade at an 82% false-rejection rate, but it means the review list
+and the duplicates tooling stop being nice-to-haves and become the actual
+quality mechanism.
 
 ---
 
@@ -207,6 +345,11 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
   is not another's to read. Keyed by track
   UUID, storing only what changed, with a run log so a quiet day still
   counts as captured. `play_imported` holds the Last.fm backfill beside it.
+- **`operations.py`** — long work that is not a download: a candidate
+  lookup, a retag, a disk audit. One at a time per name, off the request,
+  with a status the browser can ask for; starting one already running reports
+  the one in flight rather than occupying a second of FastAPI's forty
+  threads on a lock. Results arrive over the WebSocket.
 - **`playlists.py`** — smart playlist rules. Translates between Navidrome's
   nested operator shape and a flat form the browser can render. Rules it
   cannot represent are marked unsupported rather than flattened.
@@ -215,7 +358,11 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
 
 ## HTTP layer
 
-`main.py` (939 lines — it wants splitting) holds every route.
+`main.py` (1,707 lines — it wants splitting more than ever) holds every
+route. Four background loops run for the life of the process: `_inbox_loop`
+(every 15s, files what has been dropped in), `_audit_loop`, `_snapshot_loop`
+(nightly play counts) and `_sweep_loop` — the last of which is the old beets
+sweep, still running over `albums/` and `singles/` until step 5 removes it.
 
 - A `require_session` middleware gates all `/api/*` except the three auth
   paths. `/healthz` is deliberately ungated so the container healthcheck
@@ -226,17 +373,28 @@ URL ─▶ spotify.py / generic.py ─▶ resolved job (list of tracks)
   session that owns the job.
 - The shell is served `no-store`; a cached pre-auth page once made the app
   look like it would not sign in.
-- `POST /api/staging/import-as-is` takes a `kind` and a `name`, never a
-  path. `Workspace.staged()` is the boundary that turns those back into a
-  file: resolved and compared against the staging directory, so a name from
-  the browser cannot address anything outside it.
+- The review endpoints take a `library_id` and a `folder`, never a path.
+  `review.album_dir()` is the boundary that turns those back into a
+  directory: the library must be one this account can see, and the resolved
+  path must sit under that library's root — resolved and compared rather than
+  filtered for `..`, since a symlink walks out of a filtered name too. The
+  older `Workspace.staged()` does the same job for the staging endpoints,
+  which are still mounted but no longer reachable from the UI.
 
 ---
 
 ## Front end
 
-`app.js` is one global scope, organised by panel: queue, browse, staging,
-health, duplicates, playlists. It still wants splitting (FIXES item 29).
+`app.js` is one global scope, organised by panel: queue, browse, review,
+health, duplicates, playlists, listening, settings. It still wants splitting
+(FIXES item 29).
+
+The Review panel is the old Staging panel's markup and CSS classes with a
+different question behind it — `staging-item`, `staging-name` and friends are
+still the layout class names, and renaming them is cosmetic work nobody has
+done. The ids were renamed (`#review`, `#review-op`, `#review-badge`)
+because `test_frontend.py` fails the build on an id the stylesheet styles
+that the markup does not have.
 
 There is no JavaScript test runner — Node is not available here or in CI — so
 `tests/test_frontend.py` checks the *joins* instead: no duplicate ids, every
@@ -249,7 +407,7 @@ before each deploy was actually doing.
 A message about work that a panel started belongs *in that panel*.
 `#error` at the top of `<main>` sits outside every section, so anything left
 there followed you onto every other view; `showView` now clears it, and the
-import and audit outcomes go to `#staging-op` and `#health-op`.
+retag and audit outcomes go to `#review-op` and `#health-op`.
 
 Navigation is a single menu at every width: a button in the header opens a
 full-height overlay listing the panels. Panels are shown by toggling
