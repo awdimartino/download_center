@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import logging
 import re
-import threading
 import time
 import unicodedata
 import uuid
@@ -55,18 +54,33 @@ SEPARATOR = "\x1f"
 # the plain one, so this is the difference that actually turns up.
 _APOSTROPHE = re.compile(r"['‘’ʼ´`]")
 
-_lock = threading.Lock()
+# state.db's lock, not one of our own. Every writer to that connection has
+# to take the same one: sqlite runs a single transaction per connection, so
+# committing under a private lock ends whatever transaction another module is
+# midway through. `playcounts.take` writes its snapshot rows and its
+# run marker as one unit, and a download filing a track used to be able to
+# commit it between the two - leaving the rows stored with nothing recording
+# that the day had been done.
+_lock = ledger._lock
+
+# The connection the schema has been applied to. `executescript` issues an
+# implicit COMMIT before it runs, so doing it per call was the other half of
+# the same problem.
+_schema_on: object | None = None
 
 
 def _store():
     """The state.db handle, with our table guaranteed to exist.
 
-    Applied on every call rather than once at connect time so a test - or a
-    reconnect - never has to remember to do it. `CREATE TABLE IF NOT EXISTS`
-    against an existing table is a catalogue read, not a write.
+    Compared by identity rather than by a flag, so a reconnect - which is
+    what every test does - applies the schema again to the new connection.
     """
+    global _schema_on
     conn = ledger.connection()
-    conn.executescript(SCHEMA)
+    if _schema_on is not conn:
+        with _lock:
+            conn.executescript(SCHEMA)
+        _schema_on = conn
     return conn
 
 
@@ -87,7 +101,19 @@ def normalize(value: str) -> str:
     """
     folded = unicodedata.normalize("NFKC", value or "").casefold()
     folded = _APOSTROPHE.sub("", folded)
-    return re.sub(r"[^\w]+", " ", folded, flags=re.UNICODE).strip()
+    cleaned = re.sub(r"[^\w]+", " ", folded, flags=re.UNICODE).strip()
+    if cleaned:
+        return cleaned
+
+    # Nothing survived, because the name is punctuation and nothing else.
+    # Those are real: Ed Sheeran's +, -, = and ÷ are four albums, !!! is a
+    # band, and this project has already met two tracks called "...". Folding
+    # them all to "" would give every one of them the same key and merge four
+    # records into one - the exact failure this table exists to prevent.
+    #
+    # So keep the characters and drop only the spacing, which is the same
+    # rule the ordinary path applies: "+ +" and "++" are one name.
+    return re.sub(r"\s+", "", folded)
 
 
 def album_key(albumartist: str, album: str) -> str:

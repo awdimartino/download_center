@@ -287,14 +287,78 @@ musicbrainz:
 """
 
 
+def _paths_block(text: str) -> tuple[int, int] | None:
+    """Where the `paths:` mapping starts and ends, as line indices.
+
+    Line-based rather than parsed, because the file is a hand-editable
+    config and round-tripping it through a YAML loader would rewrite
+    everything else in it - comments included, and the comments here are
+    most of what the file is for.
+    """
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, line in enumerate(lines)
+                  if line.startswith("paths:")), None)
+    if start is None:
+        return None
+    end = start + 1
+    while end < len(lines) and (not lines[end].strip()
+                                or lines[end][:1] in (" ", "\t")):
+        end += 1
+    return start, end
+
+
+def _repair_paths(space: workspace.Workspace) -> bool:
+    """Bring an existing config's path template up to the current one.
+
+    `ensure_config` deliberately never overwrites a config, and
+    `adopt_legacy` rewrites only the three absolute paths inside one. So a
+    workspace that inherited the single-user installation still files with
+    the template that installation had:
+
+        $albumartist/$album%aunique{} ($original_year)/$track $title
+
+    Both of those are exactly what the current template's own comment says
+    must not be there. `%aunique{}` and the year put two pressings of one
+    record in two folders, and the folder name no longer matches what the
+    filer writes - so a retag confirmed in the review page moves the files
+    somewhere the frozen layout does not have, and leaves the album's real
+    directory behind, empty.
+
+    Only the `paths:` block is touched. `directory`, the database and log
+    locations, and any other hand edit are left exactly as they are.
+    """
+    text = space.beets_config.read_text(encoding="utf-8")
+    here, wanted = _paths_block(text), _paths_block(DEFAULT_CONFIG)
+    if here is None or wanted is None:
+        return False
+
+    lines = text.splitlines(keepends=True)
+    current = "".join(lines[here[0]:here[1]])
+    replacement = "".join(DEFAULT_CONFIG.splitlines(keepends=True)[wanted[0]:wanted[1]])
+    if current == replacement:
+        return False
+
+    lines[here[0]:here[1]] = [replacement]
+    space.beets_config.write_text("".join(lines), encoding="utf-8")
+    log.info("updated the beets path template for %s; it still had the "
+             "single-user one, which files albums somewhere the library "
+             "layout does not have", space.username)
+    return True
+
+
 def ensure_config(space: workspace.Workspace) -> Path:
     """Create this person's beets config on first use; never overwrite it.
 
     The destination is filled in from their Navidrome library, so adding a
     user is nothing more than them signing in once.
+
+    The one exception is the path template, which decides where beets puts a
+    file and therefore has to agree with the filer - see `_repair_paths`.
     """
     space.prepare()
-    if not space.beets_config.exists():
+    if space.beets_config.exists():
+        _repair_paths(space)
+    else:
         # Substituted rather than formatted: the template is full of beets
         # path syntax like %if{$albumartist,...}, which str.format reads as
         # replacement fields and rejects.

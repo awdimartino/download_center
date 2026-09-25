@@ -212,3 +212,45 @@ def test_nothing_works_without_a_database():
     rather than mint UUIDs nothing will remember."""
     with pytest.raises(AssertionError):
         registry.album_uuid_for(1, "The Beatles", "Abbey Road")
+
+
+# --- names made entirely of punctuation ------------------------------------
+#
+# Normalisation maps every non-word character to a space, so these used to
+# reduce to "" and share a single key. Four Ed Sheeran albums became one
+# record with four track 1s in it, which is the exact failure this table
+# exists to prevent.
+
+def test_ed_sheerans_four_albums_are_four_albums():
+    keys = {registry.album_key("Ed Sheeran", name)
+            for name in ("+", "-", "=", "÷")}
+    assert len(keys) == 4
+
+
+def test_a_punctuation_only_name_does_not_vanish():
+    assert registry.normalize("+") == "+"
+    assert registry.normalize("!!!") == "!!!"
+    assert registry.normalize("...") == "..."
+
+
+def test_a_band_called_out_of_punctuation_keeps_its_name():
+    assert (registry.album_key("!!!", "Strange Weather, Isn't It?")
+            != registry.album_key("...", "Strange Weather, Isn't It?"))
+
+
+def test_spacing_still_does_not_matter_in_a_punctuation_name():
+    """The ordinary rule still applies - it is only the fallback that is
+    different, not the principle."""
+    assert registry.normalize("+ +") == registry.normalize("++")
+
+
+def test_a_genuinely_empty_name_is_still_empty():
+    assert registry.normalize("") == ""
+    assert registry.normalize("   ") == ""
+
+
+def test_the_punctuation_fallback_mints_separate_uuids(state_db):
+    plus = registry.album_uuid_for(1, "Ed Sheeran", "+")
+    minus = registry.album_uuid_for(1, "Ed Sheeran", "-")
+    assert plus != minus
+    assert registry.count(1) == 2

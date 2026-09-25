@@ -166,6 +166,28 @@ def waiting(space: workspace.Workspace) -> list[Path]:
     return found
 
 
+def loose_in_library(space: workspace.Workspace) -> list[Path]:
+    """Audio sitting at the very top of the library, in no album folder.
+
+    The filer never produces one of these - every file it writes goes to
+    `$albumartist/$album/`. So one at the root was put there by hand, or by
+    something that ran before any of this existed, and it has never been
+    filed by anything.
+
+    It cannot be left alone either: with no folder there is no album for the
+    review page to offer, and a matcher handed its "folder" would be handed
+    the whole library. Filing it by its tags gives it somewhere to be.
+
+    Only the top level, never recursing. Everything below it is already in a
+    folder, and `duplicates-removed/` is a directory, so it is passed over.
+    """
+    root = space.library_path
+    if not root.is_dir():
+        return []
+    return sorted(path for path in root.iterdir()
+                  if path.is_file() and uuidtags.is_audio(path))
+
+
 def _prune(root: Path) -> None:
     """Remove directories the filing emptied, deepest first.
 
@@ -190,9 +212,14 @@ def _prune(root: Path) -> None:
 
 
 def drain(space: workspace.Workspace) -> Result:
-    """File everything in the inbox that has stopped changing."""
+    """File everything that has stopped changing and is not filed yet.
+
+    The inbox, plus anything loose at the top of the library - those have
+    never been through the filer either, and this is the only thing that
+    looks at them.
+    """
     result = Result()
-    for path in waiting(space):
+    for path in waiting(space) + loose_in_library(space):
         if not settled(path):
             result.waiting += 1
             continue
@@ -200,14 +227,14 @@ def drain(space: workspace.Workspace) -> Result:
             filed = filer.file_track(space, path)
         except Exception as exc:
             result.failures.append(f"{path.name}: {type(exc).__name__}: {exc}")
-            log.exception("could not file %s from %s's inbox",
+            log.exception("could not file %s for %s",
                           path.name, space.username)
             continue
         result.filed.append(filed.path)
 
     if result.filed:
         _prune(space.inbox_dir)
-        log.info("filed %d file(s) from %s's inbox",
+        log.info("filed %d file(s) for %s",
                  len(result.filed), space.username)
     return result
 

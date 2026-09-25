@@ -246,3 +246,26 @@ def test_an_unreadable_database_is_reported_not_raised(identity, monkeypatch,
     assert listed["available"] is False
     assert listed["entries"] == []
     assert listed["reason"]
+
+
+# --- a file with no album folder --------------------------------------------
+#
+# `root / ""` is the root, so an empty folder used to resolve to the library
+# itself and the traversal guard waved it through - which would have handed a
+# matcher the entire library as though it were one release.
+
+def test_a_file_at_the_library_root_has_no_album_folder(db, identity):
+    add_track(db, "loose", path="loose.mp3", album="", album_artist="",
+              mbz_recording_id="")
+    assert review._folder_of("loose.mp3") == ""
+
+
+@pytest.mark.parametrize("folder", ["", " ", "/", "\\"])
+def test_the_library_root_is_never_an_album(identity, folder):
+    with pytest.raises(ValueError):
+        review.album_dir(identity, 1, folder)
+
+
+def test_a_real_folder_still_resolves(tmp_path, identity):
+    (tmp_path / "music" / "The Beatles" / "Abbey Road").mkdir(parents=True)
+    assert review.album_dir(identity, 1, "The Beatles/Abbey Road").is_dir()

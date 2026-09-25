@@ -556,3 +556,106 @@ def test_musicbrainz_matches_are_not_penalised_for_their_source():
                             .replace("__LIBRARY__", "/l.db")
                             .replace("__LOG__", "/i.log"))
     assert config["musicbrainz"]["data_source_mismatch_penalty"] == 0
+
+
+# --- the path template an inherited config carries ---------------------------
+#
+# `ensure_config` never overwrites a config and `adopt_legacy` rewrites only
+# the three absolute paths inside one, so a workspace that inherited the
+# single-user installation kept filing with its template:
+#
+#     $albumartist/$album%aunique{} ($original_year)/$track $title
+#
+# Both %aunique{} and the year are exactly what the current template's own
+# comment says must not be there, and the folder no longer matches what the
+# filer writes - so a confirmed retag moves files out of the frozen layout
+# and leaves the album's real directory behind, empty.
+
+LEGACY_CONFIG = """directory: /music
+library: /config/beets/library.db
+
+paths:
+  default: $albumartist/$album%aunique{} ($original_year)/$track $title
+  singleton: Singles/$artist - $title
+  comp: Various Artists/$album%aunique{} ($original_year)/$track $title
+
+plugins: musicbrainz
+"""
+
+
+def _real_space(tmp_path, monkeypatch):
+    """A genuine Workspace on disk, unlike the stub `_space` above - these
+    tests read and write a real config file."""
+    from app import workspace
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "output_dir", tmp_path / "untagged")
+    monkeypatch.setattr(workspace, "CONFIG_DIR", tmp_path / "config")
+    (tmp_path / "music").mkdir(exist_ok=True)
+    space = workspace.Workspace(username="alex", library_id=1,
+                                library_name="Music",
+                                library_path=tmp_path / "music")
+    space.prepare()
+    return space
+
+
+def test_an_inherited_path_template_is_brought_up_to_date(tmp_path,
+                                                          monkeypatch):
+    space = _real_space(tmp_path, monkeypatch)
+    space.beets_config.write_text(LEGACY_CONFIG, encoding="utf-8")
+
+    beets_runner.ensure_config(space)
+    text = space.beets_config.read_text(encoding="utf-8")
+
+    default = next(line for line in text.splitlines()
+                   if line.strip().startswith("default:"))
+    assert "%aunique{}" not in default
+    assert "$original_year" not in default
+    assert "$track - $title" in default
+
+
+def test_repairing_the_paths_leaves_everything_else_alone(tmp_path,
+                                                          monkeypatch):
+    """`directory` is where this person's music goes, and rewriting it would
+    file their library somewhere else entirely."""
+    space = _real_space(tmp_path, monkeypatch)
+    space.beets_config.write_text(LEGACY_CONFIG, encoding="utf-8")
+
+    beets_runner.ensure_config(space)
+    text = space.beets_config.read_text(encoding="utf-8")
+
+    assert "directory: /music" in text
+    assert "library: /config/beets/library.db" in text
+    assert "plugins: musicbrainz" in text
+
+
+def test_a_config_already_current_is_not_rewritten(tmp_path, monkeypatch):
+    space = _real_space(tmp_path, monkeypatch)
+    beets_runner.ensure_config(space)
+    before = space.beets_config.read_text(encoding="utf-8")
+
+    assert beets_runner._repair_paths(space) is False
+    assert space.beets_config.read_text(encoding="utf-8") == before
+
+
+def test_a_config_with_no_paths_block_is_left_alone(tmp_path, monkeypatch):
+    """Hand-edited into a shape this does not recognise. Guessing at it is
+    worse than leaving it."""
+    space = _real_space(tmp_path, monkeypatch)
+    space.beets_config.write_text("directory: /music\n", encoding="utf-8")
+
+    assert beets_runner._repair_paths(space) is False
+    assert space.beets_config.read_text(encoding="utf-8") == "directory: /music\n"
+
+
+def test_the_repaired_template_matches_the_filers_layout(tmp_path,
+                                                         monkeypatch):
+    """The point of the repair. Beets and the filer have to agree about where
+    an album lives, or a retag moves the files somewhere else."""
+    space = _real_space(tmp_path, monkeypatch)
+    space.beets_config.write_text(LEGACY_CONFIG, encoding="utf-8")
+    beets_runner.ensure_config(space)
+
+    text = space.beets_config.read_text(encoding="utf-8")
+    assert "%if{$albumartist,$albumartist," in text
+    assert "%if{$album,$album,Unknown Album}/$track - $title" in text

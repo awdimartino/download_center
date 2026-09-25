@@ -236,8 +236,17 @@ def album_dir(identity: navidrome.Identity, library_id: int,
     if root is None:
         raise ValueError("That library does not belong to this account.")
 
+    # Never the library root itself. A file sitting loose at the top has no
+    # album folder, so its folder reads as "" - and `root / ""` is the root,
+    # which would hand a matcher the entire library as though it were one
+    # release. Those files are refiled rather than matched in place.
+    if not folder.strip(" /\\"):
+        raise ValueError(
+            "That file is not in an album folder yet, so there is nothing to "
+            "match it as. It will be filed by its tags on the next pass.")
+
     path = (root / folder).resolve()
-    if path != root.resolve() and root.resolve() not in path.parents:
+    if root.resolve() not in path.parents:
         raise ValueError("That is not a folder in your library.")
     if not path.is_dir():
         raise ValueError(f"{folder or root.name} is not on disk.")

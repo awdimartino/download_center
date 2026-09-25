@@ -1448,12 +1448,19 @@ async def review_rescan(
     somebody opens deliberately and not fine when they have just fixed
     something and want to see it go.
     """
-    asked = await asyncio.to_thread(navidrome.notify)
-    if not asked:
+    if not navidrome.service_configured():
         raise HTTPException(
             status_code=400,
             detail="Navidrome's address and service credentials are not set, "
                    "so a scan cannot be requested from here.")
+    # Asked separately from whether it worked. `notify` reports both as
+    # False, and telling somebody to fix credentials that are already right
+    # sends them to the one place the problem is not.
+    if not await asyncio.to_thread(navidrome.notify):
+        raise HTTPException(
+            status_code=502,
+            detail="Navidrome did not answer, so it has not been asked to "
+                   "scan. The list is still correct as of its last one.")
     return {"scanning": True}
 
 

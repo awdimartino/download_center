@@ -314,3 +314,75 @@ def test_delivering_two_files_of_the_same_name_keeps_both(space):
 
     assert first.path != second.path
     assert first.path.is_file() and second.path.is_file()
+
+
+# --- files loose at the top of the library ----------------------------------
+
+def loose(space, name="stray.mp3", **tags) -> Path:
+    """An audio file sitting at the library root, in no album folder."""
+    path = space.library_path / name
+    shutil.copy(SILENCE, path)
+    if tags:
+        audio = EasyID3(path)
+        for key, value in tags.items():
+            audio[key] = str(value)
+        audio.save()
+    old = time.time() - 3600
+    os.utime(path, (old, old))
+    return path
+
+
+def test_a_file_loose_in_the_library_is_filed(space):
+    """The filer never produces one, so it was put there by hand or by
+    something that ran before any of this existed. With no folder there is
+    no album for the review page to offer."""
+    stray = loose(space, albumartist="The Beatles", album="Abbey Road",
+                  title="Come Together", tracknumber="1")
+
+    result = inbox.drain(space)
+
+    assert not stray.exists()
+    assert result.filed == [space.library_path / "The Beatles" / "Abbey Road"
+                            / "01 - Come Together.mp3"]
+
+
+def test_an_untagged_loose_file_gets_a_folder_too(space):
+    loose(space, name="mystery.mp3")
+
+    inbox.drain(space)
+
+    assert (space.library_path / "Unknown Artist" / "Unknown Album"
+            / "mystery.mp3").is_file()
+
+
+def test_music_already_in_an_album_folder_is_not_touched(space):
+    """Only the top level. Everything below it has been filed already, and
+    re-walking the whole library every 15 seconds is not this loop's job."""
+    folder = space.library_path / "The Beatles" / "Abbey Road"
+    folder.mkdir(parents=True)
+    settled_file = folder / "01 - Come Together.mp3"
+    shutil.copy(SILENCE, settled_file)
+
+    assert inbox.loose_in_library(space) == []
+    assert inbox.drain(space).filed == []
+    assert settled_file.exists()
+
+
+def test_a_directory_at_the_library_root_is_not_a_loose_file(space):
+    """`duplicates-removed/` lives there, and it is not music to file."""
+    (space.library_path / "duplicates-removed").mkdir()
+    assert inbox.loose_in_library(space) == []
+
+
+def test_a_loose_file_still_being_copied_is_left_alone(space, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "staging_quiet_seconds", 120)
+    path = space.library_path / "arriving.mp3"
+    shutil.copy(SILENCE, path)
+
+    result = inbox.drain(space)
+
+    assert result.filed == []
+    assert result.waiting == 1
+    assert path.exists()

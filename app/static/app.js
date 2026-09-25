@@ -852,8 +852,13 @@ const reviewMore = document.getElementById("review-more");
 
 // How much of the list is on screen. Day one is a few hundred albums and a
 // phone should not be handed all of it at once.
+//
+// Paged by offset rather than by asking for an ever-larger limit: the server
+// clamps a limit at MAX_PAGE, so growing it stopped having any effect past
+// 200 albums and "Show more" re-fetched the same rows for ever. Each page is
+// appended, so the ones already read stay put.
 const REVIEW_PAGE = 50;
-let reviewShown = REVIEW_PAGE;
+let reviewShownCount = 0;
 
 /* --- choosing a match by hand ---------------------------------------------
    Beets refuses whenever it cannot tell two releases apart, which for a
@@ -985,12 +990,14 @@ function reviewRow(entry) {
   return row;
 }
 
-async function loadReview() {
+async function loadReview(append = false) {
+  const offset = append ? reviewShownCount : 0;
   try {
-    const data = await fetch(`/api/review?limit=${reviewShown}`)
+    const data = await fetch(`/api/review?limit=${REVIEW_PAGE}&offset=${offset}`)
       .then((r) => r.json());
     if (data.available === false) {
       reviewEl.replaceChildren();
+      reviewShownCount = 0;
       reviewCount.hidden = true;
       reviewMore.hidden = true;
       reviewEmpty.textContent =
@@ -999,7 +1006,14 @@ async function loadReview() {
       return;
     }
     const entries = data.entries || [];
-    reviewEl.replaceChildren(...entries.map(reviewRow));
+    const rows = entries.map(reviewRow);
+    if (append) {
+      reviewEl.append(...rows);
+      reviewShownCount += entries.length;
+    } else {
+      reviewEl.replaceChildren(...rows);
+      reviewShownCount = entries.length;
+    }
     // The two numbers that say how far through this is. Large and honest on
     // day one: the backlog was always this size, beets was just hiding it
     // outside the library.
@@ -1007,10 +1021,12 @@ async function loadReview() {
       `${data.untagged} of ${data.tracks} tracks unconfirmed, across `
       + `${data.total} album${data.total === 1 ? "" : "s"}.`;
     reviewCount.hidden = !data.tracks;
-    reviewEmpty.textContent = entries.length
+    reviewEmpty.textContent = reviewShownCount
       ? "" : "Everything in your library has been matched.";
-    reviewEmpty.hidden = entries.length > 0;
-    reviewMore.hidden = entries.length >= data.total;
+    reviewEmpty.hidden = reviewShownCount > 0;
+    // A page that came back short means there is no more, however the total
+    // compares - the list can shrink under you while you read it.
+    reviewMore.hidden = reviewShownCount >= data.total || !entries.length;
     setBadge(reviewBadge, data.total);
   } catch (err) {
     reviewEmpty.textContent = `Could not read the review list: ${err.message}`;
@@ -1019,8 +1035,8 @@ async function loadReview() {
 }
 
 reviewMore.addEventListener("click", () => {
-  reviewShown += REVIEW_PAGE;
-  loadReview();
+  reviewMore.disabled = true;
+  loadReview(true).finally(() => { reviewMore.disabled = false; });
 });
 
 // Import and audit are started, not awaited - beets gets 900s per path and
