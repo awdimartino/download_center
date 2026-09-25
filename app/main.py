@@ -1229,6 +1229,15 @@ async def review_match_apply(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if not inbox.settled(path):
+        # A download of this album is still filing tracks into it.
+        # Retagging mid-flight re-points the registry, and the tracks that
+        # land afterwards still carry the old tags, miss the key that has
+        # just moved, and found a second album beside the first.
+        raise HTTPException(
+            status_code=409,
+            detail=f"{path.name} is still arriving; try again shortly.")
+
     def run() -> dict[str, Any]:
         # Read before beets touches anything: once the tags are rewritten
         # there is nothing left to say which album this used to be.

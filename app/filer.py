@@ -95,6 +95,11 @@ class Filed:
     track_uuid: str
     album_uuid: str
     album_key: str
+    # False when the UUIDs could not be written. The file is still filed -
+    # in the library and playable beats in scratch space and lost - but it
+    # carries no identity, so no play count can follow it, and the caller is
+    # the last thing in a position to say so.
+    identified: bool = True
 
 
 def _number(value) -> int:
@@ -259,8 +264,8 @@ def after_retag(space: workspace.Workspace, paths: list[Path],
 
 
 def _write_identity(path: Path, track_uuid: str | None,
-                    album_uuid: str | None) -> None:
-    """Write whichever UUIDs are not already right, and never fail over it.
+                    album_uuid: str | None) -> bool:
+    """Write whichever UUIDs are not already right. True if the file has them.
 
     Both None means the file already carries what it should, which is the
     ordinary case for the second pass over anything - and skipping the write
@@ -271,17 +276,33 @@ def _write_identity(path: Path, track_uuid: str | None,
     scratch space is none of those things.
     """
     if track_uuid is None and album_uuid is None:
-        return
+        return True
     if not uuidtags.can_carry_tags(path):
         # WAV and AIFF have nowhere to put it. Reporting these as missing a
         # UUID would be noise: nothing can be done short of converting.
         log.debug("%s cannot carry identity tags", path.name)
-        return
+        return True
     try:
         uuidtags.write(path, track_uuid, album_uuid)
+        # Read back rather than assumed. A write that did not survive the
+        # round trip is a failure however plausible it looked, and this is
+        # the last moment anything looks at the file: once filed it is
+        # neither in the inbox nor loose at the library root, so nothing
+        # ever comes back to it.
+        wrote_track, wrote_album = uuidtags.read(path)
+        if track_uuid is not None and wrote_track != track_uuid:
+            raise RuntimeError(
+                f"track UUID did not survive the write "
+                f"(read back {wrote_track!r})")
+        if album_uuid is not None and wrote_album != album_uuid:
+            raise RuntimeError(
+                f"album UUID did not survive the write "
+                f"(read back {wrote_album!r})")
+        return True
     except Exception as exc:
         log.warning("could not write identity onto %s: %s: %s",
                     path.name, type(exc).__name__, exc)
+        return False
 
 
 def _move_into_place(source: Path, target: Path) -> Path:
@@ -350,13 +371,14 @@ def file_track(space: workspace.Workspace, source: Path) -> Filed:
            else registry.loose_key(track_uuid))
     album_uuid = registry.uuid_for_key(space.library_id, key, on_miss=had_album)
 
-    _write_identity(source,
-                    None if had_track else track_uuid,
-                    None if had_album == album_uuid else album_uuid)
+    identified = _write_identity(
+        source,
+        None if had_track else track_uuid,
+        None if had_album == album_uuid else album_uuid)
 
     target = destination(space, meta, source.suffix.lower())
     if source.resolve() != target.resolve():
         target = _move_into_place(source, target)
 
-    return Filed(path=target, track_uuid=track_uuid,
-                 album_uuid=album_uuid, album_key=key)
+    return Filed(path=target, track_uuid=track_uuid, album_uuid=album_uuid,
+                 album_key=key, identified=identified)

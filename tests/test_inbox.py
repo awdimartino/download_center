@@ -386,3 +386,76 @@ def test_a_loose_file_still_being_copied_is_left_alone(space, monkeypatch):
     assert result.filed == []
     assert result.waiting == 1
     assert path.exists()
+
+
+# --- failures that used to repeat for ever ----------------------------------
+
+def test_a_file_that_cannot_be_filed_is_not_retried_every_poll(space,
+                                                               monkeypatch):
+    """One unfilable file used to be retried every 15 seconds for ever -
+    5,760 tracebacks a day, none of it visible to anybody."""
+    drop(space, albumartist="Artist", album="Album", title="Song")
+    attempts = []
+
+    def boom(space_, path):
+        attempts.append(path)
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(inbox.filer, "file_track", boom)
+    first = inbox.drain(space)
+    second = inbox.drain(space)
+
+    assert len(attempts) == 1
+    assert len(first.failures) == 1
+    assert second.failures == []
+    assert second.waiting == 1
+
+
+def test_changing_the_file_asks_again(space, monkeypatch):
+    """Alter the thing and it is a different question - the reasoning the
+    deleted refusal table used."""
+    path = drop(space, albumartist="Artist", album="Album", title="Song")
+    attempts = []
+
+    def boom(space_, path_):
+        attempts.append(path_)
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(inbox.filer, "file_track", boom)
+    inbox.drain(space)
+    inbox.drain(space)
+    assert len(attempts) == 1
+
+    path.write_bytes(path.read_bytes() + b"\x00")
+    os.utime(path, (time.time() - 3600, time.time() - 3600))
+    inbox.drain(space)
+
+    assert len(attempts) == 2
+
+
+def test_a_file_filed_without_its_identity_is_reported(space, monkeypatch):
+    """It is in the library and playable, which beats being lost - but no
+    play count can follow it, and this is the last thing able to say so."""
+    drop(space, albumartist="Artist", album="Album", title="Song",
+         tracknumber="1")
+    monkeypatch.setattr(inbox.filer, "_write_identity",
+                        lambda *args, **kwargs: False)
+
+    result = inbox.drain(space)
+
+    assert len(result.filed) == 1
+    assert result.filed[0].is_file()
+    assert "identity tags could not be written" in result.failures[0]
+
+
+def test_the_poller_leaves_a_file_the_worker_is_delivering(space):
+    """The quiet period already covers this, but it is a setting and it is
+    allowed to be zero; the in-flight set is the fact itself."""
+    path = space.inbox_dir / "arriving.mp3"
+    shutil.copy(SILENCE, path)
+    inbox._delivering.add(path)
+    try:
+        assert path not in inbox.waiting(space)
+    finally:
+        inbox._delivering.discard(path)
+    assert path in inbox.waiting(space)

@@ -316,3 +316,50 @@ def test_the_badge_is_scoped_to_the_library(db, identity):
                               "artist": "Michael Jackson",
                               "primary_artist": "Michael Jackson"}], 1)
     assert cards[0]["held"] is False
+
+
+# --- what counts as an album folder -----------------------------------------
+#
+# A retag applies to every file under the folder it is given, so being wrong
+# here merges records permanently.
+
+@pytest.mark.parametrize("folder", ["", " ", "/", "\\", "Radiohead",
+                                    "Radiohead/Kid A/Disc 1", "a/b/c/d"])
+def test_only_an_artist_slash_album_folder_is_an_album(identity, folder):
+    with pytest.raises(ValueError):
+        review.album_dir(identity, 1, folder)
+
+
+def test_an_artist_directory_is_refused(tmp_path, identity):
+    """It holds that artist's whole discography, and a retag would file all
+    of it as one release."""
+    (tmp_path / "music" / "Radiohead" / "Kid A").mkdir(parents=True)
+    (tmp_path / "music" / "Radiohead" / "OK Computer").mkdir(parents=True)
+
+    with pytest.raises(ValueError):
+        review.album_dir(identity, 1, "Radiohead")
+
+
+def test_the_album_folder_itself_still_resolves(tmp_path, identity):
+    (tmp_path / "music" / "Radiohead" / "Kid A").mkdir(parents=True)
+    assert review.album_dir(identity, 1, "Radiohead/Kid A").is_dir()
+
+
+def test_a_navidrome_schema_this_release_lacks_is_reported(identity,
+                                                           monkeypatch,
+                                                           tmp_path):
+    """Not a 500. The browser renders that as "everything has been matched"."""
+    import sqlite3
+    from app.config import settings
+
+    path = tmp_path / "odd.db"
+    connection = sqlite3.connect(path)
+    with connection:
+        connection.execute("create table media_file (id text, library_id int)")
+    connection.close()
+    monkeypatch.setattr(settings, "navidrome_db", path)
+
+    listed = review.listing(identity)
+
+    assert listed["available"] is False
+    assert listed["reason"]

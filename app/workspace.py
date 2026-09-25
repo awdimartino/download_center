@@ -229,16 +229,26 @@ def existing() -> list[Workspace]:
         lines = marker.read_text(encoding="utf-8").splitlines()
         username = lines[0].strip() if lines else directory.name
         library_name = lines[1].strip() if len(lines) > 1 else ""
-        # The marker records the destination; a marker written by an older
-        # version may not, so the beets config is the fallback - it is the
-        # other place the answer was written down.
         recorded = lines[2].strip() if len(lines) > 2 else ""
-        library_id = (int(lines[3]) if len(lines) > 3
-                      and lines[3].strip().isdigit() else 0)
-        beets_config = CONFIG_DIR / "beets" / directory.name / "config.yaml"
-        found.append(Workspace(
-            username, library_id, library_name,
-            Path(recorded) if recorded else _library_path_from(beets_config)))
+        library_id = lines[3].strip() if len(lines) > 3 else ""
+
+        # A marker that does not say which library, or where it is, is not
+        # enough to act on. It used to be: the missing id became 0 and the
+        # missing path became `music_dir`, which was survivable when these
+        # fed a beets sweep and is not now. The inbox poller passes this
+        # workspace to the filer, so a guessed id partitions the album
+        # registry under a library that does not exist - the same album
+        # filed twice, once by the poller and once by the signed-in session,
+        # with two UUIDs - and a guessed path files one person's inbox into
+        # somebody else's library.
+        if not recorded or not library_id.isdigit():
+            log.warning(
+                "%s does not say which library it belongs to, so nothing in "
+                "it can be filed. Sign in once to rewrite the marker.",
+                directory)
+            continue
+        found.append(Workspace(username, int(library_id), library_name,
+                               Path(recorded)))
     return found
 
 
@@ -295,24 +305,6 @@ def adopt_legacy(space: Workspace) -> bool:
     log.info("adopted the previous beets installation for %s: %s",
              space.username, ", ".join(moved))
     return True
-
-
-def _library_path_from(beets_config: Path) -> Path:
-    """Read a workspace's destination back out of its beets config.
-
-    The sweep cannot ask Navidrome which library this person has - nobody is
-    signed in - so the answer is taken from the configuration that was
-    written when they were.
-    """
-    try:
-        import yaml
-        raw = yaml.safe_load(beets_config.read_text(encoding="utf-8")) or {}
-        directory = raw.get("directory")
-        if directory:
-            return Path(directory)
-    except Exception as exc:
-        log.warning("could not read %s: %s", beets_config, exc)
-    return settings.music_dir
 
 
 def _owner_of(marker: Path) -> tuple[str, Path] | None:

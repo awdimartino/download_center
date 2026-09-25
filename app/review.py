@@ -153,14 +153,16 @@ def listing(identity: navidrome.Identity, limit: int = PAGE,
 
     try:
         connection = navidrome.open_db()
-    except navidrome.Unavailable as exc:
+        with connection:
+            entries = _load(connection, identity)
+    except (navidrome.Unavailable, sqlite3.Error) as exc:
+        # Including a column this Navidrome release does not have. The panel
+        # saying why beats a 500, which the browser renders as "everything
+        # has been matched" - the most reassuring possible way to be wrong.
         log.warning("cannot read the review list: %s", exc)
         return {"available": False, "reason": str(exc), "entries": [],
                 "total": 0, "tracks": 0, "untagged": 0,
                 "limit": limit, "offset": offset}
-
-    with connection:
-        entries = _load(connection, identity)
 
     pending = [entry for entry in entries.values() if entry.untagged]
     pending.sort(key=lambda e: (e.added, e.artist, e.album), reverse=True)
@@ -192,16 +194,19 @@ def album_dir(identity: navidrome.Identity, library_id: int,
     if root is None:
         raise ValueError("That library does not belong to this account.")
 
-    # Never the library root itself. A file sitting loose at the top has no
-    # album folder, so its folder reads as "" - and `root / ""` is the root,
-    # which would hand a matcher the entire library as though it were one
-    # release. Those files are refiled rather than matched in place.
-    if not folder.strip(" /\\"):
+    # Exactly `$albumartist/$album`, which is what the filer writes and
+    # therefore what one album is. Anything shallower is not an album: the
+    # library root would hand a matcher the whole collection as one release,
+    # and an artist directory would hand it that artist's entire discography
+    # - and a retag applies to every file underneath, so being wrong here
+    # merges records permanently.
+    parts = [part for part in folder.replace("\\", "/").split("/") if part]
+    if len(parts) != 2:
         raise ValueError(
-            "That file is not in an album folder yet, so there is nothing to "
-            "match it as. It will be filed by its tags on the next pass.")
+            "That is not an album folder. An album lives in "
+            "artist/album, and a retag applies to everything inside it.")
 
-    path = (root / folder).resolve()
+    path = root.joinpath(*parts).resolve()
     if root.resolve() not in path.parents:
         raise ValueError("That is not a folder in your library.")
     if not path.is_dir():

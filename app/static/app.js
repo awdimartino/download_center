@@ -941,15 +941,21 @@ function reviewRow(entry) {
 async function loadReview(append = false) {
   const offset = append ? reviewShownCount : 0;
   try {
-    const data = await fetch(`/api/review?limit=${REVIEW_PAGE}&offset=${offset}`)
-      .then((r) => r.json());
-    if (data.available === false) {
+    const response = await fetch(
+      `/api/review?limit=${REVIEW_PAGE}&offset=${offset}`);
+    // fetch does not throw on 4xx or 5xx, and the body of an error is a
+    // {detail} with no `available` key - which fell through to the empty
+    // state and told somebody with a 1,113-track backlog that everything
+    // had been matched. The most reassuring possible way to be wrong.
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.available === false) {
       reviewEl.replaceChildren();
       reviewShownCount = 0;
       reviewCount.hidden = true;
       reviewMore.hidden = true;
       reviewEmpty.textContent =
-        `Navidrome's database could not be read: ${data.reason}`;
+        `Could not read the review list: ${data.reason || data.detail
+         || `the server answered ${response.status}`}`;
       reviewEmpty.hidden = false;
       return;
     }

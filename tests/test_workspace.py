@@ -258,3 +258,47 @@ def test_the_check_is_on_by_default():
 # The trust boundary for a name typed in the browser moved to
 # `review.album_dir`, and is tested there. `Workspace.staged` was the
 # staging endpoints' version of it and went with them.
+
+
+# --- a workspace that cannot say which library it belongs to ----------------
+#
+# The inbox poller runs with nobody signed in and hands these to the filer,
+# which partitions the album registry by library id and writes into
+# library_path. A guessed id splits an album across two registry rows; a
+# guessed path files one person's music into somebody else's library.
+
+def test_a_marker_with_no_library_id_is_skipped(staging_root, caplog):
+    directory = staging_root / "alex"
+    directory.mkdir(parents=True)
+    (directory / ".owner").write_text(
+        f"alex\nMusic\n{LIBRARY}\n", encoding="utf-8")
+
+    assert workspace.existing() == []
+    assert "does not say which library" in caplog.text
+
+
+def test_a_marker_with_no_library_path_is_skipped(staging_root):
+    directory = staging_root / "alex-1"
+    directory.mkdir(parents=True)
+    (directory / ".owner").write_text("alex\nMusic\n\n1\n", encoding="utf-8")
+
+    assert workspace.existing() == []
+
+
+def test_a_marker_with_a_non_numeric_id_is_skipped(staging_root):
+    directory = staging_root / "alex-1"
+    directory.mkdir(parents=True)
+    (directory / ".owner").write_text(
+        f"alex\nMusic\n{LIBRARY}\nMusic\n", encoding="utf-8")
+
+    assert workspace.existing() == []
+
+
+def test_a_complete_marker_is_read_back(staging_root):
+    space = workspace.for_session(_identity())
+    space.prepare()
+
+    found = workspace.existing()
+
+    assert [(w.username, w.library_id, w.library_path) for w in found] == [
+        ("alex", 1, LIBRARY)]

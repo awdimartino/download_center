@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +44,16 @@ log = logging.getLogger("download_center.inbox")
 # minutes, so this only decides how soon after that it is noticed.
 POLL_SECONDS = 15
 
+# Files a worker has moved in and is filing right now.
+#
+# The quiet period makes the poller ignore them - a rename keeps the mtime,
+# so a delivered file is seconds old - but that is a property of a *setting*,
+# and `inbox_quiet_seconds` is allowed to be 0. At 0 the poller and the
+# worker race for the same file and one of them loses it mid-move. This is
+# the fact itself rather than a consequence of it.
+_delivering: set[Path] = set()
+_delivering_lock = threading.Lock()
+
 
 @dataclass
 class Result:
@@ -53,6 +64,27 @@ class Result:
     @property
     def changed(self) -> bool:
         return bool(self.filed)
+
+
+# Files that could not be filed, and the size they were when that was tried.
+#
+# Without this, one unfilable file is retried every POLL_SECONDS for ever -
+# 5,760 attempts a day, each logging a full traceback, none of it visible to
+# anybody. Keyed on the size so that changing the file asks the question
+# again, which is the reasoning the deleted refusal table used: alter the
+# thing and it is a different question.
+_unfilable: dict[Path, int] = {}
+
+# Library roots already reported as missing, so a 15-second poll does not
+# repeat a static fact 5,760 times a day.
+_unmounted: set[Path] = set()
+
+
+def _size_of(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return -1
 
 
 # --- a download on its way in -----------------------------------------------
@@ -99,7 +131,13 @@ def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
     """
     space.inbox_dir.mkdir(parents=True, exist_ok=True)
     arrived = _move_in(source, space.inbox_dir / source.name)
-    return filer.file_track(space, arrived)
+    with _delivering_lock:
+        _delivering.add(arrived)
+    try:
+        return filer.file_track(space, arrived)
+    finally:
+        with _delivering_lock:
+            _delivering.discard(arrived)
 
 
 def _move_in(source: Path, target: Path) -> Path:
@@ -163,7 +201,8 @@ def waiting(space: workspace.Workspace) -> list[Path]:
         if any(part.startswith(".") for part in path.relative_to(root).parts[:-1]):
             continue
         found.append(path)
-    return found
+    with _delivering_lock:
+        return [path for path in found if path not in _delivering]
 
 
 def loose_in_library(space: workspace.Workspace) -> list[Path]:
@@ -223,13 +262,22 @@ def drain(space: workspace.Workspace) -> Result:
         if not settled(path):
             result.waiting += 1
             continue
+        if _unfilable.get(path) == _size_of(path):
+            result.waiting += 1
+            continue
         try:
             filed = filer.file_track(space, path)
         except Exception as exc:
+            _unfilable[path] = _size_of(path)
             result.failures.append(f"{path.name}: {type(exc).__name__}: {exc}")
-            log.exception("could not file %s for %s",
-                          path.name, space.username)
+            log.exception("could not file %s for %s - leaving it alone until "
+                          "it changes", path.name, space.username)
             continue
+        _unfilable.pop(path, None)
+        if not filed.identified:
+            result.failures.append(
+                f"{filed.path.name}: filed, but its identity tags could not "
+                f"be written, so stars and play counts cannot follow it")
         result.filed.append(filed.path)
 
     if result.filed:
@@ -251,9 +299,12 @@ def drain_all() -> dict[str, Result]:
         if not space.library_path.is_dir():
             # The library is not mounted in this container, so anything filed
             # there would be written into the container and lost on restart.
-            log.warning("%s's library at %s is not mounted; leaving the "
-                        "inbox alone", space.username, space.library_path)
+            if space.library_path not in _unmounted:
+                _unmounted.add(space.library_path)
+                log.warning("%s's library at %s is not mounted; leaving the "
+                            "inbox alone", space.username, space.library_path)
             continue
+        _unmounted.discard(space.library_path)
         result = drain(space)
         if result.changed or result.failures:
             results[space.username] = result
