@@ -524,7 +524,7 @@ async def _run(job: dict[str, Any], space: workspace.Workspace) -> None:
     except asyncio.CancelledError:
         job["status"] = "cancelled"
         for item in job["items"]:
-            if item["status"] not in ("complete", "skipped", "failed"):
+            if item["status"] not in ("complete", "failed"):
                 item["status"] = "cancelled"
         await asyncio.to_thread(inbox.discard, space, job_id)
         log.info("job %s cancelled", job_id)

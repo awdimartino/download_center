@@ -193,7 +193,14 @@ MATCH_TIMEOUT = 180
 
 
 def candidates(space: workspace.Workspace, path: Path) -> dict[str, Any]:
-    """What beets would match this staged path against, in its own order."""
+    """What beets would match this path against, in its own order."""
+    if not settings.beets_enabled:
+        # The switch has to cover this as well as applying a choice. Looking
+        # for candidates is the expensive half - several MusicBrainz round
+        # trips on a Raspberry Pi - so a setting that only stopped the cheap
+        # half was not the lever it claimed to be.
+        return {"error": "Matching is turned off in Settings.",
+                "candidates": []}
     ensure_config(space)
     command = [sys.executable, "-m", "app.beets_match", str(path)]
     environment = {**os.environ, "BEETSDIR": str(space.beets_dir)}

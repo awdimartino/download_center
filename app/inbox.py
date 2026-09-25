@@ -141,23 +141,17 @@ def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
 
 
 def _move_in(source: Path, target: Path) -> Path:
-    """Move into the inbox without overwriting something already waiting."""
-    if target.exists():
-        stem, suffix = target.stem, target.suffix
-        for n in range(2, 100):
-            candidate = target.with_name(f"{stem} ({n}){suffix}")
-            if not candidate.exists():
-                target = candidate
-                break
-        else:
-            raise FileExistsError(
-                f"{target} and 98 numbered variants all exist; refusing to "
-                f"overwrite. Clear some out of {target.parent}.")
+    """Move into the inbox without overwriting something already waiting.
+
+    The numbering rule is the filer's - see `filer.unused_name` - because
+    the name settled here is the name the filer then has to collide with.
+    """
+    target = filer.unused_name(target)
     shutil.move(str(source), str(target))
     return target
 
 
-def settled(path: Path, quiet_seconds: int | None = None) -> bool:
+def settled(path: Path) -> bool:
     """Whether a path has stopped changing and is safe to file.
 
     Nothing here can know whether something is mid-copy - a file arriving
@@ -165,9 +159,7 @@ def settled(path: Path, quiet_seconds: int | None = None) -> bool:
     waits for stillness instead. Filing half a file would put a truncated
     track in the library under a real name.
     """
-    if quiet_seconds is None:
-        quiet_seconds = settings.inbox_quiet_seconds
-    cutoff = time.time() - quiet_seconds
+    cutoff = time.time() - settings.inbox_quiet_seconds
     try:
         newest = path.stat().st_mtime
     except OSError:

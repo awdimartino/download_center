@@ -179,9 +179,9 @@ def uuid_for_key(library_id: int, key: str, on_miss: str | None = None) -> str:
     two threads that both miss and both mint would hand one record two UUIDs,
     which is exactly the split this table exists to prevent.
     """
-    store = _store()
+    store_ = _store()
     with _lock:
-        row = store.execute(
+        row = store_.execute(
             "SELECT album_uuid FROM album_registry"
             " WHERE library_id = ? AND album_key = ?",
             (library_id, key)).fetchone()
@@ -189,21 +189,28 @@ def uuid_for_key(library_id: int, key: str, on_miss: str | None = None) -> str:
             return row[0]
 
         settled = on_miss or str(uuid.uuid4())
-        store.execute(
+        store_.execute(
             "INSERT INTO album_registry"
             " (library_id, album_key, album_uuid, created_at)"
             " VALUES (?, ?, ?, ?)",
             (library_id, key, settled, time.time()))
-        store.commit()
+        store_.commit()
         return settled
 
 
 def known(library_id: int, key: str) -> str | None:
-    """The recorded UUID for a key, or None. Never mints."""
-    row = _store().execute(
-        "SELECT album_uuid FROM album_registry"
-        " WHERE library_id = ? AND album_key = ?",
-        (library_id, key)).fetchone()
+    """The recorded UUID for a key, or None. Never mints.
+
+    Locked like every write. state.db is one connection shared by three
+    modules, so a read taken outside the lock is a read taken inside
+    somebody else's in-flight transaction.
+    """
+    store_ = _store()
+    with _lock:
+        row = store_.execute(
+            "SELECT album_uuid FROM album_registry"
+            " WHERE library_id = ? AND album_key = ?",
+            (library_id, key)).fetchone()
     return row[0] if row else None
 
 
@@ -227,13 +234,13 @@ def repoint(library_id: int, old_key: str, new_key: str) -> str:
     if old_key == new_key:
         return uuid_for_key(library_id, new_key)
 
-    store = _store()
+    store_ = _store()
     with _lock:
-        incumbent = store.execute(
+        incumbent = store_.execute(
             "SELECT album_uuid FROM album_registry"
             " WHERE library_id = ? AND album_key = ?",
             (library_id, new_key)).fetchone()
-        moving = store.execute(
+        moving = store_.execute(
             "SELECT album_uuid FROM album_registry"
             " WHERE library_id = ? AND album_key = ?",
             (library_id, old_key)).fetchone()
@@ -241,7 +248,7 @@ def repoint(library_id: int, old_key: str, new_key: str) -> str:
         if incumbent:
             settled = incumbent[0]
             if moving:
-                store.execute(
+                store_.execute(
                     "DELETE FROM album_registry"
                     " WHERE library_id = ? AND album_key = ?",
                     (library_id, old_key))
@@ -250,39 +257,40 @@ def repoint(library_id: int, old_key: str, new_key: str) -> str:
                              moving[0], settled, library_id)
         elif moving:
             settled = moving[0]
-            store.execute(
+            store_.execute(
                 "UPDATE album_registry SET album_key = ?"
                 " WHERE library_id = ? AND album_key = ?",
                 (new_key, library_id, old_key))
         else:
             settled = str(uuid.uuid4())
-            store.execute(
+            store_.execute(
                 "INSERT INTO album_registry"
                 " (library_id, album_key, album_uuid, created_at)"
                 " VALUES (?, ?, ?, ?)",
                 (library_id, new_key, settled, time.time()))
 
-        store.commit()
+        store_.commit()
         return settled
 
 
 def forget(library_id: int, key: str) -> bool:
     """Drop one mapping. The next track of that album mints a fresh UUID."""
-    store = _store()
+    store_ = _store()
     with _lock:
-        cursor = store.execute(
+        cursor = store_.execute(
             "DELETE FROM album_registry WHERE library_id = ? AND album_key = ?",
             (library_id, key))
-        store.commit()
+        store_.commit()
         return cursor.rowcount > 0
 
 
 def count(library_id: int | None = None) -> int:
     """How many albums are registered, in one library or in all of them."""
-    store = _store()
-    if library_id is None:
-        return store.execute(
-            "SELECT COUNT(*) FROM album_registry").fetchone()[0]
-    return store.execute(
-        "SELECT COUNT(*) FROM album_registry WHERE library_id = ?",
-        (library_id,)).fetchone()[0]
+    store_ = _store()
+    with _lock:
+        if library_id is None:
+            return store_.execute(
+                "SELECT COUNT(*) FROM album_registry").fetchone()[0]
+        return store_.execute(
+            "SELECT COUNT(*) FROM album_registry WHERE library_id = ?",
+            (library_id,)).fetchone()[0]

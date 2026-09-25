@@ -305,13 +305,34 @@ def _write_identity(path: Path, track_uuid: str | None,
         return False
 
 
-def _move_into_place(source: Path, target: Path) -> Path:
-    """Move a file to target, never overwriting silently.
+def unused_name(target: Path) -> Path:
+    """`target`, or the first numbered variant of it that is free.
+
+    The one rule about never overwriting a track, in one place. Both roads
+    into the library move files - the inbox hop and the filing itself - and
+    they each carried a verbatim copy of this loop, 170 lines apart in two
+    modules, so a change to the cap or the naming would have applied to one
+    of them.
 
     Running out of candidates raises rather than falling through. The loop
     used to leave `target` at the original name when all 98 were taken, so
     the one case the numbering exists to prevent - a real collision - ended
-    in os.replace overwriting the file it was protecting.
+    in the caller overwriting the file it was protecting.
+    """
+    if not target.exists():
+        return target
+    stem, suffix = target.stem, target.suffix
+    for n in range(2, 100):
+        candidate = target.with_name(f"{stem} ({n}){suffix}")
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(
+        f"{target} and 98 numbered variants all exist; refusing to "
+        f"overwrite. Clear some out of {target.parent}.")
+
+
+def _move_into_place(source: Path, target: Path) -> Path:
+    """Move a file to target, never overwriting silently.
 
     `os.replace` is tried first because it is atomic, but the scratch space a
     download is built in and the library it is filed into are separate bind
@@ -319,17 +340,7 @@ def _move_into_place(source: Path, target: Path) -> Path:
     land on the copy-and-delete fallback.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        stem, suffix = target.stem, target.suffix
-        for n in range(2, 100):
-            candidate = target.with_name(f"{stem} ({n}){suffix}")
-            if not candidate.exists():
-                target = candidate
-                break
-        else:
-            raise FileExistsError(
-                f"{target} and 98 numbered variants all exist; refusing to "
-                f"overwrite. Clear some out of {target.parent}.")
+    target = unused_name(target)
     try:
         os.replace(source, target)
     except OSError as exc:

@@ -188,16 +188,16 @@ def _load(connection: sqlite3.Connection,
     Both matter. A library is one person's collection, and an annotation
     belongs to a user - neither is a property of the file.
     """
-    live = ("mf.missing = 0 and mf.folder_id in "
-            "(select id from folder where missing = 0)")
     # Only libraries this person may see. Somebody else's collection is not
     # theirs to deduplicate, and their copy of a song is not a duplicate of
     # anything.
     allowed = [lib["id"] for lib in identity.libraries]
     if not allowed:
         return []
-    placeholders = ",".join("?" * len(allowed))
-    live += f" and mf.library_id in ({placeholders})"
+    # The same clause Health and Review use, which probes for the columns
+    # before naming them: this reads a database another application owns and
+    # upgrades on its own schedule.
+    live = navidrome.live_clause(connection, allowed)
     rows = connection.execute(f"""
         select mf.id, mf.path, mf.title, mf.album, mf.artist, mf.album_artist,
                mf.suffix, mf.bit_rate, mf.duration, mf.size,
@@ -213,7 +213,7 @@ def _load(connection: sqlite3.Connection,
           left join annotation mine
             on mine.item_id = mf.id and mine.item_type = 'media_file'
            and mine.user_id = ?
-         where {live}""", (identity.user_id, identity.user_id, *allowed)).fetchall()
+         where {live}""", (identity.user_id, identity.user_id)).fetchall()
     return [
         Copy(id=r[0], path=r[1], title=r[2] or "", album=r[3] or "",
              artist=(r[5] or r[4] or ""), suffix=r[6] or "",

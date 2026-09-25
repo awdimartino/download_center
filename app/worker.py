@@ -267,8 +267,8 @@ async def run_job(job: dict[str, Any], push: Push,
     await asyncio.to_thread(inbox.discard, space, job["id"])
 
     failed = sum(1 for item in items if item["status"] == "failed")
-    done = sum(1 for item in items if item["status"] in ("complete", "skipped"))
-    job["status"] = "complete" if not failed else ("failed" if not done else "partial")
+    job["status"] = ("complete" if not failed
+                     else "failed" if not filed else "partial")
     log.info("%s: %d filed, %d failed", job["title"], len(filed), failed)
     await push(job)
 

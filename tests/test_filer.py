@@ -470,3 +470,41 @@ def test_an_album_that_names_itself_still_groups(space, tmp_path):
         title="Something", tracknumber="2"))
 
     assert one.album_uuid == two.album_uuid
+
+
+# --- one numbering rule, not two --------------------------------------------
+
+def test_an_unused_name_is_the_target_when_it_is_free(tmp_path):
+    assert filer.unused_name(tmp_path / "a.mp3") == tmp_path / "a.mp3"
+
+
+def test_an_unused_name_numbers_past_what_is_taken(tmp_path):
+    (tmp_path / "a.mp3").write_bytes(b"x")
+    (tmp_path / "a (2).mp3").write_bytes(b"x")
+    assert filer.unused_name(tmp_path / "a.mp3") == tmp_path / "a (3).mp3"
+
+
+def test_running_out_of_names_raises_rather_than_overwriting(tmp_path):
+    """The loop used to fall through and leave `target` at the original
+    name, so the one case the numbering exists to prevent ended in the
+    caller overwriting the file it was protecting."""
+    (tmp_path / "a.mp3").write_bytes(b"x")
+    for n in range(2, 100):
+        (tmp_path / f"a ({n}).mp3").write_bytes(b"x")
+
+    with pytest.raises(FileExistsError):
+        filer.unused_name(tmp_path / "a.mp3")
+
+
+def test_the_inbox_uses_the_filers_numbering(space, tmp_path):
+    """The name settled on the way in is the name the filer then has to
+    collide with, so one rule has to govern both."""
+    from app import inbox
+
+    assert inbox._move_in.__doc__ and "unused_name" in inbox._move_in.__doc__
+    taken = space.inbox_dir / "x.mp3"
+    space.inbox_dir.mkdir(parents=True, exist_ok=True)
+    taken.write_bytes(b"x")
+    source = track(tmp_path, name="x.mp3")
+
+    assert inbox._move_in(source, taken).name == "x (2).mp3"
