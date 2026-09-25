@@ -571,7 +571,6 @@ async def create_job(
         # queue something inherits it rather than starting an empty index
         # beside a full one.
         workspace.adopt_legacy(space)
-        workspace.adopt_legacy_staging(space)
         beets_runner.ensure_config(space)
 
     await asyncio.to_thread(prepare)
@@ -709,8 +708,8 @@ async def retry_job(
     if job_id in RUNNING:
         raise HTTPException(status_code=409, detail="That job is still running.")
 
-    # Tracks that already succeeded are in the ledger, so the worker skips
-    # them on its own; only the failures need resetting.
+    # Only the failures are reset. `_process` returns immediately for an
+    # item that is already complete, so the rest are not touched.
     retryable = [i for i in job["items"] if i["status"] in ("failed", "cancelled")]
     if not retryable:
         raise HTTPException(status_code=409, detail="Nothing to retry.")
@@ -822,11 +821,16 @@ def _mark_held(cards: list[dict[str, Any]],
     """
     held = navidrome.held_in(library_id)
     for card in cards:
-        name = card.get("name") or ""
-        artist = card.get("artist") or ""
-        card["held"] = (
-            f"{registry.normalize(artist)}{registry.normalize(name)}"
-            in held)
+        title = card.get("name") or ""
+        # Both the full credit Spotify shows and the primary artist this
+        # application writes into the file. They differ for a collaboration -
+        # the card says "Michael Jackson, Paul McCartney" and the file says
+        # "Michael Jackson" - so keying on one of them missed every track
+        # with a guest on it, which is exactly when a second copy gets
+        # queued.
+        credits = {card.get("artist") or "", card.get("primary_artist") or ""}
+        card["held"] = any(registry.recording_key(credit, title) in held
+                           for credit in credits if credit)
     return cards
 
 

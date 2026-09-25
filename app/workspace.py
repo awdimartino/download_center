@@ -18,7 +18,6 @@ setup at all - they sign in, and where their music goes is already known.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -296,34 +295,6 @@ def adopt_legacy(space: Workspace) -> bool:
     log.info("adopted the previous beets installation for %s: %s",
              space.username, ", ".join(moved))
     return True
-
-
-def adopt_legacy_staging(space: Workspace) -> bool:
-    """Move a single-user staging area into its owner's workspace.
-
-    Same reasoning: files sitting in the old shared albums/ and singles/
-    folders belong to whoever was using this before accounts existed, and
-    the sweep now only looks inside a person's own staging directory.
-    """
-    moved = 0
-    for name in ("albums", "singles"):
-        old = settings.output_dir / name
-        new = getattr(space, f"{name}_dir")
-        if not old.is_dir() or old == new:
-            continue
-        new.mkdir(parents=True, exist_ok=True)
-        for entry in list(old.iterdir()):
-            target = new / entry.name
-            if target.exists():
-                continue
-            entry.rename(target)
-            moved += 1
-        with contextlib.suppress(OSError):
-            old.rmdir()
-    if moved:
-        log.info("moved %d staged item(s) into %s's workspace",
-                 moved, space.username)
-    return bool(moved)
 
 
 def _library_path_from(beets_config: Path) -> Path:

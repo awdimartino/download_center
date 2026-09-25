@@ -119,6 +119,15 @@ async def _match_with_retries(item: dict[str, Any]) -> Any:
 
 async def _process(item: dict[str, Any], space: workspace.Workspace,
                    job_id: str, gate: asyncio.Semaphore) -> None:
+    # Already in the library. A retry resets the failures and re-runs the
+    # whole job, so without this every track that succeeded the first time is
+    # downloaded and filed again - one duplicate per completed track, per
+    # press of Retry. The ledger lookup used to be what stopped that; the
+    # guard belongs here instead, where the work is started, rather than in a
+    # store that no longer exists.
+    if item["status"] == "complete":
+        return
+
     async with gate:
         # Items from a direct link already name their audio, so there is
         # nothing to search for and no confidence to score.

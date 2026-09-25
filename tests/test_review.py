@@ -254,3 +254,65 @@ def test_the_library_root_is_never_an_album(identity, folder):
 def test_a_real_folder_still_resolves(tmp_path, identity):
     (tmp_path / "music" / "The Beatles" / "Abbey Road").mkdir(parents=True)
     assert review.album_dir(identity, 1, "The Beatles/Abbey Road").is_dir()
+
+
+# --- the "in library" badge -------------------------------------------------
+#
+# It keys on a string built at both ends, and the two ends disagreed: the
+# card carries Spotify's full credit ("Michael Jackson, Paul McCartney")
+# while the file carries the primary artist alone, so every collaboration
+# came up unmarked - which is exactly when a second copy gets queued.
+
+def test_a_solo_track_in_the_library_is_marked(db, identity, monkeypatch):
+    from app import main
+    add_track(db, "t1", title="Billie Jean", artist="Michael Jackson")
+
+    cards = main._mark_held([{"name": "Billie Jean",
+                              "artist": "Michael Jackson",
+                              "primary_artist": "Michael Jackson"}], 1)
+    assert cards[0]["held"] is True
+
+
+def test_a_collaboration_is_marked_too(db, identity, monkeypatch):
+    from app import main
+    # What tagger.tag writes: the primary artist, not the full credit.
+    add_track(db, "t1", title="The Girl Is Mine", artist="Michael Jackson")
+
+    cards = main._mark_held([{"name": "The Girl Is Mine",
+                              "artist": "Michael Jackson, Paul McCartney",
+                              "primary_artist": "Michael Jackson"}], 1)
+    assert cards[0]["held"] is True
+
+
+def test_a_file_tagged_with_the_full_credit_is_marked(db, identity):
+    """A CD rip or a hand-tagged file may have it the other way round."""
+    from app import main
+    add_track(db, "t1", title="The Girl Is Mine",
+              artist="Michael Jackson, Paul McCartney",
+              album_artist="Michael Jackson")
+
+    cards = main._mark_held([{"name": "The Girl Is Mine",
+                              "artist": "Michael Jackson, Paul McCartney",
+                              "primary_artist": "Michael Jackson"}], 1)
+    assert cards[0]["held"] is True
+
+
+def test_a_track_the_library_does_not_have_is_not_marked(db, identity):
+    from app import main
+    add_track(db, "t1", title="Billie Jean", artist="Michael Jackson")
+
+    cards = main._mark_held([{"name": "Thriller",
+                              "artist": "Michael Jackson",
+                              "primary_artist": "Michael Jackson"}], 1)
+    assert cards[0]["held"] is False
+
+
+def test_the_badge_is_scoped_to_the_library(db, identity):
+    from app import main
+    add_track(db, "t1", title="Billie Jean", artist="Michael Jackson",
+              library_id=2)
+
+    cards = main._mark_held([{"name": "Billie Jean",
+                              "artist": "Michael Jackson",
+                              "primary_artist": "Michael Jackson"}], 1)
+    assert cards[0]["held"] is False

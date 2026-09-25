@@ -224,6 +224,10 @@ def track_card(track: dict[str, Any]) -> dict[str, Any]:
         "id": track["id"],
         "name": track["name"],
         "artist": _artist_names(track.get("artists")),
+        # What the file's artist tag says, which is not the full credit - see
+        # `_primary_artist`. Browse's "in library" check needs both, because
+        # the card shows one and the library holds the other.
+        "primary_artist": _primary_artist(track.get("artists")),
         "album": album.get("name"),
         "year": _year(album.get("release_date")),
         "cover": _cover(album),
@@ -262,6 +266,7 @@ def album_detail(album_id: str) -> dict[str, Any]:
             "id": track["id"],
             "name": track["name"],
             "artist": _artist_names(track.get("artists")),
+            "primary_artist": _primary_artist(track.get("artists")),
             "track_no": track.get("track_number"),
             "disc_no": track.get("disc_number") or 1,
             "duration_ms": track.get("duration_ms"),

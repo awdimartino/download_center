@@ -218,13 +218,23 @@ def held_in(library_id: int) -> set[str]:
 
     with connection:
         rows = connection.execute(
-            f"select coalesce(mf.artist, mf.album_artist, ''),"
+            f"select coalesce(mf.artist, ''), coalesce(mf.album_artist, ''),"
             f"       coalesce(mf.title, '')"
             f"  from media_file mf"
             f" where {live_clause(connection, [library_id])}").fetchall()
 
-    return {f"{registry.normalize(artist)}\x1f{registry.normalize(title)}"
-            for artist, title in rows if title}
+    held = set()
+    for artist, album_artist, title in rows:
+        if not title:
+            continue
+        # Both credits. This application writes the *primary* artist to the
+        # file and keeps the full credit on the album artist, but a CD rip or
+        # a hand-tagged file may have it either way round, and a badge that
+        # only recognises our own downloads is most of the way to useless.
+        held.add(registry.recording_key(artist, title))
+        if album_artist and album_artist != artist:
+            held.add(registry.recording_key(album_artist, title))
+    return held
 
 
 # --- calls made for a person ----------------------------------------------

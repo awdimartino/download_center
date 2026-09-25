@@ -81,6 +81,10 @@ class Meta:
     track_no: int = 0
     disc_no: int = 0
     multi_disc: bool = False
+    # Whether the file actually said which album it is on, as opposed to
+    # having had `Unknown Album` filled in for it. The path does not care,
+    # but identity does: a file that never named an album is not on one.
+    names_album: bool = True
 
 
 @dataclass(frozen=True)
@@ -136,7 +140,8 @@ def read_meta(path: Path) -> Meta:
         value = values[0] if isinstance(values, (list, tuple)) else values
         return str(value).strip()
 
-    album = first("album") or UNKNOWN_ALBUM
+    named_album = first("album")
+    album = named_album or UNKNOWN_ALBUM
     artist = (first("albumartist") or first("artist") or UNKNOWN_ARTIST)
     title = first("title") or path.stem
 
@@ -145,6 +150,7 @@ def read_meta(path: Path) -> Meta:
         albumartist=artist,
         album=album,
         title=title,
+        names_album=bool(named_album),
         track_no=_number(first("tracknumber")),
         disc_no=_number(disc),
         # Spotify does not report how many discs a release has, so a disc
@@ -197,6 +203,10 @@ def album_key_of(folder: Path) -> str:
     if not files:
         return ""
     meta = read_meta(files[0])
+    if not meta.names_album:
+        # Nothing to follow: a folder of files that do not name an album has
+        # no album key to move, and each of them is its own record.
+        return ""
     return registry.album_key(meta.albumartist, meta.album)
 
 
@@ -216,6 +226,12 @@ def after_retag(space: workspace.Workspace, paths: list[Path],
         return ""
 
     meta = read_meta(live[0])
+    if not meta.names_album:
+        # A retag that did not give these files an album is not a retag this
+        # can follow - there is no record for them to be part of.
+        log.info("retag left %s with no album tag; identity unchanged",
+                 live[0].parent.name)
+        return ""
     new_key = registry.album_key(meta.albumartist, meta.album)
 
     # An album filed before the registry existed has a UUID on disk and no
@@ -329,8 +345,9 @@ def file_track(space: workspace.Workspace, source: Path) -> Filed:
     # and play counts hang off. The album UUID comes from the registry, which
     # keeps whatever the file already carried if it has never seen that album:
     # inventing a second UUID beside the one on disk would split the record.
-    key = registry.album_key(meta.albumartist, meta.album)
     track_uuid = had_track or str(uuid.uuid4())
+    key = (registry.album_key(meta.albumartist, meta.album) if meta.names_album
+           else registry.loose_key(track_uuid))
     album_uuid = registry.uuid_for_key(space.library_id, key, on_miss=had_album)
 
     _write_identity(source,

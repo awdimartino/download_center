@@ -121,6 +121,42 @@ def album_key(albumartist: str, album: str) -> str:
     return f"{normalize(albumartist)}{SEPARATOR}{normalize(album)}"
 
 
+def recording_key(artist: str, title: str) -> str:
+    """The identity of one song, for "does the library already have this".
+
+    Same shape and the same normalisation as an album key, and here for the
+    same reason: the string was being built by hand at both ends and the two
+    ends disagreed. Browse's badge was silently off for every track because
+    one side joined with the separator and the other did not - a bug whose
+    only symptom is an absence, which is the kind that survives longest.
+
+    Approximate on purpose. It is a hint - nothing is refused because of it -
+    so a cover, a live take and the studio version all reading as "you have
+    this" is a better failure than the badge being wrong about the ordinary
+    case.
+    """
+    return f"{normalize(artist)}{SEPARATOR}{normalize(title)}"
+
+
+def loose_key(track_uuid: str) -> str:
+    """A key of its own, for a file that does not say what album it is on.
+
+    A file with no album tag is not on an album - it is a loose track, and it
+    stands alone. Folding them all onto "Unknown Artist / Unknown Album"
+    gives every untagged file in a library one shared album UUID, so forty
+    unrelated rips become one forty-track record in Navidrome. That is the
+    exact failure this table exists to prevent, arrived at from the other
+    direction.
+
+    Keyed on the track UUID, which is already unique per file and already
+    written into it, so re-filing the same file finds the same row.
+
+    Two separators, which `album_key` can never produce: normalisation
+    removes them from a tag, so no real artist and album can collide here.
+    """
+    return f"{SEPARATOR}{SEPARATOR}{track_uuid}"
+
+
 def album_uuid_for(library_id: int, albumartist: str, album: str) -> str:
     """The album UUID for this record in this library, minting one on a miss."""
     return uuid_for_key(library_id, album_key(albumartist, album))

@@ -311,3 +311,44 @@ async def test_a_download_that_fails_leaves_nothing_behind(library,
     assert job["status"] == "failed"
     assert not list(library.library_path.rglob("*.mp3"))
     assert not inbox.scratch_root(library, "job1").exists()
+
+
+@pytest.mark.asyncio
+async def test_a_retry_does_not_re_download_what_already_finished(library,
+                                                                  monkeypatch):
+    """Retry resets the failures and re-runs the whole job. Without a guard
+    where the work starts, every track that succeeded the first time is
+    downloaded and filed again - one duplicate per completed track, per
+    press of Retry."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "max_attempts", 1)
+    fetched = []
+    real = worker.downloader.download
+    broken = {"i2"}
+
+    def counting(url, destination, on_progress=None):
+        fetched.append(destination.stem)
+        if destination.stem in broken:
+            raise worker.downloader.DownloadError("no audio")
+        return real(url, destination, on_progress)
+
+    monkeypatch.setattr(worker.downloader, "download", counting)
+
+    items = [_track(1, "Come Together"), _track(2, "Something")]
+    items[0]["id"], items[1]["id"] = "i1", "i2"
+    await _run(library, items)
+
+    assert items[0]["status"] == "complete"
+    assert items[1]["status"] == "failed"
+    assert fetched == ["i1", "i2"]
+
+    # What retry_job does: reset only the failures, then run the job again.
+    broken.clear()
+    items[1].update(status="pending", error=None, progress=0, attempts=0)
+    await _run(library, items)
+
+    assert fetched.count("i1") == 1, "the completed track was fetched again"
+    folder = library.library_path / "The Beatles" / "Abbey Road"
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "01 - Come Together.mp3", "02 - Something.mp3"]

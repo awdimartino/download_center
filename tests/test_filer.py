@@ -413,3 +413,60 @@ def test_every_track_of_a_retagged_album_ends_up_on_one_uuid(space, tmp_path):
 def test_a_retag_of_nothing_does_nothing(space, tmp_path):
     assert filer.after_retag(space, [], "some key") == ""
     assert registry.count(space.library_id) == 0
+
+
+# --- a file that does not say what album it is on ---------------------------
+#
+# These all used to fold onto "Unknown Artist / Unknown Album", which is one
+# registry key, which is one album UUID - so forty unrelated rips became one
+# forty-track record in Navidrome. That is the failure the registry exists to
+# prevent, reached from the other direction.
+
+def test_two_untagged_files_are_two_albums(space, tmp_path):
+    one = filer.file_track(space, track(tmp_path, name="a.mp3"))
+    two = filer.file_track(space, track(tmp_path, name="b.mp3"))
+
+    assert one.album_uuid != two.album_uuid
+    assert one.album_key != two.album_key
+
+
+def test_an_untagged_file_still_lands_in_unknown_album(space, tmp_path):
+    """Its identity stands alone; where it goes is unchanged."""
+    filed = filer.file_track(space, track(tmp_path, name="mystery.mp3"))
+
+    assert filed.path == (space.library_path / "Unknown Artist"
+                          / "Unknown Album" / "mystery.mp3")
+
+
+def test_a_known_artist_with_no_album_is_still_its_own_record(space, tmp_path):
+    """Two loose singles by one artist share a folder, not a record - they
+    are unrelated tracks that happen to name the same person."""
+    one = filer.file_track(space, track(tmp_path, name="a.mp3",
+                                        artist="Aphex Twin", title="Avril 14th"))
+    two = filer.file_track(space, track(tmp_path, name="b.mp3",
+                                        artist="Aphex Twin", title="Xtal"))
+
+    assert one.path.parent == two.path.parent
+    assert one.album_uuid != two.album_uuid
+
+
+def test_re_filing_an_untagged_file_keeps_its_identity(space, tmp_path):
+    """Keyed on the track UUID, which is already on the file, so the second
+    pass finds the same row rather than minting another."""
+    filed = filer.file_track(space, track(tmp_path, name="mystery.mp3"))
+    again = filer.file_track(space, filed.path)
+
+    assert again.album_uuid == filed.album_uuid
+    assert again.album_key == filed.album_key
+
+
+def test_an_album_that_names_itself_still_groups(space, tmp_path):
+    """The loose key is only for files with no album tag at all."""
+    one = filer.file_track(space, track(
+        tmp_path, name="a.mp3", albumartist="The Beatles", album="Abbey Road",
+        title="Come Together", tracknumber="1"))
+    two = filer.file_track(space, track(
+        tmp_path, name="b.mp3", albumartist="The Beatles", album="Abbey Road",
+        title="Something", tracknumber="2"))
+
+    assert one.album_uuid == two.album_uuid
