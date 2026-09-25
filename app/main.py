@@ -1233,11 +1233,21 @@ async def review_match_apply(
         # Read before beets touches anything: once the tags are rewritten
         # there is nothing left to say which album this used to be.
         was = filer.album_key_of(path)
-        started = time.time()
         result = beets_runner.import_chosen(space, path, body.release_id)
-        if result.get("imported"):
-            result["album_uuid"] = filer.after_retag(
-                space, beets_runner.filed_since(space, started), was)
+        if not result.get("imported"):
+            return result
+
+        # Beets retagged in place, so the files are still where they were
+        # and there is no need to ask its database where they went. Settle
+        # the album UUID first, then let the filer move each one - it is the
+        # only thing that decides where a track lives, so a retag that
+        # changes the artist or album puts them under the new name in the
+        # layout everything else uses.
+        retagged = filer.audio_in(path)
+        result["album_uuid"] = filer.after_retag(space, retagged, was)
+        result["filed"] = [str(filer.file_track(space, one).path)
+                           for one in retagged]
+        navidrome.notify()
         return result
 
     operation, started = operations.start(

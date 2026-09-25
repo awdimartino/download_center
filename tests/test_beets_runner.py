@@ -95,7 +95,6 @@ def test_choosing_a_release_asks_beets_rather_than_overruling_it(
     filed nothing, because quiet mode applies only on a strong
     recommendation and missing tracks cap it at medium regardless."""
     monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
-    monkeypatch.setattr(beets_runner, "_library_size", lambda space: 0)
     seen = _fake_subprocess(monkeypatch, stdout="")
 
     beets_runner.import_chosen(_space(tmp_path), tmp_path / "album", "mb-1")
@@ -103,20 +102,6 @@ def test_choosing_a_release_asks_beets_rather_than_overruling_it(
     command = seen["command"]
     assert command[1:4] == ["-m", "app.beets_match", "--apply"]
     assert command[4] == "mb-1"
-
-
-def test_a_chosen_release_that_files_nothing_says_so(monkeypatch, tmp_path):
-    """Reported rather than called success. The folder is still sitting
-    there either way, and "it worked" followed by an unchanged panel is the
-    silence this codebase keeps producing."""
-    monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
-    monkeypatch.setattr(beets_runner, "_library_size", lambda space: 7)
-    _fake_subprocess(monkeypatch, stdout="")
-
-    result = beets_runner.import_chosen(_space(tmp_path), tmp_path / "a", "mb-1")
-
-    assert result["imported"] == 0
-    assert result["skipped"] == 1
 
 
 # --- not asking beets the same question for ever ----------------------------
@@ -238,63 +223,45 @@ def _real_space(tmp_path, monkeypatch):
     return space
 
 
-def test_an_inherited_path_template_is_brought_up_to_date(tmp_path,
-                                                          monkeypatch):
-    space = _real_space(tmp_path, monkeypatch)
-    space.beets_config.write_text(LEGACY_CONFIG, encoding="utf-8")
-
-    beets_runner.ensure_config(space)
-    text = space.beets_config.read_text(encoding="utf-8")
-
-    default = next(line for line in text.splitlines()
-                   if line.strip().startswith("default:"))
-    assert "%aunique{}" not in default
-    assert "$original_year" not in default
-    assert "$track - $title" in default
 
 
-def test_repairing_the_paths_leaves_everything_else_alone(tmp_path,
-                                                          monkeypatch):
-    """`directory` is where this person's music goes, and rewriting it would
-    file their library somewhere else entirely."""
-    space = _real_space(tmp_path, monkeypatch)
-    space.beets_config.write_text(LEGACY_CONFIG, encoding="utf-8")
+# --- a retag is not an import ------------------------------------------------
+#
+# Success used to be read from beets' item count growing, which is what a
+# first import does and what a *re*-tag never does: beets already has these
+# files. So every retag reported "the album is unchanged", the album UUID was
+# never re-pointed, and the registry went on describing an album that no
+# longer existed under that name.
 
-    beets_runner.ensure_config(space)
-    text = space.beets_config.read_text(encoding="utf-8")
+def test_a_retag_is_judged_by_what_beets_returned(monkeypatch, tmp_path):
+    monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
+    _fake_subprocess(monkeypatch, stdout="", returncode=0)
 
-    assert "directory: /music" in text
-    assert "library: /config/beets/library.db" in text
-    assert "plugins: musicbrainz" in text
+    result = beets_runner.import_chosen(_space(tmp_path), tmp_path / "a", "mb-1")
 
-
-def test_a_config_already_current_is_not_rewritten(tmp_path, monkeypatch):
-    space = _real_space(tmp_path, monkeypatch)
-    beets_runner.ensure_config(space)
-    before = space.beets_config.read_text(encoding="utf-8")
-
-    assert beets_runner._repair_paths(space) is False
-    assert space.beets_config.read_text(encoding="utf-8") == before
+    assert result["imported"] == 1
+    assert result["chosen"] == "mb-1"
 
 
-def test_a_config_with_no_paths_block_is_left_alone(tmp_path, monkeypatch):
-    """Hand-edited into a shape this does not recognise. Guessing at it is
-    worse than leaving it."""
-    space = _real_space(tmp_path, monkeypatch)
-    space.beets_config.write_text("directory: /music\n", encoding="utf-8")
+def test_a_retag_beets_refused_is_reported_as_a_failure(monkeypatch, tmp_path):
+    """Reported rather than called success. "It worked" followed by an
+    unchanged panel is the silence this codebase keeps producing."""
+    monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
+    _fake_subprocess(monkeypatch, stdout="no matching release", returncode=1)
 
-    assert beets_runner._repair_paths(space) is False
-    assert space.beets_config.read_text(encoding="utf-8") == "directory: /music\n"
+    result = beets_runner.import_chosen(_space(tmp_path), tmp_path / "a", "mb-1")
+
+    assert result["imported"] == 0
+    assert result["failed"]
 
 
-def test_the_repaired_template_matches_the_filers_layout(tmp_path,
-                                                         monkeypatch):
-    """The point of the repair. Beets and the filer have to agree about where
-    an album lives, or a retag moves the files somewhere else."""
-    space = _real_space(tmp_path, monkeypatch)
-    space.beets_config.write_text(LEGACY_CONFIG, encoding="utf-8")
-    beets_runner.ensure_config(space)
+def test_beets_is_told_not_to_move_anything():
+    """The filer is the only thing that decides where a track lives. With
+    move and copy off, beets' path template never writes a path - which is
+    why there is no longer any code keeping that template in step."""
+    import yaml
 
-    text = space.beets_config.read_text(encoding="utf-8")
-    assert "%if{$albumartist,$albumartist," in text
-    assert "%if{$album,$album,Unknown Album}/$track - $title" in text
+    config = yaml.safe_load(beets_runner.DEFAULT_CONFIG)
+    assert config["import"]["move"] is False
+    assert config["import"]["copy"] is False
+    assert config["import"]["write"] is True

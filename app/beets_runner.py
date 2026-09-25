@@ -22,20 +22,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sqlite3
 import sys
 import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import navidrome, workspace
-from .config import CONFIG_DIR, settings
+from . import workspace
+from .config import settings
 
 log = logging.getLogger("download_center.beets")
-
-# Kept for the one-off migration of the single-user layout; every other
-# reference goes through a workspace.
-LEGACY_BEETS_DIR = CONFIG_DIR / "beets"
 
 # Long enough for art fetching and MusicBrainz lookups on a slow connection,
 # short enough that a wedged retag cannot hold a thread forever.
@@ -55,9 +50,17 @@ ui:
   color: no
 
 import:
-  # A retag rewrites the file where it is, and moves it only if the artist or
-  # album changed - which is the one thing allowed to move a filed track.
-  move: yes
+  # Beets tags; it does not move. `write: yes` rewrites the file in place and
+  # `move`/`copy` off leave it exactly where the filer put it, so there is
+  # only ever one thing that decides where a track lives.
+  #
+  # This used to be `move: yes`, and that was a second layout implementation:
+  # beets' path template has no disc prefix, no filename sanitising and no
+  # rule for a track with no number, so a confirmed retag landed files at
+  # paths the filer would never produce. It also meant success had to be
+  # inferred from beets' row count growing, which a *re*-tag never does.
+  move: no
+  copy: no
   write: yes
   # Never prompt: there is no terminal on the other end of this. A release
   # is only ever applied because somebody picked it from the candidate list.
@@ -97,15 +100,10 @@ match:
   max_rec:
     missing_tracks: strong
 
+# Unused: with `move` and `copy` off, beets never writes a path. Kept so a
+# config that is edited by hand still reads sensibly, and so switching move
+# back on does not immediately disagree with `filer.destination`.
 paths:
-  # No year in the album directory, and no %aunique{}: both would file two
-  # releases of one record into separate folders. One directory is one album
-  # is what lets a later arrival inherit the album UUID its siblings already
-  # share instead of founding a second copy. Navidrome sorts on the year tag,
-  # not the folder name, so nothing is lost by leaving it out.
-  # The %if{} fallbacks matter - an empty field collapses the path component
-  # and drops the file loose into the artist folder. They must be quoted:
-  # YAML forbids a plain scalar starting with '%'.
   default: '%if{$albumartist,$albumartist,%if{$artist,$artist,Unknown Artist}}/%if{$album,$album,Unknown Album}/$track - $title'
   singleton: 'Non-Album/$artist/$title'
   comp: 'Compilations/%if{$album,$album,Unknown Album}/$track - $title'
@@ -155,78 +153,18 @@ musicbrainz:
 """
 
 
-def _paths_block(text: str) -> tuple[int, int] | None:
-    """Where the `paths:` mapping starts and ends, as line indices.
-
-    Line-based rather than parsed, because the file is a hand-editable
-    config and round-tripping it through a YAML loader would rewrite
-    everything else in it - comments included, and the comments here are
-    most of what the file is for.
-    """
-    lines = text.splitlines(keepends=True)
-    start = next((i for i, line in enumerate(lines)
-                  if line.startswith("paths:")), None)
-    if start is None:
-        return None
-    end = start + 1
-    while end < len(lines) and (not lines[end].strip()
-                                or lines[end][:1] in (" ", "\t")):
-        end += 1
-    return start, end
-
-
-def _repair_paths(space: workspace.Workspace) -> bool:
-    """Bring an existing config's path template up to the current one.
-
-    `ensure_config` deliberately never overwrites a config, and
-    `adopt_legacy` rewrites only the three absolute paths inside one. So a
-    workspace that inherited the single-user installation still files with
-    the template that installation had:
-
-        $albumartist/$album%aunique{} ($original_year)/$track $title
-
-    Both of those are exactly what the current template's own comment says
-    must not be there. `%aunique{}` and the year put two pressings of one
-    record in two folders, and the folder name no longer matches what the
-    filer writes - so a retag confirmed in the review page moves the files
-    somewhere the frozen layout does not have, and leaves the album's real
-    directory behind, empty.
-
-    Only the `paths:` block is touched. `directory`, the database and log
-    locations, and any other hand edit are left exactly as they are.
-    """
-    text = space.beets_config.read_text(encoding="utf-8")
-    here, wanted = _paths_block(text), _paths_block(DEFAULT_CONFIG)
-    if here is None or wanted is None:
-        return False
-
-    lines = text.splitlines(keepends=True)
-    current = "".join(lines[here[0]:here[1]])
-    replacement = "".join(DEFAULT_CONFIG.splitlines(keepends=True)[wanted[0]:wanted[1]])
-    if current == replacement:
-        return False
-
-    lines[here[0]:here[1]] = [replacement]
-    space.beets_config.write_text("".join(lines), encoding="utf-8")
-    log.info("updated the beets path template for %s; it still had the "
-             "single-user one, which files albums somewhere the library "
-             "layout does not have", space.username)
-    return True
-
-
 def ensure_config(space: workspace.Workspace) -> Path:
     """Create this person's beets config on first use; never overwrite it.
 
     The destination is filled in from their Navidrome library, so adding a
     user is nothing more than them signing in once.
 
-    The one exception is the path template, which decides where beets puts a
-    file and therefore has to agree with the filer - see `_repair_paths`.
+    An inherited config keeps whatever path template it had, and that is now
+    harmless: with `move` and `copy` off, beets never writes a path. The
+    filer decides where every file lives.
     """
     space.prepare()
-    if space.beets_config.exists():
-        _repair_paths(space)
-    else:
+    if not space.beets_config.exists():
         # Substituted rather than formatted: the template is full of beets
         # path syntax like %if{$albumartist,...}, which str.format reads as
         # replacement fields and rejects.
@@ -241,72 +179,6 @@ def ensure_config(space: workspace.Workspace) -> Path:
         log.info("wrote a beets config for %s at %s",
                  space.username, space.beets_config)
     return space.beets_config
-
-
-def _library_size(space: workspace.Workspace) -> int:
-    """How many items beets has indexed for this person.
-
-    The authority on whether an import actually filed anything. Returns -1
-    when the database cannot be read, which never compares greater than a
-    previous count, so an unreadable database reads as "nothing imported"
-    rather than as a spurious success.
-    """
-    library_db = space.beets_library
-    if not library_db.exists():
-        return 0
-    try:
-        connection = sqlite3.connect(f"file:{library_db}?mode=ro", uri=True,
-                                     timeout=10)
-        with connection:
-            return connection.execute("select count(*) from items").fetchone()[0]
-    except sqlite3.Error as exc:
-        log.warning("could not count the beets library: %s", exc)
-        return -1
-
-
-def filed_since(space: workspace.Workspace, moment: float) -> list[Path]:
-    """Paths beets added to the library after `moment`.
-
-    Beets records where every file ended up, so asking it beats guessing from
-    import output or re-walking the library. Its own database is the only
-    place that knows, and this process owns it.
-    """
-    library_db = space.beets_library
-    if not library_db.exists():
-        return []
-    try:
-        connection = sqlite3.connect(f"file:{library_db}?mode=ro", uri=True,
-                                     timeout=10)
-        with connection:
-            rows = connection.execute(
-                "select path from items where added >= ?", (moment,)).fetchall()
-    except sqlite3.Error as exc:
-        log.warning("could not read the beets library: %s", exc)
-        return []
-
-    # Paths are stored as bytes, since a filesystem path is not necessarily
-    # valid text in any encoding - and, since beets 2.x, relative to the
-    # library directory. Resolving them is not optional: a relative path
-    # silently resolves against the working directory instead, matches
-    # nothing, and stamping quietly does nothing at all.
-    root = space.library_path
-    paths = []
-    for row in rows:
-        path = Path(os.fsdecode(row[0]))
-        paths.append(path if path.is_absolute() else root / path)
-    return paths
-
-
-# Signatures in beets' own output for the ways an import can file nothing.
-# Ordered: the first match wins, so the specific causes are tested before the
-# catch-all.
-_NETWORK_SIGNS = (
-    "temporary failure in name resolution", "failed to resolve",
-    "network is unreachable", "connectionerror", "max retries exceeded",
-    "connection refused", "timed out",
-)
-_DUPLICATE_SIGNS = ("duplicate-keep", "duplicate-replace", "skipping duplicate")
-_NO_CANDIDATE_SIGNS = ("no matching release found", "no match found")
 
 
 # --- choosing a match by hand ----------------------------------------------
@@ -377,7 +249,6 @@ def import_chosen(space: workspace.Workspace, path: Path,
         return {"ran": False, "reason": "disabled"}
 
     ensure_config(space)
-    before = _library_size(space)
     command = [sys.executable, "-m", "app.beets_match",
                "--apply", release_id, str(path)]
     try:
@@ -395,19 +266,17 @@ def import_chosen(space: workspace.Workspace, path: Path,
         return {"ran": True, "imported": 0, "skipped": 0,
                 "failed": [f"{path.name}: {detail}"]}
 
-    # Asked of the library, not of the subprocess: it reports what it chose,
-    # and this reports what actually arrived.
-    if _library_size(space) <= before:
-        log.info("chosen release %s filed nothing for %s",
-                 release_id, path.name)
-        return {"ran": True, "imported": 0, "skipped": 1, "failed": [],
-                "chosen": release_id}
-
-    # Identity is not written here. The caller re-points the album UUID
-    # through the registry - see `filer.after_retag` - because which album
-    # these files are on is a question the registry answers and beets has
-    # no idea it is being asked.
-    navidrome.notify()
+    # The subprocess's own exit code, not a count of what beets indexed.
+    # Counting rows answered "did an import file something new", which a
+    # retag never does: beets already has these files, so the count never
+    # grew, every retag reported "the album is unchanged", and the album
+    # UUID was never re-pointed - leaving the registry describing an album
+    # that no longer exists under that name.
+    #
+    # Identity is not written here either. The caller re-points the album
+    # UUID through the registry - see `filer.after_retag` - because which
+    # album these files are on is a question the registry answers and beets
+    # has no idea it is being asked.
     log.info("retagged %s as %s", path.name, release_id)
     return {"ran": True, "imported": 1, "skipped": 0, "failed": [],
             "chosen": release_id}
