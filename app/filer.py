@@ -1,10 +1,10 @@
 """Puts a finished file in the library, at a path it will never leave.
 
-This replaces `staging.py`. Staging existed to hold music *outside* the
-library until beets agreed to admit it, and beets rejected 82% of what it was
-given - almost all of it for mechanical reasons that had nothing to do with
-the music. So the gate is gone: a file is tagged, given its identity, and
-filed where it belongs, immediately.
+This replaced staging, which held music *outside* the library until beets
+agreed to admit it - and beets rejected 82% of what it was given, almost all
+of it for mechanical reasons that had nothing to do with the music. So the
+gate is gone: a file is tagged, given its identity, and filed where it
+belongs, immediately.
 
 One function does it, and it does the same thing whether the file came from a
 download job or was dropped into the inbox by hand. That is deliberate. The

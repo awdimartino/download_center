@@ -12,7 +12,7 @@ import sqlite3
 
 import pytest
 
-from app import ledger, playcounts
+from app import store, playcounts
 from app.config import settings
 from conftest import add_track
 
@@ -92,7 +92,7 @@ def test_an_unchanged_count_is_not_stored_again(wired):
     second = playcounts.take("2026-03-02")
 
     assert second["changed"] == 0
-    rows = ledger.connection().execute(
+    rows = store.connection().execute(
         "select count(*) from play_snapshot").fetchone()[0]
     assert rows == 1, "the unchanged count should not have been written twice"
 
@@ -104,7 +104,7 @@ def test_a_changed_count_is_stored(wired):
     played(wired, "t1", ALEX, 9)
 
     assert playcounts.take("2026-03-02")["changed"] == 1
-    rows = ledger.connection().execute(
+    rows = store.connection().execute(
         "select taken_on, play_count from play_snapshot order by taken_on"
     ).fetchall()
     assert rows == [("2026-03-01", 5), ("2026-03-02", 9)]
@@ -116,7 +116,7 @@ def test_taking_the_same_day_twice_replaces_rather_than_duplicates(wired):
     playcounts.take("2026-03-01")
     playcounts.take("2026-03-01")
 
-    rows = ledger.connection().execute(
+    rows = store.connection().execute(
         "select count(*) from play_snapshot").fetchone()[0]
     assert rows == 1
 
@@ -130,7 +130,7 @@ def test_snapshots_are_keyed_by_uuid_not_media_file_id(wired):
     played(wired, "t1", ALEX, 5)
     playcounts.take("2026-03-01")
 
-    stored = ledger.connection().execute(
+    stored = store.connection().execute(
         "select track_uuid from play_snapshot").fetchone()[0]
     assert stored == "uuid-a"
 
@@ -154,7 +154,7 @@ def test_two_users_playing_one_track_are_kept_apart(wired):
     played(wired, "t1", KELLY, 11)
 
     playcounts.take("2026-03-01")
-    rows = dict(ledger.connection().execute(
+    rows = dict(store.connection().execute(
         "select user_id, play_count from play_snapshot").fetchall())
     assert rows == {ALEX: 5, KELLY: 11}
 
@@ -177,7 +177,7 @@ def test_a_falling_count_is_recorded_as_an_anomaly(wired):
     result = playcounts.take("2026-03-02")
 
     assert result["anomalies"] == 1
-    row = ledger.connection().execute(
+    row = store.connection().execute(
         "select was, became from play_anomaly").fetchone()
     assert row == (10, 4)
 
@@ -343,12 +343,12 @@ def test_the_target_day_does_not_move_during_a_day(monkeypatch):
 # --- imported history sits beside the snapshots ----------------------------
 
 def _import(day, track_uuid, user_id, plays, username="alex"):
-    ledger.connection().execute(
+    store.connection().execute(
         "INSERT OR REPLACE INTO play_imported"
         " (day, track_uuid, user_id, username, plays, source)"
         " VALUES (?, ?, ?, ?, ?, 'lastfm')",
         (day, track_uuid, user_id, username, plays))
-    ledger.connection().commit()
+    store.connection().commit()
 
 
 def test_imported_history_is_readable_alongside_snapshots(wired):
@@ -393,7 +393,7 @@ def test_a_track_in_a_vanished_directory_is_not_counted(wired):
     result = playcounts.take("2026-03-01")
 
     assert result["tracked"] == 1
-    stored = ledger.connection().execute(
+    stored = store.connection().execute(
         "select track_uuid, play_count from play_snapshot").fetchall()
     assert stored == [("uuid-a", 5)]
 
@@ -459,7 +459,7 @@ def test_a_day_with_no_changes_still_counts_as_taken(wired):
 
     assert playcounts.taken_on("2026-03-02") is True, (
         "a quiet day is a real answer, not an incomplete one")
-    rows = ledger.connection().execute(
+    rows = store.connection().execute(
         "select count(*) from play_snapshot where taken_on = '2026-03-02'"
     ).fetchone()[0]
     assert rows == 0, "and it should still not have written a snapshot row"
@@ -470,7 +470,7 @@ def test_the_run_log_records_what_happened(wired):
     played(wired, "t1", ALEX, 7)
     playcounts.take("2026-03-01")
 
-    row = ledger.connection().execute(
+    row = store.connection().execute(
         "select day, tracked, changed, anomalies from play_snapshot_run"
     ).fetchone()
     assert row == ("2026-03-01", 1, 1, 0)
@@ -539,11 +539,11 @@ def test_coverage_is_one_persons_own_history(wired):
     """status() answers for the installation, which is right for a health
     check and wrong for a panel: one account's imported Last.fm history is
     not another account's to read."""
-    ledger.connection().execute(
+    store.connection().execute(
         "insert into play_imported (track_uuid, user_id, username, day, plays,"
         " source) values ('uuid-a', ?, 'alex', '2024-01-01', 40, 'lastfm')",
         (ALEX,))
-    ledger.connection().commit()
+    store.connection().commit()
 
     mine = playcounts.coverage(ALEX)
     theirs = playcounts.coverage(KELLY)

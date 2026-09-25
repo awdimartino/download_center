@@ -128,7 +128,7 @@ def settled(path: Path, quiet_seconds: int | None = None) -> bool:
     track in the library under a real name.
     """
     if quiet_seconds is None:
-        quiet_seconds = settings.staging_quiet_seconds
+        quiet_seconds = settings.inbox_quiet_seconds
     cutoff = time.time() - quiet_seconds
     try:
         newest = path.stat().st_mtime

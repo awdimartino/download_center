@@ -56,7 +56,7 @@ def tag(path: Path, item: dict[str, Any], embed_cover: bool = True) -> None:
     # The primary artist, not the full credit. beets decides an album is a
     # Various Artists release when its tracks disagree on this tag, and then
     # searches MusicBrainz for a compilation - so a single guest appearance
-    # made the real record unfindable and the whole album sat in staging.
+    # made the real record unfindable and the whole album went unmatched.
     # See spotify._primary_artist. A successful match writes MusicBrainz's
     # own credit back over this, guest included; only an import as-is keeps
     # what is written here.

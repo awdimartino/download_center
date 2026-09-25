@@ -4,10 +4,10 @@ Album membership used to be guessed from where a file sat on disk plus a
 majority vote among its neighbours, and that guess is the source of every
 identity bug this project has had. `tools/ensure_uuid.py` gave one UUID per
 *directory*, so a flat dump of 746 loose tracks spanning 101 albums came out
-as one album. `stamp._choose_album_uuid` took the commonest existing value,
-so nine arriving tracks outvoted the one already filed and split the record
-in two. `stamp.resplit` and the disk audit exist only to find and repair
-those two failures afterwards.
+as one album. The stamper took the commonest existing value among a file's
+neighbours, so nine arriving tracks outvoted the one already filed and split
+the record in two. Both of those, and the repair pass that existed to undo
+them, were deleted with this table's arrival.
 
 None of it is needed if the answer is written down. The first track of an
 album mints a uuid4 and records it here; every later track of that album -
@@ -28,7 +28,7 @@ import time
 import unicodedata
 import uuid
 
-from . import ledger
+from . import store
 
 log = logging.getLogger("download_center.registry")
 
@@ -61,7 +61,7 @@ _APOSTROPHE = re.compile(r"['‘’ʼ´`]")
 # run marker as one unit, and a download filing a track used to be able to
 # commit it between the two - leaving the rows stored with nothing recording
 # that the day had been done.
-_lock = ledger._lock
+_lock = store._lock
 
 # The connection the schema has been applied to. `executescript` issues an
 # implicit COMMIT before it runs, so doing it per call was the other half of
@@ -76,7 +76,7 @@ def _store():
     what every test does - applies the schema again to the new connection.
     """
     global _schema_on
-    conn = ledger.connection()
+    conn = store.connection()
     if _schema_on is not conn:
         with _lock:
             conn.executescript(SCHEMA)
@@ -94,7 +94,7 @@ def normalize(value: str) -> str:
 
     It makes no semantic judgement about what counts as the same record.
     "Abbey Road" and "Abbey Road (Super Deluxe Edition)" stay different, which
-    is the deliberate reversal of `staging.album_key`: Spotify already decided
+    is the deliberate reversal of what staging did: Spotify already decided
     those are two albums with two names and two ids, every streaming service
     presents them that way, and merging them puts two track 1s, two track 2s
     and so on inside one album.

@@ -4,12 +4,10 @@ A reference for the codebase as it stands on 2026-09-25, after the
 direct-to-library redesign. For what it is *for* and where it is going, see
 [PLAN.md](PLAN.md); to pick up work, see [HANDOFF.md](HANDOFF.md).
 
-**Steps 5 and 6 of that redesign are not done.** `staging.py`, `stamp.py`,
-`ledger.py`, the nightly sweep and most of `beets_runner.py` still exist and
-the sweep still runs on its timer. Nothing in the live path uses them - they
-are there so the new path can be watched working before they are removed.
-Where this document describes something as gone, it means "no longer in the
-path a download or a drop takes", not "deleted from the tree".
+**Step 6 of that redesign is not done** - the one cleanup pass over Alex's
+three piles of music. Step 5 is: `staging.py`, `stamp.py`, the download
+ledger, the nightly sweep, `tools/ensure_uuid.py` and beets' auto-import path
+are gone from the tree, about 2,900 lines of it.
 
 ---
 
@@ -41,7 +39,7 @@ Knowing which store owns a fact is most of understanding this codebase.
 | Store | Owns | Access |
 |---|---|---|
 | `navidrome.db` | Accounts, libraries, stars, ratings, play counts, the scanned index | **Read-only.** Every write goes through Navidrome's API |
-| `config/state.db` | Which album UUID an album key maps to; what has already been downloaded; dismissed duplicate groups | Read/write, ours alone |
+| `config/state.db` | Which album UUID an album key maps to; listening history; duplicate decisions | Read/write, ours alone. `store.py` owns the connection |
 | `config/beets/<workspace>/library.db` | Beets' index of one person's filed music | One per workspace |
 | The audio files | `navidrome_uuid`, MusicBrainz ids, all tags | The truth. Everything else is a cache |
 
@@ -50,11 +48,17 @@ Knowing which store owns a fact is most of understanding this codebase.
 "which album is this track on", and it replaced inferring that from directory
 layout plus a majority vote among neighbours - see *Identity* below.
 
-`ledger` (source_id, **library_id**, isrc,
-title, artist, album, file_path, completed_at), keyed on the pair — the
-question is "is this recording already in this collection", and a collection
-is a library, so two accounts sharing one library share the answer and two
-libraries do not. `duplicate_dismissed` (group_key, note, decided_at) holds
+The **download ledger is gone** (2026-09-25). It recorded that a track had
+been fetched, which stayed true after the file was deleted, replaced or moved
+- so a track that left the library became permanently unfetchable, reported
+as "skipped" with nothing to say why. Browse's "in library" marker asks
+Navidrome what the library holds instead, which is both the right question
+and a broader answer: a CD rip was never in the ledger either. Nothing
+refuses a download now. An existing `ledger` table is left on disk rather
+than dropped - destroying somebody's rows on an upgrade is not the code's
+decision to make.
+
+`duplicate_dismissed` (group_key, note, decided_at) holds
 "keep both" decisions. `duplicate_quarantined` records every file the
 duplicates flow set aside — source, target, keeper, who decided — because
 "nothing is deleted" is only useful if the file can be found again.
@@ -127,8 +131,8 @@ non-admins rather than over-sharing.
   because a renamed library must not abandon its index.
 - `staging/<key>/` holds `inbox/` (with `.incomplete/` inside it) and a
   four-line `.owner` marker naming the user, library name, library path and
-  library id. `albums/` and `singles/` are still created, and still hold
-  Alex's 877 un-migrated files, but nothing in the live path writes to them.
+  library id. `albums/` and `singles/` still hold Alex's 877 un-migrated
+  files; nothing creates or writes to them any more.
 - `config/beets/<key>/` holds that person's `config.yaml` and `library.db`.
 
 The `.owner` marker exists because the inbox is drained on a timer with
@@ -358,11 +362,10 @@ quality mechanism.
 
 ## HTTP layer
 
-`main.py` (1,707 lines — it wants splitting more than ever) holds every
-route. Four background loops run for the life of the process: `_inbox_loop`
-(every 15s, files what has been dropped in), `_audit_loop`, `_snapshot_loop`
-(nightly play counts) and `_sweep_loop` — the last of which is the old beets
-sweep, still running over `albums/` and `singles/` until step 5 removes it.
+`main.py` (~1,370 lines — it still wants splitting) holds every route. Three
+background loops run for the life of the process: `_inbox_loop` (every 15s,
+files what has been dropped in), `_audit_loop`, and `_snapshot_loop` (nightly
+play counts).
 
 - A `require_session` middleware gates all `/api/*` except the three auth
   paths. `/healthz` is deliberately ungated so the container healthcheck
@@ -377,9 +380,10 @@ sweep, still running over `albums/` and `singles/` until step 5 removes it.
   `review.album_dir()` is the boundary that turns those back into a
   directory: the library must be one this account can see, and the resolved
   path must sit under that library's root — resolved and compared rather than
-  filtered for `..`, since a symlink walks out of a filtered name too. The
-  older `Workspace.staged()` does the same job for the staging endpoints,
-  which are still mounted but no longer reachable from the UI.
+  filtered for `..`, since a symlink walks out of a filtered name too. An
+  empty folder is refused outright: `root / ""` is the root, so a file loose
+  at the top of the library would otherwise have offered a matcher the whole
+  library as one release.
 
 ---
 

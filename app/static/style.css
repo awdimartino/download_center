@@ -823,13 +823,6 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   white-space: nowrap;
 }
 
-/* Quiet on purpose: it is rare, and it must not compete with Download. */
-.ghost.forget { color: var(--muted); }
-.ghost.forget:hover, .ghost.forget:focus-visible {
-  color: var(--warn);
-  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
-}
-
 .track-actions {
   display: flex;
   align-items: center;

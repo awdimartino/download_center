@@ -160,6 +160,45 @@ def libraries_for(identity: Identity) -> list[dict[str, Any]]:
     return [{"id": r[0], "name": r[1], "path": r[2]} for r in rows]
 
 
+def held_in(library_id: int) -> set[str]:
+    """Every recording a library already holds, as normalised artist+title.
+
+    This is what the Browse tab's "you have this" badge is read from. It used
+    to come from the download ledger, which answered a different and weaker
+    question: the ledger says *this was fetched once*, and stays true after
+    the file is deleted by hand, replaced, or moved to another library. The
+    library itself says what is actually there.
+
+    It is also broader in the way that matters. A record ripped from a CD or
+    dropped into the inbox was never in the ledger, so the badge said nothing
+    about it and the album came up unmarked in Browse - which is precisely
+    when you are about to download a second copy.
+
+    Keyed on the same normalisation the album registry uses, so "Don't" and
+    "Dont" are one song here too.
+    """
+    from . import registry
+
+    try:
+        connection = open_db()
+    except Unavailable as exc:
+        log.warning("cannot read what library %s holds: %s", library_id, exc)
+        return set()
+
+    with connection:
+        columns = {row[1] for row in
+                   connection.execute("pragma table_info(media_file)")}
+        live = "mf.missing = 0" if "missing" in columns else "1=1"
+        rows = connection.execute(
+            f"select coalesce(mf.artist, mf.album_artist, ''),"
+            f"       coalesce(mf.title, '')"
+            f"  from media_file mf"
+            f" where {live} and mf.library_id = ?", (library_id,)).fetchall()
+
+    return {f"{registry.normalize(artist)}\x1f{registry.normalize(title)}"
+            for artist, title in rows if title}
+
+
 # --- calls made for a person ----------------------------------------------
 
 def _subsonic(identity: Identity, endpoint: str, **extra: str) -> dict:

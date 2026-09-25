@@ -176,8 +176,8 @@ def for_session(identity, library_id: int | None = None, *,
     Default-on deliberately: the cost of forgetting it is music written into
     a container and lost, while the cost of an unnecessary check is a caller
     passing `require_library=False`. Callers that only need the identity or
-    the staging directory - deleting a job, forgetting a ledger row, marking
-    Browse results - pass it.
+    the workspace directory - deleting a job, marking Browse results - pass
+    it.
     """
     libraries = identity.libraries
     if not libraries:

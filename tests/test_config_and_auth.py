@@ -24,11 +24,11 @@ def config_file(tmp_path, monkeypatch):
 
 
 def test_saving_preserves_keys_it_does_not_manage(config_file, monkeypatch):
-    """staging_quiet_seconds is not in EDITABLE and has no environment
+    """inbox_quiet_seconds is not in EDITABLE and has no environment
     override, so a save used to delete it and it silently reverted to its
     default on the next restart."""
     config_file.write_text(
-        'staging_quiet_seconds = 600\n'
+        'inbox_quiet_seconds = 600\n'
         'music_dir = "/mnt/music"\n'
         'concurrency = 3\n', encoding="utf-8")
 
@@ -36,7 +36,7 @@ def test_saving_preserves_keys_it_does_not_manage(config_file, monkeypatch):
     config.save({"concurrency": 5})
 
     written = config_file.read_text(encoding="utf-8")
-    assert "staging_quiet_seconds = 600" in written
+    assert "inbox_quiet_seconds = 600" in written
     assert 'music_dir = "/mnt/music"' in written
     assert "concurrency = 5" in written
 

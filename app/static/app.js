@@ -371,7 +371,7 @@ settingsForm.addEventListener("submit", async (event) => {
   const payload = {};
   new FormData(settingsForm).forEach((value, key) => {
     if (value === "") return;
-    payload[key] = ["concurrency", "max_attempts", "staging_sweep_hour"].includes(key)
+    payload[key] = ["concurrency", "max_attempts"].includes(key)
       ? parseInt(value, 10)
       : key === "rate_limit_sleep"
       ? parseFloat(value)
@@ -641,73 +641,21 @@ function albumCard(card) {
   return node;
 }
 
-// "Already have" is the ledger's word, not the filesystem's - beets moved
-// the file out of staging, so that table is the only thing that knows. When
-// the file later leaves the library nothing notices, and the track becomes
-// permanently unfetchable with no way to say otherwise. Clicking the tag is
-// the way back.
+// "In library" is read from Navidrome, so it means what it says: this
+// recording is there now. It used to come from the download ledger, which
+// recorded that a track had been *fetched* - and stayed true after the file
+// was deleted, replaced or moved, leaving the track permanently unfetchable
+// with nothing to say why. That is why there was a Forget button beside it,
+// and why there no longer needs to be one: nothing is refused on the strength
+// of this, so there is nothing to undo.
 //
-// The tag replaces itself with a download button rather than re-running the
-// view, so the answer is immediate and this does not need to know whether it
-// is inside a search grid or an album listing.
-// Held state and the action on it are two things, and they used to be one
-// control. A card showed "already have" *and* a Download button, so the tag
-// shoved Download out of line wherever it appeared; the tag was also secretly
-// the forget button; and forgetting replaced it with a second Download, which
-// is why a forgotten track offered two of them and could be queued twice.
-//
-// Now: a marker that says what is true, pinned left so nothing else moves,
-// and a labelled button for the one action.
+// Pinned left so it cannot shove the Download button out of line wherever it
+// appears.
 function heldMarker() {
   const marker = el("span", "held", "in library");
-  marker.title = "Already downloaded. It will be skipped rather than "
-               + "fetched again.";
+  marker.title = "Your library already has this. Downloading anyway is "
+               + "allowed - it will arrive as a second copy.";
   return marker;
-}
-
-function forgetButton(item, onForgotten) {
-  const button = el("button", "ghost forget", "Forget");
-  button.title = "Stop counting this as already downloaded, so it can be "
-               + "fetched again. No file is touched.";
-  button.addEventListener("click", async (event) => {
-    event.stopPropagation();
-    if (!confirm(
-      `Forget "${item.name}"?\n\n`
-      + "It stops counting as already downloaded, so it can be fetched "
-      + "again.\nNothing on disk is touched.")) return;
-    showError("");
-    button.disabled = true;
-    try {
-      const response = await fetch("/api/ledger/forget", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_id: item.id }),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        showError(body.detail || `Request failed (${response.status})`);
-        button.disabled = false;
-        return;
-      }
-      onForgotten();
-    } catch {
-      showError("Could not reach the server.");
-      button.disabled = false;
-    }
-  });
-  return button;
-}
-
-// The held marker and its Forget button, as one removable unit: forgetting
-// takes both away and leaves the download button that was already there,
-// exactly where it was.
-function heldControls(item, actions) {
-  const marker = heldMarker();
-  const forget = forgetButton(item, () => {
-    marker.remove();
-    forget.remove();
-  });
-  actions.prepend(marker, forget);
 }
 
 function trackCard(card) {
@@ -721,7 +669,7 @@ function trackCard(card) {
   );
   const actions = el("div", "card-actions");
   actions.append(queueButton(card.url, "Download"));
-  if (card.held) heldControls(card, actions);
+  if (card.held) actions.prepend(heldMarker());
   body.append(actions);
   node.append(body);
   return node;
@@ -814,7 +762,7 @@ async function openAlbum(id) {
     // standing in for it.
     const actions = el("div", "track-actions");
     actions.append(queueButton(track.url, "Get"));
-    if (track.held) heldControls(track, actions);
+    if (track.held) actions.prepend(heldMarker());
     row.append(actions);
     list.append(row);
   });

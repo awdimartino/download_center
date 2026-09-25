@@ -20,9 +20,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth, beets_runner, diskaudit, duplicates
-from . import generic, ledger, navidrome, operations, playcounts
+from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
-from . import filer, inbox, review, spotify, staging, worker, workspace
+from . import filer, inbox, registry, review, spotify, worker, workspace
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -39,23 +39,11 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Process start, for the uptime the health panel reports.
 STARTED_AT = time.time()
 
-# When the next staging sweep is due, as a unix timestamp; None while one is
-# running or when the timer is switched off. The Staging panel counts down to
-# it, because "beets has not looked at this yet" and "beets looked and refused"
-# leave a folder in exactly the same state, and only one of them is worth
-# acting on.
-NEXT_SWEEP: float | None = None
-
-# When the next nightly sweep is due, as a unix timestamp; None while one is
-# running. The Staging panel counts down to it, because "beets has not looked
-# at this yet" and "beets looked and refused" leave a folder in exactly the
-# same state, and only one of them is worth acting on.
-
-
 # --- job state ------------------------------------------------------------
 # Jobs are plain dicts held in memory and are not persisted. They serialise
-# straight to JSON for both the REST API and the socket, and everything that
-# needs to survive a restart lives in the ledger instead.
+# straight to JSON for both the REST API and the socket. Nothing about a job
+# needs to survive a restart: the music it finished is in the library, and
+# anything it did not is re-queued by pasting the link again.
 
 JOBS: dict[str, dict[str, Any]] = {}
 
@@ -103,7 +91,7 @@ def new_job(url: str, space: workspace.Workspace) -> dict[str, Any]:
         "id": uuid.uuid4().hex[:12],
         "source_url": url,
         # Whose download this is, and where it will end up. Recorded on the
-        # job so every later phase - staging, tagging, filing - agrees.
+        # job so every later phase - fetching, tagging, filing - agrees.
         "owner": space.username,
         "library": space.library_name,
         # The id, not just the name: retrying or discarding has to rebuild
@@ -230,16 +218,14 @@ async def push_operation(operation: operations.Operation) -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    ledger.connect(settings.ledger_path)
+    store.connect(settings.state_db)
     operations.subscribe(push_operation)
-    log.info("staging directory: %s", settings.output_dir)
-    log.info("ledger holds %d previously downloaded track(s)", ledger.count())
+    log.info("workspace root: %s", settings.output_dir)
     if not settings.spotify_configured:
         log.warning("Spotify credentials missing - add them to config/config.toml")
 
     background = [asyncio.create_task(_audit_loop()),
                   asyncio.create_task(_inbox_loop()),
-                  asyncio.create_task(_sweep_loop()),
                   asyncio.create_task(_snapshot_loop())]
     try:
         yield
@@ -266,57 +252,6 @@ async def _inbox_loop() -> None:
         except Exception:
             log.exception("draining the inbox failed")
         await asyncio.sleep(inbox.POLL_SECONDS)
-
-
-def next_sweep_at() -> float:
-    """When the next nightly sweep is due, as a unix timestamp."""
-    zone = playcounts.zone()
-    now = datetime.now(zone)
-    due = now.replace(hour=settings.staging_sweep_hour, minute=0, second=0,
-                      microsecond=0)
-    if due <= now:
-        due += timedelta(days=1)
-    return due.timestamp()
-
-
-async def _sweep_loop() -> None:
-    """Import anything sitting in staging that no download job put there.
-
-    Once a night rather than every quarter of an hour. Beets does a
-    MusicBrainz lookup per item and moves files about, and on a machine
-    serving music over a marginal wifi link that is felt directly as
-    stuttering playback - the sweep was competing with the thing the
-    application exists to provide.
-
-    Driven by "has tonight been done" rather than by sleeping until a clock
-    time, for the reason the snapshot loop is: a container restarting at
-    midnight would otherwise skip the night entirely, and one that restarts
-    at noon would sweep again for no reason.
-    """
-    global NEXT_SWEEP
-    while True:
-        try:
-            zone = playcounts.zone()
-            now = datetime.now(zone)
-            today = now.strftime("%Y-%m-%d")
-            due = now.replace(hour=settings.staging_sweep_hour, minute=0,
-                              second=0, microsecond=0)
-            owed = now >= due and not await asyncio.to_thread(
-                beets_runner.swept_on, today)
-            if owed and settings.beets_enabled:
-                NEXT_SWEEP = None
-                result = await asyncio.to_thread(beets_runner.sweep_staging)
-                await asyncio.to_thread(beets_runner.record_sweep, today, result)
-                log.info("nightly staging sweep: %s", result)
-            NEXT_SWEEP = next_sweep_at()
-        except Exception:
-            log.exception("staging sweep failed")
-        await asyncio.sleep(SWEEP_CHECK_MINUTES * 60)
-
-
-# How often to ask whether tonight's sweep is owed. Cheap - one row from
-# state.db - and nothing like the sweep itself.
-SWEEP_CHECK_MINUTES = 15
 
 
 # How often to check whether today's snapshot has been taken. Not a clock
@@ -804,7 +739,6 @@ class SettingsUpdate(BaseModel):
     navidrome_url: str | None = None
     navidrome_user: str | None = None
     navidrome_password: str | None = None
-    staging_sweep_hour: int | None = None
     acoustid_key: str | None = None
     # Listed in config.EDITABLE and returned by GET, so it has to be settable
     # or the two disagree about what "editable" means.
@@ -874,18 +808,26 @@ async def put_settings(
 
 def _mark_held(cards: list[dict[str, Any]],
                library_id: int) -> list[dict[str, Any]]:
-    """Flag tracks already in this person's library.
+    """Flag tracks the library already holds.
 
-    Only Spotify ids are checked, not ISRCs: search results do not reliably
-    carry one, and a per-card lookup would be the wrong place to pay for it.
-    The worker still does the full check before downloading anything.
+    Read from Navidrome rather than from a record of what was downloaded.
+    The two disagree the moment a file is deleted by hand or arrives any
+    other way, and only one of them is answering the question the badge
+    asks. It is now a hint rather than a gate - nothing refuses a download
+    because of it - so being approximate about "the same song" is the right
+    trade.
 
-    Scoped to the same library the queue would file into, so the badge means
-    the same thing as the skip. Reporting what somebody else holds would say
-    "you have this" about a record in a collection you cannot see.
+    Scoped to the library the queue would file into. Reporting what somebody
+    else holds would say "you have this" about a record in a collection you
+    cannot see.
     """
+    held = navidrome.held_in(library_id)
     for card in cards:
-        card["held"] = ledger.already_downloaded(card["id"], None, library_id)
+        name = card.get("name") or ""
+        artist = card.get("artist") or ""
+        card["held"] = (
+            f"{registry.normalize(artist)}{registry.normalize(name)}"
+            in held)
     return cards
 
 
@@ -944,39 +886,6 @@ async def album(album_id: str,
             track["held"] = False
     detail["held_count"] = sum(1 for t in detail["tracks"] if t["held"])
     return detail
-
-
-class ForgetRequest(BaseModel):
-    source_id: str
-
-
-@app.post("/api/ledger/forget")
-async def forget_track(
-    request: ForgetRequest,
-    session: auth.Session = Depends(current_session),
-) -> dict[str, bool]:
-    """Let a track be downloaded again.
-
-    The ledger is the only record that a track was ever fetched, because
-    beets moved the file out of staging. So a file that leaves the library -
-    deleted, lost, replaced by hand - leaves the track permanently
-    unfetchable with nothing to say why. Scoped to this person's own
-    library, like every other answer the ledger gives.
-    """
-    try:
-        # A ledger row, not a file. Nothing here needs the library on disk.
-        space = workspace.for_session(session.identity, require_library=False)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    forgotten = await asyncio.to_thread(
-        ledger.forget, request.source_id, space.library_id)
-    if not forgotten:
-        raise HTTPException(
-            status_code=404,
-            detail="That track is not recorded as downloaded here.")
-    log.info("%s forgot %s in library %s", session.identity.username,
-             request.source_id, space.library_id)
-    return {"forgotten": True}
 
 
 @app.get("/api/artists/{artist_id}/albums")
@@ -1077,7 +986,7 @@ async def dismiss_duplicate(
     request: DismissRequest,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    await asyncio.to_thread(ledger.dismiss_duplicate, request.key, request.note)
+    await asyncio.to_thread(store.dismiss_duplicate, request.key, request.note)
     return {"dismissed": request.key}
 
 
@@ -1206,200 +1115,6 @@ def _navidrome_error(exc: Exception) -> str:
     if response is not None:
         detail = (response.text or "").strip()[:300]
     return f"Navidrome refused that: {detail}" if detail else f"Navidrome is unreachable: {exc}"
-
-
-# --- staging -------------------------------------------------------------
-
-@app.get("/api/staging")
-async def staging_contents(
-    session: auth.Session = Depends(current_session),
-) -> dict[str, Any]:
-    """What is sitting in this person's staging area.
-
-    There is no separate list of work to do. Beets moves out everything it
-    can match, so whatever remains here is by definition something it
-    refused - a queue that cannot fall out of step with reality, because it
-    is the reality.
-    """
-    def collect() -> dict[str, Any]:
-        space = workspace.for_session(session.identity)
-        # Written together, always. A staging folder with an owner marker but
-        # no beets config is one the sweep would later adopt with a guessed
-        # destination.
-        beets_runner.ensure_config(space)
-        entries = []
-        for kind, parent in (("album", space.albums_dir),
-                             ("single", space.singles_dir)):
-            if not parent.is_dir():
-                continue
-            for entry in sorted(parent.iterdir()):
-                if entry.name.startswith("."):
-                    continue
-                files = ([f for f in entry.rglob("*") if f.is_file()]
-                         if entry.is_dir() else [entry])
-                refused = beets_runner.refusal(entry)
-                entries.append({
-                    "kind": kind,
-                    "name": entry.name,
-                    "tracks": len(files),
-                    "bytes": sum(f.stat().st_size for f in files),
-                    "age_days": round(
-                        (time.time() - entry.stat().st_mtime) / 86400, 1),
-                    "settled": beets_runner.settled(entry),
-                    # Why it is still here, when this process knows. Absent
-                    # after a restart, which is why it is a note on the row
-                    # and not the thing the row is built from.
-                    "refused": refused["reason"] if refused else None,
-                })
-        return {"library": space.library_name,
-                "staging": str(space.staging), "entries": entries,
-                "next_sweep": NEXT_SWEEP,
-                "sweep_hour": settings.staging_sweep_hour,
-                # What beets is doing right now. A sweep with a hundred items
-                # to walk is otherwise indistinguishable from a wedged one,
-                # and the difference decides whether to wait or go and look.
-                "sweeping": beets_runner.progress()}
-
-    try:
-        return await asyncio.to_thread(collect)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/staging/import")
-async def staging_import(
-    session: auth.Session = Depends(current_session),
-) -> dict[str, Any]:
-    """Try to import everything waiting, now rather than on the timer.
-
-    Started, not awaited: beets gets 900 seconds *per path*, so a staging
-    area with a dozen items could hold a request open for hours. The result
-    arrives over the websocket and is readable from /api/operations.
-    """
-    try:
-        space = workspace.for_session(session.identity)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    def run() -> dict[str, Any]:
-        # Grouped first, for the same reason the sweep does it: what beets is
-        # asked about should be decided by the tags, not by how the files
-        # happened to arrive.
-        staging.regroup(space)
-        waiting = beets_runner.waiting_in(space)
-        if not waiting:
-            return {"ran": False, "reason": "nothing waiting"}
-        return beets_runner.import_paths(space, waiting)
-
-    operation, started = operations.start(
-        "import", session.identity.username, run)
-    return {"started": started, "operation": operation.as_dict()}
-
-
-class ImportAsIs(BaseModel):
-    kind: str
-    name: str
-
-
-@app.post("/api/staging/import-as-is")
-async def staging_import_as_is(
-    body: ImportAsIs,
-    session: auth.Session = Depends(current_session),
-) -> dict[str, Any]:
-    """File one staged item under the tags it already has.
-
-    The way out of a refusal. Beets never guesses, so a track it could not
-    place stays in staging for ever unless someone says "file it anyway" -
-    and until this existed, there was nothing to say it with.
-
-    Deliberately one named item at a time, and never on a timer: importing
-    without matching is a judgement about *this* item, and applying it to
-    the whole staging area would file every doubtful thing at once.
-    """
-    try:
-        space = workspace.for_session(session.identity)
-        path = space.staged(body.kind, body.name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if not beets_runner.settled(path):
-        # Still being written to. The ordinary import refuses these; so must
-        # this one, or a half-finished album gets filed on a button press.
-        raise HTTPException(
-            status_code=409,
-            detail=f"{body.name} is still arriving; try again shortly.")
-
-    def run() -> dict[str, Any]:
-        return beets_runner.import_paths(space, [path], as_is=True)
-
-    # Shares the "import" gate with the ordinary sweep: they are two beets
-    # runs over the same tree, and the one lock is what keeps them apart.
-    operation, started = operations.start(
-        "import", session.identity.username, run)
-    return {"started": started, "operation": operation.as_dict()}
-
-
-@app.post("/api/staging/candidates")
-async def staging_candidates(
-    body: ImportAsIs,
-    session: auth.Session = Depends(current_session),
-) -> dict[str, Any]:
-    """What beets would match this item against.
-
-    An operation rather than a plain request: a candidate lookup is several
-    MusicBrainz round trips and took up to seventy seconds against the real
-    backlog, which is far longer than a request should be held open. The
-    answer arrives over the websocket.
-    """
-    try:
-        space = workspace.for_session(session.identity)
-        path = space.staged(body.kind, body.name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    def run() -> dict[str, Any]:
-        return beets_runner.candidates(space, path)
-
-    operation, started = operations.start(
-        "candidates", session.identity.username, run)
-    return {"started": started, "operation": operation.as_dict()}
-
-
-class ImportChosen(BaseModel):
-    kind: str
-    name: str
-    release_id: str
-
-
-@app.post("/api/staging/import-chosen")
-async def staging_import_chosen(
-    body: ImportChosen,
-    session: auth.Session = Depends(current_session),
-) -> dict[str, Any]:
-    """File a staged item as the release the caller picked.
-
-    The judgement is theirs: beets is told which release it is and asked to
-    do the filing. Nothing here is reachable without someone choosing from a
-    list they were shown.
-    """
-    try:
-        space = workspace.for_session(session.identity)
-        path = space.staged(body.kind, body.name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if not beets_runner.settled(path):
-        raise HTTPException(
-            status_code=409,
-            detail=f"{body.name} is still arriving; try again shortly.")
-
-    def run() -> dict[str, Any]:
-        return beets_runner.import_chosen(space, path, body.release_id)
-
-    # Shares the import gate: it is a beets run over the same tree.
-    operation, started = operations.start(
-        "import", session.identity.username, run)
-    return {"started": started, "operation": operation.as_dict()}
 
 
 # --- review ----------------------------------------------------------------
@@ -1616,14 +1331,10 @@ async def playcount_snapshot(
 async def status(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    # Scoped like everything else the ledger answers: a count of what this
-    # person's library holds, not of the whole installation.
-    library_id = _browsing_library(session)
     return {
         "spotify_configured": settings.spotify_configured,
         "output_dir": str(settings.output_dir),
         "concurrency": settings.concurrency,
-        "ledger_count": ledger.count(library_id),
     }
 
 

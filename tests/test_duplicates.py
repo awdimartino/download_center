@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from app import duplicates, ledger, navidrome
+from app import duplicates, navidrome, store
 from conftest import add_track
 
 
@@ -163,7 +163,7 @@ def test_resolve_records_what_it_moved(tmp_path, state_db, identity):
                 _copy("drop", "Artist/Album/01 Song.mp3", title="Song")]),
         "keep", identity)
 
-    rows = ledger.quarantined()
+    rows = store.quarantined()
     assert len(rows) == 1
     row = rows[0]
     assert row["track_id"] == "drop"
@@ -201,7 +201,7 @@ def test_a_missing_file_is_reported_not_swallowed(tmp_path, state_db, identity):
 
     assert outcome["quarantined"] == []
     assert any("already gone" in f for f in outcome["failed"])
-    assert ledger.quarantined() == [], "nothing moved, so nothing recorded"
+    assert store.quarantined() == [], "nothing moved, so nothing recorded"
 
 
 # --- refusing ---------------------------------------------------------------
@@ -223,7 +223,7 @@ def test_refuses_before_moving_anything_when_a_star_cannot_migrate(
             "keep", identity)
 
     assert source.is_file(), "refusing must leave the file where it was"
-    assert ledger.quarantined() == []
+    assert store.quarantined() == []
 
 
 def test_refuses_when_the_star_could_not_be_written_to_the_keeper(
@@ -279,7 +279,7 @@ def test_a_dismissed_group_stays_dismissed(tmp_path, navidrome_db, identity,
     found = duplicates.find(connection, identity)
     assert len(found) == 1
 
-    ledger.dismiss_duplicate(found[0].dismiss_key)
+    store.dismiss_duplicate(found[0].dismiss_key)
     again = duplicates.find(connection, identity)
     connection.close()
     assert again == []
@@ -346,7 +346,7 @@ def test_survey_reports_a_record_whose_file_has_gone(tmp_path, state_db,
                 _copy("drop", "Artist/Album/01 Song.mp3")]),
         "keep", identity)
 
-    moved = ledger.quarantined()[0]["target_path"]
+    moved = store.quarantined()[0]["target_path"]
     Path(moved).unlink()
 
     survey = duplicates.quarantine_survey(identity)

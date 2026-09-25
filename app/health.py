@@ -317,8 +317,8 @@ def _duplicates_check(connection: sqlite3.Connection, identity) -> Check | None:
     """
     if identity is None:
         return None
-    # Imported here rather than at module scope: duplicates imports ledger,
-    # and health is imported by main before the ledger is connected.
+    # Imported here rather than at module scope: duplicates imports store,
+    # and health is imported by main before state.db is connected.
     from . import duplicates
 
     try:
@@ -401,8 +401,9 @@ def _disk_section(audit) -> Section:
         OK if not audit.spanning_albums else FAIL,
         "; ".join(audit.spanning_albums[:2]),
         "The reverse of a split album: unrelated tracks fused into one "
-        "record. Happens when files are stamped together and filed apart "
-        "afterwards. `stamp.resplit` gives each directory its own again.",
+        "record. The album registry maps one album to one UUID and the "
+        "filer gives it one directory, so this should now be impossible - "
+        "which is exactly why it is still checked.",
         secondary=True,
     ))
     section.add(Check(

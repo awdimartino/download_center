@@ -43,7 +43,7 @@ from datetime import datetime, timedelta, tzinfo, UTC
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from . import ledger, navidrome
+from . import navidrome, store
 from .config import settings
 
 log = logging.getLogger("download_center.playcounts")
@@ -151,7 +151,7 @@ def _last_known() -> dict[tuple[str, str], int]:
     One row per pair, which is what makes "only store changes" readable: the
     comparison is against the last thing written, whenever that was.
     """
-    rows = ledger.connection().execute("""
+    rows = store.connection().execute("""
         select track_uuid, user_id, play_count
           from play_snapshot
          where (track_uuid, user_id, taken_on) in (
@@ -194,13 +194,13 @@ def take(when: str | None = None) -> dict[str, Any]:
         changed.append((day, key[0], key[1], row["username"],
                         row["play_count"], row["play_date"]))
 
-    store = ledger.connection()
-    with ledger._lock:
-        store.executemany(
+    db = store.connection()
+    with store._lock:
+        db.executemany(
             "INSERT OR REPLACE INTO play_snapshot"
             " (taken_on, track_uuid, user_id, username, play_count, play_date)"
             " VALUES (?, ?, ?, ?, ?, ?)", changed)
-        store.executemany(
+        db.executemany(
             "INSERT OR REPLACE INTO play_anomaly"
             " (noticed_on, track_uuid, user_id, was, became)"
             " VALUES (?, ?, ?, ?, ?)", anomalies)
@@ -208,13 +208,13 @@ def take(when: str | None = None) -> dict[str, Any]:
         # listened produces no snapshot rows, and without this the day never
         # counts as done - so the job repeats it every half hour and the
         # status never catches up.
-        store.execute(
+        db.execute(
             "INSERT OR REPLACE INTO play_snapshot_run"
             " (day, taken_at, tracked, changed, anomalies)"
             " VALUES (?, ?, ?, ?, ?)",
             (day, datetime.now(UTC).isoformat(timespec="seconds"),
              len(current), len(changed), len(anomalies)))
-        store.commit()
+        db.commit()
 
     result = {
         "taken": True,
@@ -242,7 +242,7 @@ def taken_on(day: str) -> bool:
     so a quiet day writes nothing at all - and answering this from
     play_snapshot would call such a day incomplete for ever.
     """
-    row = ledger.connection().execute(
+    row = store.connection().execute(
         "SELECT 1 FROM play_snapshot_run WHERE day = ? LIMIT 1",
         (day,)).fetchone()
     return row is not None
@@ -257,12 +257,12 @@ def status() -> dict[str, Any]:
     leaving them out of the status made 41,000 plays look like nothing was
     there.
     """
-    store = ledger.connection()
+    db = store.connection()
 
     def one(sql: str) -> Any:
-        return store.execute(sql).fetchone()[0]
+        return db.execute(sql).fetchone()[0]
 
-    imported = store.execute(
+    imported = db.execute(
         "SELECT source, COUNT(*), SUM(plays), MIN(day), MAX(day)"
         "  FROM play_imported GROUP BY source").fetchall()
 
@@ -303,7 +303,7 @@ def plays_between(start: str, end: str,
     plays rather than a negative number; the drop itself is in play_anomaly.
     """
     def value_at(day: str) -> dict[tuple[str, str], int]:
-        rows = ledger.connection().execute("""
+        rows = store.connection().execute("""
             select s.track_uuid, s.user_id, s.play_count
               from play_snapshot s
               join (select track_uuid, user_id, max(taken_on) as taken_on
@@ -322,7 +322,7 @@ def plays_between(start: str, end: str,
               - timedelta(days=1)).strftime("%Y-%m-%d")
     opening, closing = value_at(before), value_at(end)
 
-    names = dict(ledger.connection().execute(
+    names = dict(store.connection().execute(
         "SELECT user_id, username FROM play_snapshot GROUP BY user_id"))
 
     totals: dict[tuple[str, str], int] = {}
@@ -336,7 +336,7 @@ def plays_between(start: str, end: str,
     # Days before the snapshots began, imported from Last.fm. Added rather
     # than merged: the two sources cover disjoint periods by construction -
     # the import stops the day snapshots start - so nothing is counted twice.
-    imported = ledger.connection().execute("""
+    imported = store.connection().execute("""
         select track_uuid, user_id, username, sum(plays)
           from play_imported
          where day between ? and ?
@@ -416,14 +416,14 @@ def coverage(user_id: str) -> dict[str, Any]:
     working towards - stay global, because they are about the collector
     rather than the collection.
     """
-    store = ledger.connection()
-    imported, first, last = store.execute(
+    db = store.connection()
+    imported, first, last = db.execute(
         "SELECT COALESCE(SUM(plays), 0), MIN(day), MAX(day)"
         "  FROM play_imported WHERE user_id = ?", (user_id,)).fetchone()
-    sources = [row[0] for row in store.execute(
+    sources = [row[0] for row in db.execute(
         "SELECT DISTINCT source FROM play_imported WHERE user_id = ?",
         (user_id,)).fetchall()]
-    snapshot_days = store.execute(
+    snapshot_days = db.execute(
         "SELECT COUNT(DISTINCT taken_on) FROM play_snapshot WHERE user_id = ?",
         (user_id,)).fetchone()[0]
 
@@ -435,9 +435,9 @@ def coverage(user_id: str) -> dict[str, Any]:
         "imported_sources": sources,
         "snapshot_days": snapshot_days,
         # About the job, not the person.
-        "days_run": store.execute(
+        "days_run": db.execute(
             "SELECT COUNT(*) FROM play_snapshot_run").fetchone()[0],
-        "last_run": store.execute(
+        "last_run": db.execute(
             "SELECT MAX(day) FROM play_snapshot_run").fetchone()[0],
         "up_to_date": taken_on(wanted),
         "awaiting": wanted,

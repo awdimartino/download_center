@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import ledger, navidrome
+from . import navidrome, store
 from .config import settings
 
 log = logging.getLogger("download_center.duplicates")
@@ -230,7 +230,7 @@ def find(connection: sqlite3.Connection,
          identity: navidrome.Identity) -> list[Group]:
     """Every group of copies that look like the same recording."""
     copies = _load(connection, identity)
-    dismissed = ledger.dismissed_duplicates()
+    dismissed = store.dismissed_duplicates()
     groups: list[Group] = []
     # The same pair is often found twice - once by MusicBrainz id and once by
     # title - and listing it twice would have someone resolve it, then meet it
@@ -442,7 +442,7 @@ def resolve(group: Group, keeper_id: str,
         # that is really there. Without this, undoing a resolution meant
         # matching filenames by eye against a folder of thousands.
         try:
-            ledger.record_quarantine(
+            store.record_quarantine(
                 group_key=group.dismiss_key, copy=loser, keeper=keeper,
                 source=str(source), target=str(target),
                 decided_by=identity.username)
@@ -471,7 +471,7 @@ def quarantine_survey(identity: navidrome.Identity,
     job on purpose - it means deciding what to do about the copy that was
     kept, and that is not a decision to make from a list.
     """
-    recorded = {row["target_path"]: row for row in ledger.quarantined(limit=2000)}
+    recorded = {row["target_path"]: row for row in store.quarantined(limit=2000)}
     visible = {lib["id"] for lib in identity.libraries}
 
     entries: list[dict[str, Any]] = []

@@ -19,7 +19,7 @@ import logging
 from typing import Any
 from collections.abc import Awaitable, Callable
 
-from . import downloader, inbox, ledger, matcher, navidrome, tagger
+from . import downloader, inbox, matcher, navidrome, tagger
 from . import workspace
 from .config import settings
 
@@ -237,25 +237,13 @@ async def run_job(job: dict[str, Any], push: Push,
     job["status"] = "running"
     await push(job)
 
-    # Scoped to the library this job files into: "already downloaded" is a
-    # question about a collection, and asking it of the whole installation
-    # meant a second person's first download was skipped entirely.
-    pending = []
-    for item in items:
-        held = await asyncio.to_thread(
-            ledger.already_downloaded, item["spotify_id"], item.get("isrc"),
-            space.library_id
-        )
-        if held:
-            _mark(item, "skipped")
-        else:
-            pending.append(item)
-
-    if not pending:
-        job["status"] = "complete"
-        log.info("%s: every track already in the ledger", job["title"])
-        await push(job)
-        return
+    # Everything asked for is fetched. Re-download prevention was a ledger
+    # row saying a track had been downloaded once, which stayed true after
+    # the file was deleted, replaced or moved - so a track that left the
+    # library became permanently unfetchable with nothing to say why. Browse
+    # marks what the library actually holds, which is the same question asked
+    # of the thing that knows the answer.
+    pending = items
 
     ticker = asyncio.create_task(_pusher(job, push, push_progress))
     try:
@@ -270,9 +258,6 @@ async def run_job(job: dict[str, Any], push: Push,
     # tracks of that album, in that album's folder, playable now and listed
     # for review until someone confirms what they are.
     filed = [item for item in pending if item["status"] == "complete"]
-    for item in filed:
-        await asyncio.to_thread(ledger.record, item, item.get("file_path"),
-                                space.library_id)
 
     await asyncio.to_thread(inbox.discard, space, job["id"])
 

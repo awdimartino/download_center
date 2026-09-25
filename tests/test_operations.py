@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import threading
 import time
-from datetime import UTC
 
 import pytest
 
-from app import beets_runner, diskaudit, operations
+from app import diskaudit, operations
 
 
 @pytest.fixture(autouse=True)
@@ -105,34 +104,6 @@ async def test_an_unstarted_operation_reads_as_idle():
 
 # --- the locks that used to block a threadpool worker ---------------------
 
-def test_a_second_import_waits_briefly_then_reports_busy(tmp_path, monkeypatch):
-    """Once it waited unboundedly, from inside a threadpool worker, for as
-    long as the running import took - up to 900s per path. Then it refused
-    the instant the lock was held, which was fine until a sweep could run for
-    an hour and every button in the staging tab answered "an import is
-    already running".
-
-    Now: a bounded wait, about one item long. The sweep releases the lock
-    between items, so that is usually all it takes."""
-    monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
-    monkeypatch.setattr(beets_runner, "ensure_config", lambda space: None)
-    monkeypatch.setattr(beets_runner, "LOCK_WAIT", 0.05)
-    waiting = tmp_path / "x.mp3"
-    waiting.write_bytes(b"")
-
-    beets_runner._import_lock.acquire()
-    try:
-        started = time.monotonic()
-        space = type("Space", (), {"username": "alex"})()
-        result = beets_runner.import_paths(space, [waiting])
-        waited = time.monotonic() - started
-    finally:
-        beets_runner._import_lock.release()
-
-    assert result["ran"] is False
-    assert result["busy"] is True
-    assert waited < 5, "a caller must not sit on this lock indefinitely"
-
 
 def test_concurrent_audits_share_one_walk(tmp_path, monkeypatch):
     """The docstring always claimed this. It used to serialise instead: the
@@ -188,35 +159,4 @@ def test_a_walk_for_a_different_root_is_not_blocked(tmp_path, monkeypatch):
 # per item and moves files about, and on a machine serving music over a weak
 # wifi link that is felt as stuttering playback.
 
-def test_a_swept_night_is_remembered(state_db):
-    """A restart must not repeat the night's sweep, which is exactly the
-    competing-with-playback that moving it off a timer was meant to stop."""
-    from app import beets_runner
 
-    assert beets_runner.swept_on("2026-09-07") is False
-    beets_runner.record_sweep("2026-09-07", {"ran": True, "by_user": {}})
-    assert beets_runner.swept_on("2026-09-07") is True
-
-
-def test_each_night_is_its_own_question(state_db):
-    from app import beets_runner
-
-    beets_runner.record_sweep("2026-09-07", {"ran": True})
-    assert beets_runner.swept_on("2026-09-08") is False
-
-
-def test_the_next_sweep_is_the_configured_hour(monkeypatch):
-    """The countdown in the panel reads this, so it has to be the real next
-    occurrence rather than an interval from now."""
-    from datetime import datetime
-
-    from app import main
-    from app.config import settings
-
-    monkeypatch.setattr(settings, "staging_sweep_hour", 3)
-    monkeypatch.setattr(settings, "play_day_timezone", "UTC")
-
-    due = datetime.fromtimestamp(main.next_sweep_at(), tz=UTC)
-
-    assert (due.hour, due.minute) == (3, 0)
-    assert due > datetime.now(UTC), "always the next one, never one gone by"

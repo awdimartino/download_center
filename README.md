@@ -30,7 +30,7 @@ Everything is scoped to whoever is signed in:
 | | |
 |---|---|
 | Where a download lands | the library that account can see in Navidrome |
-| Staging area | `<staging>/<username>-<library id>/` |
+| Inbox and scratch space | `<workspaces>/<username>-<library id>/inbox/` |
 | beets config and index | `config/beets/<username>-<library id>/` |
 | Whose stars a duplicate carries | theirs |
 | Who owns a new playlist | them |
@@ -50,12 +50,14 @@ password and decide where every library lives.
 **Browse** — search Spotify from inside the app, so you never have to go and
 copy a link. Albums, tracks or artists; open an album for its track listing or
 an artist for their discography with duplicate reissues collapsed. Tracks
-already in the ledger are marked, so you can tell what you are missing from a
-record before queuing it.
+your library already holds are marked, so you can tell what you are missing
+from a record before queuing it. It is a note, not a gate — nothing is
+refused because of it.
 
-**Staging** — what is sitting in your staging area waiting to be filed. beets
-moves out everything it can match, so whatever is left is by definition
-something it refused. *Try importing now* runs the import ahead of the timer.
+**Review** — music that is in your library and playing, but that has never
+been matched against MusicBrainz. Nothing here is waiting for permission; the
+row only says nobody has confirmed it. *Find matches* asks beets what one
+album would match against, and you pick from the list.
 
 **Health** — a list of numbers that should be zero: tracks with no UUID,
 duplicate UUIDs, stars pointing at files that no longer exist, unreadable
@@ -104,9 +106,11 @@ afterwards. There is one per person, because beets stores item paths *relative
 to* its `directory` — a single `library.db` genuinely cannot describe two
 library roots.
 
-Imports run unattended with `quiet_fallback: skip`, so anything beets cannot
-confidently match is **left in the staging folder** rather than guessed at.
-The Staging tab is that list.
+Beets no longer files anything on its own. A download goes into the library
+immediately, tagged from Spotify; beets is consulted by hand, one album at a
+time, from the Review tab. It ran unattended once and refused 82% of what it
+was given — almost all of it for mechanical reasons that had nothing to do
+with the music.
 
 Two things in the generated config are load-bearing, and worth understanding
 before editing it:
@@ -125,13 +129,13 @@ before editing it:
 `chroma` to the plugins line — useful if you want identification by audio
 rather than by tags.
 
-Set `beets_enabled = false` to turn all of this off and keep the staging
-output as the final result.
+Set `beets_enabled = false` to turn matching off entirely. Downloads still
+land in the library; the Review tab simply stops offering to identify them.
 
 ## Track identity
 
-Every filed track carries a `navidrome_uuid` tag, written *after* beets has
-moved the file into place. Navidrome is configured to derive its persistent
+Every filed track carries a `navidrome_uuid` tag, written *before* the file
+is moved into place, so Navidrome never sees a track without one. Navidrome is configured to derive its persistent
 track id from it:
 
 ```
@@ -149,49 +153,60 @@ Stamping restores the file's mtime, since nothing about the audio changed.
 The cost is that an *incremental* scan will not re-read those files — after a
 tag change, run a **full** scan.
 
-## Staging layout
+## Where files go
 
-Output is split by how beets should import it, inside each person's own
-staging directory:
+One road into the library, for everything. A download and a file dragged in
+over the network share take the same path, and one function does the filing —
+which is the point, because the album-versus-single routing and the regrouping
+pass that used to exist were all consequences of those being two roads.
 
 ```
-untagged/
-  alex-1/                        one directory per user and library
-    .owner                       who this belongs to, and where it files to
-    .incomplete/                 files are built here
-    albums/                      complete releases      ->  beet import
-      Radiohead - OK Computer/
-        01 - Airbag.mp3
-    singles/                     loose tracks           ->  beet import -s
-      Burial - Archangel.mp3
+<workspaces>/
+  alex-1/                     one directory per user and library
+    .owner                    who this belongs to, and where it files to
+    inbox/                    drop music here; it does not stay
+      .incomplete/            a download is built here, hidden from the watcher
 ```
 
-An album only lands in `albums/` when **every** one of its tracks was
-downloaded. Playlist tracks, single-track jobs, and albums where something
-failed all go to `singles/` instead, because beets cannot album-match a
-fragment of a release and will skip it under `--quiet`.
+A download is built in `.incomplete/`, tagged from Spotify, then moved into
+the inbox and filed on the spot. Anything else is picked up by a watcher that
+looks every 15 seconds and files whatever has stopped changing for
+`inbox_quiet_seconds`. At rest the inbox is empty.
 
-Files are built in `.incomplete/` and moved into place only once a job
-finishes, so a beets run firing mid-download never sees a partial album. A
-background sweep also imports anything that arrives in staging without a
-download job — dropped in by hand, or left behind by a job that finished while
-beets was busy. That is why the `.owner` marker exists: the sweep runs on a
-timer with nobody signed in, so the folder itself has to say whose files these
-are.
+That quiet period is also the safety net: a rename keeps a file's mtime, so a
+download the application died on is sitting in the inbox and gets filed on the
+next start rather than being lost.
 
-### When beets will not file something
+The `.owner` marker exists because the watcher runs with nobody signed in — a
+file dropped in by hand has no session attached, so the folder itself has to
+say whose it is.
 
-Beets is configured never to guess, so anything it is unsure of stays in
-staging. The Staging tab shows what is waiting, why it was refused when this
-process knows, and offers **Import as-is** on each item: `beet import -A`, no
-matching at all, filed under the tags it already carries — which for a
-downloaded track are the ones seeded from Spotify.
+Each file is filed by its **own tags**, to a path that is then frozen:
 
-A track with an album tag is filed to `$albumartist/$album/`, the same folder
-its siblings land in, so a later arrival joins it rather than founding a
-second copy of the record. A track with no album goes to `Non-Album/`.
-Nothing does this on a timer: importing without matching is a judgement about
-one item, and the sweep will never make it for you.
+```
+$albumartist/$album/$disc-$track - $title.ext
+```
+
+The disc prefix appears only on a multi-disc release. A track with no album
+goes to `$artist/Unknown Album/`; a file with no readable tags at all goes to
+`Unknown Artist/Unknown Album/` and shows up in the Review tab. Nothing is
+held outside the library waiting to be identified.
+
+After that no automatic process moves a file. Navidrome identifies a track by
+its UUID and groups albums by tag, never by path, so a path that drifts from
+the tags is cosmetic. Only a retag you confirm in the Review tab moves
+anything.
+
+### Which album a track belongs to
+
+Album membership is a lookup, not a guess. `config/state.db` maps a
+normalised `(album artist, album)` key to an album UUID: the first track of a
+record mints one, and every later track — same job or months later — finds it.
+
+The key normalises case, spacing, punctuation and unicode spelling only. It
+does **not** treat editions as the same record: Spotify presents `Abbey Road`
+and `Abbey Road (Super Deluxe Edition)` as two albums with two ids, and
+merging them would put two track 1s inside one album.
 
 ## Setup
 
@@ -245,7 +260,7 @@ All host paths come from `.env`, so `docker-compose.yml` never needs editing:
 |---|---|
 | `DC_IMAGE` | the published image to run |
 | `LIBRARY_DIR` | the tagged library beets files into, mounted at `/music` |
-| `STAGING_DIR` | staging root, mounted at `/downloads` |
+| `STAGING_DIR` | workspace root, mounted at `/downloads` |
 | `CONFIG_DIR` | where `config.toml` and `state.db` live, mounted at `/config` |
 | `PUID` / `PGID` | user that should own the written files |
 | `PORT` | host port to serve on |
@@ -309,22 +324,23 @@ panel writes.
 | `audio_bitrate` | `320` | `DC_AUDIO_BITRATE` | MP3 kbps |
 | `max_attempts` | `3` | `DC_MAX_ATTEMPTS` | tries per track before failing |
 | `rate_limit_sleep` | `2.0` | `DC_RATE_LIMIT_SLEEP` | seconds between downloads |
-| `beets_enabled` | `true` | `DC_BEETS_ENABLED` | hand finished downloads to beets |
-| `staging_sweep_minutes` | `15` | `DC_STAGING_SWEEP_MINUTES` | how often to import stray staging files; `0` disables |
-| `staging_quiet_seconds` | `120` | | how long a folder must sit unchanged before it is importable |
+| `beets_enabled` | `true` | `DC_BEETS_ENABLED` | offer MusicBrainz matching on the Review page |
+| `inbox_quiet_seconds` | `120` | `DC_INBOX_QUIET_SECONDS` | how long a dropped file must sit unchanged before it is filed |
 | `navidrome_url` | | `DC_NAVIDROME_URL` | required to sign in |
 | `navidrome_user` | | `DC_NAVIDROME_USER` | admin account, for triggering scans |
 | `navidrome_password` | | `DC_NAVIDROME_PASSWORD` | stored in plain text in `config.toml` |
 | `navidrome_db` | `/navidrome/navidrome.db` | `DC_NAVIDROME_DB` | mounted read-only |
 | `music_dir` | `/music` | `DC_MUSIC_DIR` | fallback library root |
-| `output_dir` | `/downloads` | `DC_OUTPUT_DIR` | staging root |
+| `output_dir` | `/downloads` | `DC_OUTPUT_DIR` | where each person's inbox lives |
 
 ## Files that matter
 
-`config/state.db` is the download ledger. Because beets *moves* files out of
-the staging folder, the filesystem cannot answer "do I already have this
-track" — this database is the only thing that can. It also remembers which
-duplicate groups you decided to keep as they are. **Back it up.**
+`config/state.db` holds the small amount that exists nowhere else: which
+album UUID each album key maps to, your listening history, and which duplicate
+groups you decided to keep as they are. The album registry cannot be derived
+from the files — a UUID is invented rather than observed — and Navidrome keeps
+only a cumulative play count, so the history here is the only copy.
+**Back it up.**
 
 `config/beets/<username>-<library id>/library.db` is that person's beets
 index. It is rebuildable from the files, but not quickly.
@@ -348,9 +364,9 @@ Title and artist are hard gates. Anything below the confidence floor lands in
 the failed list, where you can retry it — a wrong file is far more expensive
 to undo once beets has imported it than a missing one is to fetch again.
 
-**Restarting loses the queue.** Job state is in memory by design; only the
-ledger is persisted. Re-paste the link and everything already downloaded is
-skipped.
+**Restarting loses the queue.** Job state is in memory by design. Re-paste
+the link; what already reached the library is marked "in library" in Browse,
+and re-queuing it downloads a second copy rather than refusing.
 
 **Nothing is deleted.** Duplicate losers are moved to `duplicates-removed/`,
 never unlinked. Recovering one is a manual job, so read a group before

@@ -270,18 +270,35 @@ async def test_the_scratch_directory_is_cleared(library):
     assert not inbox.scratch_root(library, "job1").exists()
 
 
+
+
+# --- nothing is skipped any more --------------------------------------------
+#
+# The ledger recorded that a track had been fetched once, and that stayed true
+# after the file was deleted, replaced or moved to another library - so a
+# track that left the library became permanently unfetchable, reported as
+# "skipped" with nothing to say why. Browse still marks what the library
+# actually holds; it just does not refuse anything.
+
 @pytest.mark.asyncio
-async def test_a_finished_track_is_recorded_in_the_ledger(library):
-    from app import ledger
+async def test_asking_for_the_same_track_twice_downloads_it_twice(library):
+    """The second copy is a duplicate for the Duplicates tab to catch, which
+    is a far better place for it than a track nobody can fetch."""
+    first = [_track(1, "Come Together")]
+    await _run(library, first)
+    second = [_track(1, "Come Together")]
+    await _run(library, second)
 
-    await _run(library, [_track(1, "Come Together")])
-
-    assert ledger.already_downloaded("s1", None, library.library_id)
+    assert second[0]["status"] == "complete"
+    folder = library.library_path / "The Beatles" / "Abbey Road"
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "01 - Come Together (2).mp3", "01 - Come Together.mp3"]
 
 
 @pytest.mark.asyncio
-async def test_a_download_that_fails_is_not_recorded(library, monkeypatch):
-    from app import ledger
+async def test_a_download_that_fails_leaves_nothing_behind(library,
+                                                           monkeypatch):
+    from app import inbox
 
     def boom(url, destination, on_progress=None):
         raise worker.downloader.DownloadError("no audio")
@@ -292,4 +309,5 @@ async def test_a_download_that_fails_is_not_recorded(library, monkeypatch):
 
     assert items[0]["status"] == "failed"
     assert job["status"] == "failed"
-    assert not ledger.already_downloaded("s1", None, library.library_id)
+    assert not list(library.library_path.rglob("*.mp3"))
+    assert not inbox.scratch_root(library, "job1").exists()

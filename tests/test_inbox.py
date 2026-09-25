@@ -26,7 +26,7 @@ def space(tmp_path, monkeypatch, state_db):
     from app.config import settings
 
     monkeypatch.setattr(settings, "output_dir", tmp_path / "untagged")
-    monkeypatch.setattr(settings, "staging_quiet_seconds", 0)
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 0)
     monkeypatch.setattr(workspace, "CONFIG_DIR", tmp_path / "config")
     (tmp_path / "music").mkdir()
     made = workspace.Workspace(username="alex", library_id=1,
@@ -126,7 +126,7 @@ def test_the_inbox_is_empty_afterwards(space):
 def test_a_file_still_being_written_is_left_alone(space, monkeypatch):
     from app.config import settings
 
-    monkeypatch.setattr(settings, "staging_quiet_seconds", 120)
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
     path = space.inbox_dir / "arriving.mp3"
     shutil.copy(SILENCE, path)
 
@@ -246,7 +246,7 @@ def test_the_poller_cannot_grab_a_download_being_built(space, monkeypatch):
     real name the moment it stopped changing."""
     from app.config import settings
 
-    monkeypatch.setattr(settings, "staging_quiet_seconds", 0)
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 0)
     half = built(space, albumartist="The Beatles", album="Abbey Road")
 
     assert inbox.waiting(space) == []
@@ -261,7 +261,7 @@ def test_the_poller_does_not_race_the_worker_for_a_delivered_file(space,
     worker has filed it."""
     from app.config import settings
 
-    monkeypatch.setattr(settings, "staging_quiet_seconds", 120)
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
     source = built(space, albumartist="The Beatles", album="Abbey Road",
                    title="Come Together", tracknumber="1")
     arrived = inbox._move_in(source, space.inbox_dir / source.name)
@@ -280,7 +280,7 @@ def test_a_download_orphaned_by_a_crash_is_picked_up_later(space, monkeypatch):
                    title="Come Together", tracknumber="1")
     inbox._move_in(source, space.inbox_dir / source.name)
 
-    monkeypatch.setattr(settings, "staging_quiet_seconds", 0)
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 0)
     result = inbox.drain(space)
 
     assert result.filed == [space.library_path / "The Beatles" / "Abbey Road"
@@ -377,7 +377,7 @@ def test_a_directory_at_the_library_root_is_not_a_loose_file(space):
 def test_a_loose_file_still_being_copied_is_left_alone(space, monkeypatch):
     from app.config import settings
 
-    monkeypatch.setattr(settings, "staging_quiet_seconds", 120)
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
     path = space.library_path / "arriving.mp3"
     shutil.copy(SILENCE, path)
 

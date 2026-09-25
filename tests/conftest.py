@@ -18,18 +18,18 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import ledger  # noqa: E402
+from app import store  # noqa: E402
 
 
 @pytest.fixture
 def state_db(tmp_path, monkeypatch):
     """A connected ledger on a throwaway database."""
     path = tmp_path / "state.db"
-    ledger.connect(path)
+    store.connect(path)
     yield path
-    if ledger._conn is not None:
-        ledger._conn.close()
-        ledger._conn = None
+    if store._conn is not None:
+        store._conn.close()
+        store._conn = None
 
 
 # --- a stand-in for Navidrome's schema ------------------------------------

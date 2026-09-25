@@ -23,12 +23,12 @@ _ENV_OVERRIDES = {
     "max_attempts": "DC_MAX_ATTEMPTS",
     "rate_limit_sleep": "DC_RATE_LIMIT_SLEEP",
     "beets_enabled": "DC_BEETS_ENABLED",
+    "inbox_quiet_seconds": "DC_INBOX_QUIET_SECONDS",
     "music_dir": "DC_MUSIC_DIR",
     "navidrome_db": "DC_NAVIDROME_DB",
     "navidrome_url": "DC_NAVIDROME_URL",
     "navidrome_user": "DC_NAVIDROME_USER",
     "navidrome_password": "DC_NAVIDROME_PASSWORD",
-    "staging_sweep_hour": "DC_STAGING_SWEEP_HOUR",
     "play_day_timezone": "DC_PLAY_DAY_TIMEZONE",
     "acoustid_key": "DC_ACOUSTID_KEY",
 }
@@ -48,8 +48,10 @@ class Settings(BaseModel):
     # Seconds to pause between downloads, to stay under YouTube's radar.
     rate_limit_sleep: float = Field(default=2.0, ge=0)
 
-    # Hand finished downloads to beets, which tags them against MusicBrainz
-    # and files them into the library tree defined in its own config.
+    # Whether the review page offers to match an album against MusicBrainz.
+    # Beets no longer files anything: a download goes into the library on its
+    # own, and this only decides whether the "Find matches" button does
+    # something when you press it.
     beets_enabled: bool = True
 
     # The tagged library beets files into, and which Navidrome serves.
@@ -67,20 +69,12 @@ class Settings(BaseModel):
     navidrome_user: str = ""
     navidrome_password: str = ""
 
-    # The local hour at which to look for anything sitting in staging that no
-    # download job put there - a manual drop, or a job that finished while
-    # beets was busy. Once a night, not every quarter of an hour: beets does
-    # a MusicBrainz lookup per item and moves files about, and on a machine
-    # serving music over a marginal wifi link that is felt as stuttering
-    # playback. `beets_enabled` turns it off entirely.
-    #
-    # Local means `play_day_timezone`, the same setting the nightly play-count
-    # snapshot uses. Midnight by default.
-    staging_sweep_hour: int = Field(default=0, ge=0, le=23)
-
-    # How long a file must sit unchanged before it is considered finished.
-    # Importing a directory still being written to gets a partial album.
-    staging_quiet_seconds: int = Field(default=120, ge=0)
+    # How long a file must sit unchanged before the inbox files it.
+    # Nothing here can know whether something is mid-copy - a file arriving
+    # over a network share is written by a machine this one cannot ask - so
+    # it waits for stillness instead. A download does not wait: the worker
+    # delivers it and files it in the same breath, because it knows.
+    inbox_quiet_seconds: int = Field(default=120, ge=0)
 
     # Which midnight closes a listening day. Stated explicitly rather than
     # taken from the container's TZ, which is Etc/UTC and would put the
@@ -111,7 +105,7 @@ class Settings(BaseModel):
         return self.output_dir / "singles"
 
     @property
-    def ledger_path(self) -> Path:
+    def state_db(self) -> Path:
         return CONFIG_DIR / "state.db"
 
     @property
@@ -131,7 +125,7 @@ EDITABLE = (
     "spotify_client_id", "spotify_client_secret", "concurrency",
     "audio_bitrate", "max_attempts", "rate_limit_sleep", "beets_enabled",
     "navidrome_url", "navidrome_user", "navidrome_password",
-    "staging_sweep_hour", "acoustid_key",
+    "acoustid_key",
 )
 
 
@@ -152,9 +146,9 @@ def save(updates: dict[str, Any]) -> None:
     Anything already in the file that this app does not consider editable is
     carried across untouched. The previous version wrote only the EDITABLE
     keys, so saving from the Settings panel silently deleted any hand-set
-    `staging_quiet_seconds`, `music_dir` or `output_dir` - and
-    `staging_quiet_seconds` has no environment override either, so it simply
-    reverted to its default on the next restart with nothing to say why.
+    `inbox_quiet_seconds`, `music_dir` or `output_dir`, any of which would
+    then silently revert to its default on the next restart with nothing to
+    say why.
     """
     for key, value in updates.items():
         if key in EDITABLE:
