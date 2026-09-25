@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, ledger, navidrome, operations, playcounts
 from . import playlists as smart_playlists
-from . import spotify, staging, worker, workspace
+from . import filer, spotify, staging, worker, workspace
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -574,7 +574,7 @@ async def _run(job: dict[str, Any], space: workspace.Workspace) -> None:
         for item in job["items"]:
             if item["status"] not in ("complete", "skipped", "failed"):
                 item["status"] = "cancelled"
-        await asyncio.to_thread(staging.discard, space, job_id)
+        await asyncio.to_thread(filer.discard, space, job_id)
         log.info("job %s cancelled", job_id)
         await push_job(job)
     except Exception as exc:
@@ -701,7 +701,7 @@ async def delete_job(
     await _stop_job(job_id)
 
     JOBS.pop(job_id, None)
-    await asyncio.to_thread(staging.discard, space, job_id)
+    await asyncio.to_thread(filer.discard, space, job_id)
     await broker.publish({"type": "job_deleted", "id": job_id},
                          owner=session.identity.username)
     return {"ok": True}

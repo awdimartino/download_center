@@ -1,10 +1,15 @@
-"""Runs a resolved job: dedupe, match, download, tag, publish.
+"""Runs a resolved job: dedupe, match, download, tag, file.
 
-Ordering here is deliberate. Every item is checked against the ledger before
-any layout is planned, because a track already in the library must not count
-towards its album being complete. Re-queuing a record you hold eight tracks of
-would otherwise build an "album" directory containing two files, and beets
-would try to match that against the full release and fail.
+A track goes into the library the moment it is finished, tagged from Spotify
+and playable. Nothing waits for its album to be complete, nothing waits for a
+nightly sweep, and nothing is held back because a matcher would not vouch for
+it - beets refused 82% of what it was handed, almost all of it for mechanical
+reasons that had nothing to do with the music.
+
+So there is no publish step and no batch. Each item files itself as it lands,
+which is also what makes a partial job useful: nine tracks of a twelve track
+record are nine tracks you can play, sitting under the album they belong to,
+rather than a directory nobody is allowed to look at.
 """
 
 from __future__ import annotations
@@ -14,7 +19,7 @@ import logging
 from typing import Any
 from collections.abc import Awaitable, Callable
 
-from . import beets_runner, downloader, ledger, matcher, staging, tagger
+from . import downloader, filer, ledger, matcher, navidrome, tagger
 from . import workspace
 from .config import settings
 
@@ -112,8 +117,8 @@ async def _match_with_retries(item: dict[str, Any]) -> Any:
     raise last if last else matcher.SearchUnavailable("search failed")
 
 
-async def _process(item: dict[str, Any], dest: dict[str, Any],
-                   gate: asyncio.Semaphore) -> None:
+async def _process(item: dict[str, Any], space: workspace.Workspace,
+                   job_id: str, gate: asyncio.Semaphore) -> None:
     async with gate:
         # Items from a direct link already name their audio, so there is
         # nothing to search for and no confidence to score.
@@ -143,8 +148,9 @@ async def _process(item: dict[str, Any], dest: dict[str, Any],
             item["match_url"] = url
             item["match_score"] = round(score, 3)
 
+        temp = filer.scratch_path(space, job_id, item["id"])
         try:
-            path = await _download_with_retries(item, url, dest["temp"])
+            path = await _download_with_retries(item, url, temp)
         except downloader.DownloadError as exc:
             _mark(item, "failed", error=str(exc)[:200], progress=0)
             return
@@ -153,11 +159,21 @@ async def _process(item: dict[str, Any], dest: dict[str, Any],
         try:
             await asyncio.to_thread(tagger.tag, path, item)
         except Exception as exc:
-            # A tagging failure is not fatal: beets will retag anyway, and a
-            # correct file with poor tags beats discarding the download.
+            # Not fatal, but it costs more than it used to. These tags are no
+            # longer a hint to a matcher that will overwrite them - they are
+            # what the file is filed by and what Navidrome will show. A file
+            # that loses them lands under Unknown Artist and appears in the
+            # review list, which is still better than discarding the audio.
             log.warning("tagging failed for %s: %s", item["title"], exc)
 
-        _mark(item, "complete", file_path=str(dest["final"]))
+        try:
+            filed = await asyncio.to_thread(filer.file_track, space, path)
+        except Exception as exc:
+            log.exception("could not file %s", item["title"])
+            _mark(item, "failed", error=f"Could not file the download: {exc}"[:200])
+            return
+
+        _mark(item, "complete", file_path=str(filed.path))
 
         if settings.rate_limit_sleep:
             await asyncio.sleep(settings.rate_limit_sleep)
@@ -211,14 +227,13 @@ async def run_job(job: dict[str, Any], push: Push,
     """Drive one job to completion, into one person's library.
 
     The workspace comes from whoever queued the job rather than from
-    configuration: their staging area, their beets database, their
-    destination. Nothing downstream has to know whose download this was.
+    configuration: their scratch space and their destination. Nothing
+    downstream has to know whose download this was.
     """
     items = job["items"]
     job["status"] = "running"
     await push(job)
 
-    # Dedupe first, so completeness is judged on what will actually be written.
     # Scoped to the library this job files into: "already downloaded" is a
     # question about a collection, and asking it of the whole installation
     # meant a second person's first download was skipped entirely.
@@ -239,56 +254,33 @@ async def run_job(job: dict[str, Any], push: Push,
         await push(job)
         return
 
-    layout = staging.plan(space, job["id"], pending)
     ticker = asyncio.create_task(_pusher(job, push, push_progress))
-
     try:
         await asyncio.gather(
-            *(_process(item, layout[item["id"]], gate()) for item in pending)
+            *(_process(item, space, job["id"], gate()) for item in pending)
         )
     finally:
         ticker.cancel()
 
-    # An album that came up short used to be broken apart into singles here,
-    # because beets cannot album-match nine tracks of a twelve track record.
-    # It stays together now: a singleton import files a track to
-    # `Non-Album/$artist/$title` whatever its album tag says, so demoting
-    # scattered an album's fragments across the library instead of keeping
-    # them in one place for someone to look at.
+    # Each item filed itself as it finished, so there is nothing to publish
+    # and nothing to import. An album that came up short is simply a few
+    # tracks of that album, in that album's folder, playable now and listed
+    # for review until someone confirms what they are.
+    filed = [item for item in pending if item["status"] == "complete"]
+    for item in filed:
+        await asyncio.to_thread(ledger.record, item, item.get("file_path"),
+                                space.library_id)
 
-    published: list = []
-    try:
-        published = await asyncio.to_thread(staging.publish, space, job["id"])
-        log.info("%s: published %d path(s)", job["title"], len(published))
-    except Exception as exc:
-        log.exception("publishing failed for %s", job["title"])
-        job["error"] = f"Publishing failed: {exc}"
-    else:
-        # Recorded only now, so the ledger reflects what reached the staging
-        # tree. A job that dies before publishing leaves orphans in scratch
-        # space that should be fetched again, not skipped.
-        for item in pending:
-            if item["status"] == "complete":
-                await asyncio.to_thread(ledger.record, item,
-                                        item.get("file_path"), space.library_id)
+    await asyncio.to_thread(filer.discard, space, job["id"])
 
     failed = sum(1 for item in items if item["status"] == "failed")
     done = sum(1 for item in items if item["status"] in ("complete", "skipped"))
     job["status"] = "complete" if not failed else ("failed" if not done else "partial")
-    log.info("%s: %d done, %d failed", job["title"], done, failed)
+    log.info("%s: %d filed, %d failed", job["title"], len(filed), failed)
     await push(job)
 
-    # Tagging is a separate phase with its own status, because it can take a
-    # while and its outcome is independent of whether the downloads worked.
-    if published:
-        job["status"] = "tagging"
-        await push(job)
-        try:
-            job["beets"] = await asyncio.to_thread(
-                beets_runner.import_paths, space, published)
-        except Exception as exc:
-            log.exception("beets import raised for %s", job["title"])
-            job["beets"] = {"ran": True, "imported": 0, "skipped": 0,
-                            "failed": [str(exc)[:200]]}
-        job["status"] = "complete" if not failed else ("failed" if not done else "partial")
-        await push(job)
+    # The files are already in the library and Navidrome will find them on
+    # its own schedule; this only makes it sooner. Failing it is not worth
+    # failing the job over.
+    if filed:
+        await asyncio.to_thread(navidrome.notify)

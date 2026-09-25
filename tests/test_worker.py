@@ -150,3 +150,146 @@ async def test_without_a_progress_callback_it_falls_back_to_the_whole_job():
         pass
 
     assert seen and seen[0] is job
+
+
+# --- a job, end to end ------------------------------------------------------
+#
+# The change these cover: a finished track goes into the library immediately,
+# under the album it says it is on. It used to be written to a staging area
+# hidden from Navidrome and held there until beets agreed to admit it, which
+# it refused to do for 82% of what it was given.
+
+import shutil
+from pathlib import Path
+
+SILENCE = Path(__file__).parent / "fixtures" / "silence.mp3"
+
+
+@pytest.fixture
+def library(tmp_path, monkeypatch, state_db):
+    """A workspace with a mounted library, and a download that always works."""
+    from app import workspace
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "output_dir", tmp_path / "untagged")
+    monkeypatch.setattr(settings, "rate_limit_sleep", 0)
+    monkeypatch.setattr(workspace, "CONFIG_DIR", tmp_path / "config")
+    (tmp_path / "music").mkdir()
+    space = workspace.Workspace(username="alex", library_id=1,
+                                library_name="Music",
+                                library_path=tmp_path / "music")
+    space.prepare()
+
+    def download(url, destination, on_progress=None):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(SILENCE, destination)
+        return destination
+
+    monkeypatch.setattr(worker.downloader, "download", download)
+    monkeypatch.setattr(worker.matcher, "find",
+                        lambda item: ("https://example.invalid/x", 0.9, {}))
+    monkeypatch.setattr(worker.navidrome, "notify", lambda *a, **k: False)
+    # The real tagger runs: it is what decides where the file is filed now,
+    # so stubbing it would test nothing. No item here carries a cover_url, so
+    # it never reaches the network.
+    return space
+
+
+def _track(number, title, album="Abbey Road", artist="The Beatles"):
+    return {
+        "id": f"item{number}", "spotify_id": f"s{number}", "isrc": None,
+        "title": title, "artist": artist, "primary_artist": artist,
+        "album_artist": artist, "album": album, "album_id": "alb1",
+        "album_total": 17, "track_no": number, "disc_no": 1,
+        "status": "pending", "progress": 0.0, "error": None,
+    }
+
+
+async def _run(space, items):
+    job = {"id": "job1", "owner": "alex", "title": "Abbey Road",
+           "status": "queued", "items": items}
+    await worker.run_job(job, lambda j: asyncio.sleep(0), space)
+    return job
+
+
+@pytest.mark.asyncio
+async def test_a_download_lands_in_the_library_not_in_staging(library):
+    from app.config import settings
+
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    filed = library.library_path / "The Beatles" / "Abbey Road" / "01 - Come Together.mp3"
+    assert filed.is_file()
+    assert items[0]["status"] == "complete"
+    assert items[0]["file_path"] == str(filed)
+    assert not list(settings.output_dir.rglob("*.mp3"))
+
+
+@pytest.mark.asyncio
+async def test_a_filed_track_carries_both_uuids(library):
+    from app import uuidtags
+
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    track_uuid, album_uuid = uuidtags.read(Path(items[0]["file_path"]))
+    assert track_uuid and album_uuid
+
+
+@pytest.mark.asyncio
+async def test_an_incomplete_album_is_filed_anyway(library):
+    """Two tracks of a seventeen track record. They used to wait outside the
+    library for a match that never came; now they are two playable tracks in
+    that album's folder."""
+    items = [_track(1, "Come Together"), _track(2, "Something")]
+    await _run(library, items)
+
+    folder = library.library_path / "The Beatles" / "Abbey Road"
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "01 - Come Together.mp3", "02 - Something.mp3"]
+
+
+@pytest.mark.asyncio
+async def test_every_track_of_one_album_shares_its_album_uuid(library):
+    from app import uuidtags
+
+    items = [_track(1, "Come Together"), _track(2, "Something")]
+    await _run(library, items)
+
+    albums = {uuidtags.read(Path(item["file_path"]))[1] for item in items}
+    assert len(albums) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_scratch_directory_is_cleared(library):
+    from app import filer
+
+    await _run(library, [_track(1, "Come Together")])
+
+    assert not filer.scratch_root(library, "job1").exists()
+
+
+@pytest.mark.asyncio
+async def test_a_finished_track_is_recorded_in_the_ledger(library):
+    from app import ledger
+
+    await _run(library, [_track(1, "Come Together")])
+
+    assert ledger.already_downloaded("s1", None, library.library_id)
+
+
+@pytest.mark.asyncio
+async def test_a_download_that_fails_is_not_recorded(library, monkeypatch):
+    from app import ledger
+
+    def boom(url, destination, on_progress=None):
+        raise worker.downloader.DownloadError("no audio")
+
+    monkeypatch.setattr(worker.downloader, "download", boom)
+    items = [_track(1, "Come Together")]
+    job = await _run(library, items)
+
+    assert items[0]["status"] == "failed"
+    assert job["status"] == "failed"
+    assert not ledger.already_downloaded("s1", None, library.library_id)

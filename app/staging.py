@@ -16,7 +16,6 @@ release. Only a file with no album at all is really a single.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shutil
 from collections import Counter
@@ -24,34 +23,13 @@ from pathlib import Path
 from typing import Any
 
 from . import workspace
+from .filer import MAX_COMPONENT, _move_into_place, sanitize  # noqa: F401
 
 log = logging.getLogger("download_center.staging")
 
-# Characters Windows forbids in a filename, plus control characters.
-# The backslash is escaped: inside a character class `\|` escapes the pipe
-# and the backslash itself never joins the set, so "AC\DC" came through
-# untouched and became a directory separator.
-_ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-_TRAILING = re.compile(r"[. ]+$")
-# Device names Windows still reserves, with or without an extension.
-_RESERVED = {
-    "con", "prn", "aux", "nul",
-    *(f"com{i}" for i in range(1, 10)),
-    *(f"lpt{i}" for i in range(1, 10)),
-}
-
-MAX_COMPONENT = 110
-
-
-def sanitize(name: str) -> str:
-    """Make a string safe as a single path component on Windows and Linux."""
-    cleaned = _ILLEGAL.sub("_", name or "").strip()
-    cleaned = _TRAILING.sub("", cleaned)
-    if len(cleaned) > MAX_COMPONENT:
-        cleaned = cleaned[:MAX_COMPONENT].rstrip(" .")
-    if cleaned.split(".")[0].lower() in _RESERVED:
-        cleaned = f"_{cleaned}"
-    return cleaned or "unknown"
+# Naming and collision-safe moves live in `filer` now, which is where paths
+# are decided once this module is gone. Re-exported rather than copied so
+# there is only ever one answer to "what is a legal filename".
 
 
 def incomplete_root(space: workspace.Workspace, job_id: str) -> Path:
@@ -124,30 +102,6 @@ def plan(space: workspace.Workspace, job_id: str,
         layout[item["id"]] = {"temp": temp, "final": final, "complete_album": complete}
 
     return layout
-
-
-def _move_into_place(source: Path, target: Path) -> Path:
-    """Move a file or directory to target, never overwriting silently.
-
-    Running out of candidates raises rather than falling through. The loop
-    used to leave `target` at the original name when all 98 were taken, so
-    the one case the numbering exists to prevent - a real collision - ended
-    in os.replace overwriting the file it was protecting.
-    """
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        stem, suffix = target.stem, target.suffix
-        for n in range(2, 100):
-            candidate = target.with_name(f"{stem} ({n}){suffix}")
-            if not candidate.exists():
-                target = candidate
-                break
-        else:
-            raise FileExistsError(
-                f"{target} and 98 numbered variants all exist; refusing to "
-                f"overwrite. Clear some out of {target.parent}.")
-    os.replace(source, target)
-    return target
 
 
 def publish(space: workspace.Workspace, job_id: str) -> list[Path]:
