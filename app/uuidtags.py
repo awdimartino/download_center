@@ -115,18 +115,6 @@ def read(path: Path) -> tuple[str | None, str | None]:
     return comment(TRACK_KEY), comment(ALBUM_KEY)
 
 
-def album_name(path: Path) -> str:
-    """The album tag, used to decide what counts as one album on disk."""
-    try:
-        audio = MutagenFile(path, easy=True)
-    except Exception:
-        return ""
-    if audio is None or not audio.tags:
-        return ""
-    values = audio.tags.get("album")
-    return str(values[0]).strip() if values else ""
-
-
 def write(path: Path, track_uuid: str | None, album_uuid: str | None) -> None:
     """Set either tag, leaving the rest of the file's tags alone.
 

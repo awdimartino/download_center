@@ -143,21 +143,3 @@ def active() -> list[Session]:
         return [s for s in _sessions.values() if not s.expired]
 
 
-def library_for(session: Session, library_id: int | None = None) -> dict[str, Any]:
-    """Which library this person's downloads belong in.
-
-    Derived from Navidrome rather than configured per user, so a new account
-    needs no setup at all: they log in, and where their music goes is already
-    known. Someone with a single library never has to choose.
-    """
-    libraries = session.identity.libraries
-    if not libraries:
-        raise ValueError(
-            f"{session.identity.username} has no library in Navidrome, so "
-            "there is nowhere to put a download.")
-    if library_id is None:
-        return libraries[0]
-    for library in libraries:
-        if str(library["id"]) == str(library_id):
-            return library
-    raise ValueError("That library does not belong to this account.")

@@ -102,7 +102,6 @@ def new_job(url: str, space: workspace.Workspace) -> dict[str, Any]:
         "status": "resolving",
         "error": None,
         "created_at": _now(),
-        "beets": None,
         "items": [],
     }
     JOBS[job["id"]] = job
@@ -1136,20 +1135,6 @@ async def review_list(
     """
     return await asyncio.to_thread(
         review.listing, session.identity, limit, offset)
-
-
-@app.get("/api/review/album")
-async def review_album(
-    library_id: int,
-    folder: str,
-    session: auth.Session = Depends(current_session),
-) -> dict[str, Any]:
-    """One album from the list, with its tracks."""
-    try:
-        return await asyncio.to_thread(
-            review.entry, session.identity, library_id, folder)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/review/rescan")

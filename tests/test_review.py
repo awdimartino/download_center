@@ -190,21 +190,6 @@ def test_the_totals_say_how_far_through_this_is(db, identity):
 
 # --- opening a row ----------------------------------------------------------
 
-def test_an_album_can_be_opened_with_its_tracks(db, identity):
-    album(db, "The Beatles/Abbey Road", 3, tagged=1, album="Abbey Road")
-
-    opened = review.entry(identity, 1, "The Beatles/Abbey Road")
-
-    assert [t["track_no"] for t in opened["items"]] == [1, 2, 3]
-    assert [t["tagged"] for t in opened["items"]] == [True, False, False]
-
-
-def test_another_persons_album_cannot_be_opened(db, identity):
-    album(db, "Charli xcx/BRAT", 1, album="BRAT", library_id=2)
-
-    with pytest.raises(ValueError):
-        review.entry(identity, 2, "Charli xcx/BRAT")
-
 
 # --- resolving a folder to a path -------------------------------------------
 

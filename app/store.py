@@ -190,14 +190,6 @@ def dismissed_duplicates() -> set[str]:
                 _conn.execute("SELECT group_key FROM duplicate_dismissed")}
 
 
-def undismiss_duplicate(group_key: str) -> None:
-    assert _conn is not None, "state.db not connected"
-    with _lock:
-        _conn.execute("DELETE FROM duplicate_dismissed WHERE group_key = ?",
-                      (group_key,))
-        _conn.commit()
-
-
 # --- what was set aside ---------------------------------------------------
 
 def record_quarantine(group_key: str, copy: Any, keeper: Any,
@@ -244,11 +236,3 @@ def quarantined(limit: int = 200,
     return [dict(zip(keys, row, strict=True)) for row in rows]
 
 
-def mark_restored(entry_id: int) -> None:
-    assert _conn is not None, "state.db not connected"
-    stamp = datetime.now(UTC).isoformat(timespec="seconds")
-    with _lock:
-        _conn.execute(
-            "UPDATE duplicate_quarantined SET restored_at = ? WHERE id = ?",
-            (stamp, entry_id))
-        _conn.commit()

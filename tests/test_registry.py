@@ -99,19 +99,22 @@ def test_known_does_not_mint(state_db):
     assert registry.count() == 0
 
 
-def test_a_uuid_on_disk_is_adopted_rather_than_replaced(state_db):
+def test_a_uuid_on_disk_is_kept_rather_than_replaced(state_db):
     """A file already in the library arrives carrying its own album UUID.
     Inventing a second one beside it would split the record in two."""
     key = registry.album_key("The Beatles", "Abbey Road")
     existing = "11111111-1111-4111-8111-111111111111"
-    assert registry.adopt(1, key, existing) == existing
+    assert registry.uuid_for_key(1, key, on_miss=existing) == existing
     assert registry.album_uuid_for(1, "The Beatles", "Abbey Road") == existing
 
 
-def test_adoption_never_overrules_a_registered_album(state_db):
+def test_a_uuid_on_disk_never_overrules_a_registered_album(state_db):
+    """Whoever asks second gets the same answer as whoever asked
+    first - that is the whole contract, whatever they bring."""
     key = registry.album_key("The Beatles", "Abbey Road")
     registered = registry.album_uuid_for(1, "The Beatles", "Abbey Road")
-    assert registry.adopt(1, key, "22222222-2222-4222-8222-222222222222") \
+    assert registry.uuid_for_key(
+        1, key, on_miss="22222222-2222-4222-8222-222222222222") \
         == registered
 
 

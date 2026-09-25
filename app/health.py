@@ -90,38 +90,10 @@ NavidromeUnavailable = navidrome.Unavailable
 _connect = navidrome.open_db
 
 
-def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
-    return {row[1] for row in connection.execute(f"pragma table_info({table})")}
-
-
 def _scalar(connection: sqlite3.Connection, sql: str, *args) -> int:
     row = connection.execute(sql, args).fetchone()
     return (row[0] or 0) if row else 0
 
-
-def _live_clause(connection: sqlite3.Connection,
-                 libraries: list[int] | None = None) -> str:
-    """What counts as a track that actually exists.
-
-    `media_file.missing` alone is not enough. When a whole directory
-    disappears Navidrome marks the *folder* missing and leaves the rows
-    beneath it untouched, so filtering on the file flag alone counts tracks
-    that vanished months ago - and reports them as unstamped, which sends you
-    looking for files that are not there.
-    """
-    columns = _columns(connection, "media_file")
-    clause = "1=1" if "missing" not in columns else "mf.missing = 0"
-    if "missing" in columns and "folder_id" in columns and _columns(connection, "folder"):
-        clause += (" and mf.folder_id in "
-                   "(select id from folder where missing = 0)")
-    # Somebody else's collection is not this person's problem to see.
-    if libraries is not None:
-        inside = ",".join(str(int(i)) for i in libraries) or "-1"
-        clause += f" and mf.library_id in ({inside})"
-    return clause
-
-
-# --- the checks -----------------------------------------------------------
 
 def _identity_section(connection: sqlite3.Connection, live: str,
                       user_id: str = "", audit=None) -> Section:
@@ -215,7 +187,7 @@ def _library_section(connection: sqlite3.Connection, live: str,
     like a partial failure of both.
     """
     section = Section("Libraries")
-    columns = _columns(connection, "library")
+    columns = navidrome.columns_of(connection, "library")
 
     for row in visible:
         total = _scalar(
@@ -233,7 +205,7 @@ def _library_section(connection: sqlite3.Connection, live: str,
             f"{percent}% stamped", secondary=True,
         ))
 
-    if "missing" in _columns(connection, "media_file"):
+    if "missing" in navidrome.columns_of(connection, "media_file"):
         # The inverse of "live" rather than the file's own flag, because a
         # vanished directory is recorded on the folder and leaves the rows
         # beneath it looking present. Bounded to these libraries: the inverse
@@ -265,7 +237,7 @@ def _library_section(connection: sqlite3.Connection, live: str,
 def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
     """Tagging quality. None of this is dangerous, it is just untidy."""
     section = Section("Metadata")
-    columns = _columns(connection, "media_file")
+    columns = navidrome.columns_of(connection, "media_file")
 
     # "Tracks with no album" and "Tracks numbered zero" used to live here.
     # Both were pure noise: informational, never acted on, and between them
@@ -518,7 +490,7 @@ def report(started_at: float,
         error = str(exc)
     else:
         with connection:
-            live = _live_clause(connection, [lib["id"] for lib in libraries])
+            live = navidrome.live_clause(connection, [lib["id"] for lib in libraries])
             # Navidrome's schema moves between releases, and json_extract
             # needs a SQLite built with JSON1. One section failing should
             # cost that section, not the whole panel.

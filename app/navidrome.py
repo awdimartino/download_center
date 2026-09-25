@@ -160,6 +160,37 @@ def libraries_for(identity: Identity) -> list[dict[str, Any]]:
     return [{"id": r[0], "name": r[1], "path": r[2]} for r in rows]
 
 
+def columns_of(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in connection.execute(f"pragma table_info({table})")}
+
+
+def live_clause(connection: sqlite3.Connection,
+                library_ids: list[int] | None = None) -> str:
+    """SQL for the `media_file` rows Navidrome still believes are there.
+
+    `missing` alone is not enough: when a whole directory goes, Navidrome
+    marks the *folder* rather than every file under it, so a query that only
+    checks the file over-counts by however many tracks were in it.
+
+    Both columns are probed rather than assumed. This reads a database
+    another application owns and upgrades on its own schedule, and a query
+    naming a column that release does not have fails outright rather than
+    degrading.
+
+    Rows are aliased `mf`, and the caller passes the library ids it is
+    entitled to - somebody else's collection is not theirs to count.
+    """
+    columns = columns_of(connection, "media_file")
+    clause = "1=1" if "missing" not in columns else "mf.missing = 0"
+    if ("missing" in columns and "folder_id" in columns
+            and columns_of(connection, "folder")):
+        clause += " and mf.folder_id in (select id from folder where missing = 0)"
+    if library_ids is not None:
+        inside = ",".join(str(int(i)) for i in library_ids) or "-1"
+        clause += f" and mf.library_id in ({inside})"
+    return clause
+
+
 def held_in(library_id: int) -> set[str]:
     """Every recording a library already holds, as normalised artist+title.
 
@@ -186,14 +217,11 @@ def held_in(library_id: int) -> set[str]:
         return set()
 
     with connection:
-        columns = {row[1] for row in
-                   connection.execute("pragma table_info(media_file)")}
-        live = "mf.missing = 0" if "missing" in columns else "1=1"
         rows = connection.execute(
             f"select coalesce(mf.artist, mf.album_artist, ''),"
             f"       coalesce(mf.title, '')"
             f"  from media_file mf"
-            f" where {live} and mf.library_id = ?", (library_id,)).fetchall()
+            f" where {live_clause(connection, [library_id])}").fetchall()
 
     return {f"{registry.normalize(artist)}\x1f{registry.normalize(title)}"
             for artist, title in rows if title}
@@ -318,10 +346,6 @@ def trigger_scan(full: bool = False) -> dict:
     payload = _service_call("startScan.view",
                             fullScan="true" if full else "false")
     return payload.get("scanStatus", {})
-
-
-def scan_status() -> dict:
-    return _service_call("getScanStatus.view").get("scanStatus", {})
 
 
 def notify(full: bool = False) -> bool:

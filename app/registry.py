@@ -126,8 +126,17 @@ def album_uuid_for(library_id: int, albumartist: str, album: str) -> str:
     return uuid_for_key(library_id, album_key(albumartist, album))
 
 
-def uuid_for_key(library_id: int, key: str) -> str:
-    """As `album_uuid_for`, for a caller that already holds the key.
+def uuid_for_key(library_id: int, key: str, on_miss: str | None = None) -> str:
+    """The album UUID for this key, recording one if there is not one yet.
+
+    `on_miss` is what to record when the key is new. A fresh uuid4 by default,
+    which is the ordinary case; a caller passes one when the files already
+    carry an album UUID - a re-file of something that was in the library
+    before this table existed - so that the value on disk is kept rather than
+    a second one invented beside it.
+
+    Either way an existing row wins. That is the whole contract: whoever asks
+    second gets the same answer as whoever asked first.
 
     Locked around the read and the write together. Tracks of one album are
     filed concurrently - that is the whole point of the download worker - and
@@ -143,14 +152,14 @@ def uuid_for_key(library_id: int, key: str) -> str:
         if row:
             return row[0]
 
-        minted = str(uuid.uuid4())
+        settled = on_miss or str(uuid.uuid4())
         store.execute(
             "INSERT INTO album_registry"
             " (library_id, album_key, album_uuid, created_at)"
             " VALUES (?, ?, ?, ?)",
-            (library_id, key, minted, time.time()))
+            (library_id, key, settled, time.time()))
         store.commit()
-        return minted
+        return settled
 
 
 def known(library_id: int, key: str) -> str | None:
@@ -160,31 +169,6 @@ def known(library_id: int, key: str) -> str | None:
         " WHERE library_id = ? AND album_key = ?",
         (library_id, key)).fetchone()
     return row[0] if row else None
-
-
-def adopt(library_id: int, key: str, album_uuid: str) -> str:
-    """Record `album_uuid` under `key`, unless the key is already spoken for.
-
-    Returns the UUID the key means afterwards, which is the incumbent's if
-    there was one. Used when files arrive already carrying an album UUID -
-    a re-file of something already in the library - so that the value on disk
-    is preserved rather than a second one invented beside it.
-    """
-    store = _store()
-    with _lock:
-        row = store.execute(
-            "SELECT album_uuid FROM album_registry"
-            " WHERE library_id = ? AND album_key = ?",
-            (library_id, key)).fetchone()
-        if row:
-            return row[0]
-        store.execute(
-            "INSERT INTO album_registry"
-            " (library_id, album_key, album_uuid, created_at)"
-            " VALUES (?, ?, ?, ?)",
-            (library_id, key, album_uuid, time.time()))
-        store.commit()
-        return album_uuid
 
 
 def repoint(library_id: int, old_key: str, new_key: str) -> str:

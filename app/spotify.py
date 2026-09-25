@@ -201,10 +201,6 @@ def search(query: str, kind: str = "album", limit: int = 20) -> list[dict[str, A
     return results.get(f"{kind}s", {}).get("items", [])
 
 
-def get_album(album_id: str) -> dict[str, Any]:
-    return client().album(album_id)
-
-
 def _year(release_date: str | None) -> str | None:
     return release_date.split("-")[0] if release_date else None
 

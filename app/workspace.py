@@ -75,6 +75,10 @@ class Workspace:
     def staging(self) -> Path:
         return settings.output_dir / self.key
 
+    # What staging used to be. Nothing writes to these any more and nothing
+    # creates them; they are still named because Alex's 877 un-migrated files
+    # are in them, and the cleanup pass has to be able to find them. They go
+    # with that pass.
     @property
     def albums_dir(self) -> Path:
         return self.staging / "albums"
@@ -118,33 +122,9 @@ class Workspace:
     def beets_library(self) -> Path:
         return self.beets_dir / "library.db"
 
-    def staged(self, kind: str, name: str) -> Path:
-        """The staged album or single called `name`, if it really is one.
-
-        The name arrives from the browser, so this is the boundary that has
-        to hold: a caller asking to import "../../music" must not be handed
-        a path outside this person's staging area. Resolved and compared
-        against the parent rather than filtered for `..`, since a symlink
-        would walk out of a filtered name too.
-        """
-        parents = {"album": self.albums_dir, "single": self.singles_dir}
-        parent = parents.get(kind)
-        if parent is None:
-            raise ValueError(f"unknown kind {kind!r}")
-        if not name or name.startswith(".") or "/" in name or "\\" in name:
-            raise ValueError(f"{name!r} is not a staged item")
-        path = (parent / name).resolve()
-        if path.parent != parent.resolve() or not path.exists():
-            raise ValueError(f"{name!r} is not in {kind}s staging")
-        # A directory in singles/, or a file in albums/, is not the thing the
-        # caller thinks it is asking about.
-        if path.is_dir() != (kind == "album"):
-            raise ValueError(f"{name!r} is not a staged {kind}")
-        return path
-
     def prepare(self) -> None:
-        for directory in (self.albums_dir, self.singles_dir, self.inbox_dir,
-                          self.incomplete_dir, self.beets_dir):
+        for directory in (self.inbox_dir, self.incomplete_dir,
+                          self.beets_dir):
             directory.mkdir(parents=True, exist_ok=True)
         # A note of who this belongs to, for anyone reading the disk later.
         # Enough for the sweep - which runs with nobody signed in - to

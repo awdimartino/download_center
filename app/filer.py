@@ -185,11 +185,6 @@ def destination(space: workspace.Workspace, meta: Meta, suffix: str) -> Path:
 # The one thing that is allowed to move a file after it is written, because a
 # person confirmed it. Everything else treats the path as frozen.
 
-def audio_in(folder: Path) -> list[Path]:
-    return sorted(p for p in folder.rglob("*")
-                  if p.is_file() and uuidtags.is_audio(p))
-
-
 def album_key_of(folder: Path) -> str:
     """The registry key the files in a folder currently answer to.
 
@@ -197,7 +192,8 @@ def album_key_of(folder: Path) -> str:
     Taken from the first file: they are one album, and after the filer put
     them there they agree about which.
     """
-    files = audio_in(folder)
+    files = sorted(p for p in folder.rglob("*")
+                   if p.is_file() and uuidtags.is_audio(p))
     if not files:
         return ""
     meta = read_meta(files[0])
@@ -225,38 +221,51 @@ def after_retag(space: workspace.Workspace, paths: list[Path],
     # An album filed before the registry existed has a UUID on disk and no
     # row. Adopting it first is what makes the repoint a move rather than a
     # mint, so the record keeps the identity Navidrome already knows it by.
-    if old_key and registry.known(space.library_id, old_key) is None:
-        carried = set()
-        for path in live:
-            try:
-                _, album_uuid = uuidtags.read(path)
-            except uuidtags.UnreadableFile:
-                continue
-            if album_uuid:
-                carried.add(album_uuid)
+    if old_key:
+        carried = {album for _, album in map(_read_identity, live) if album}
         if len(carried) == 1:
-            registry.adopt(space.library_id, old_key, carried.pop())
+            registry.uuid_for_key(space.library_id, old_key,
+                                  on_miss=carried.pop())
 
     settled = registry.repoint(space.library_id, old_key or new_key, new_key)
 
     rewritten = 0
     for path in live:
-        if not uuidtags.can_carry_tags(path):
+        had_track, had_album = _read_identity(path)
+        if had_track and had_album == settled:
             continue
-        try:
-            existing_track, existing_album = uuidtags.read(path)
-            if existing_album == settled and existing_track:
-                continue
-            uuidtags.write(path, None if existing_track else str(uuid.uuid4()),
-                           settled)
-            rewritten += 1
-        except Exception as exc:
-            log.warning("could not re-identify %s after a retag: %s: %s",
-                        path.name, type(exc).__name__, exc)
+        _write_identity(path, None if had_track else str(uuid.uuid4()), settled)
+        rewritten += 1
 
     if rewritten:
         log.info("%d file(s) joined album %s after a retag", rewritten, settled)
     return settled
+
+
+def _write_identity(path: Path, track_uuid: str | None,
+                    album_uuid: str | None) -> None:
+    """Write whichever UUIDs are not already right, and never fail over it.
+
+    Both None means the file already carries what it should, which is the
+    ordinary case for the second pass over anything - and skipping the write
+    is what keeps re-filing idempotent instead of churning mtimes.
+
+    A failure is logged, not raised. A file in the library without a UUID is
+    visible and playable and turns up in the review list; a file left in
+    scratch space is none of those things.
+    """
+    if track_uuid is None and album_uuid is None:
+        return
+    if not uuidtags.can_carry_tags(path):
+        # WAV and AIFF have nowhere to put it. Reporting these as missing a
+        # UUID would be noise: nothing can be done short of converting.
+        log.debug("%s cannot carry identity tags", path.name)
+        return
+    try:
+        uuidtags.write(path, track_uuid, album_uuid)
+    except Exception as exc:
+        log.warning("could not write identity onto %s: %s: %s",
+                    path.name, type(exc).__name__, exc)
 
 
 def _move_into_place(source: Path, target: Path) -> Path:
@@ -293,43 +302,13 @@ def _move_into_place(source: Path, target: Path) -> Path:
     return target
 
 
-@dataclass(frozen=True)
-class _Identity:
-    track_uuid: str
-    album_uuid: str
-    album_key: str
-    track_needs_writing: bool
-    album_needs_writing: bool
-
-
-def _identity(space: workspace.Workspace, path: Path, meta: Meta) -> _Identity:
-    """What identity this file should carry, and what of it is not there yet.
-
-    A track UUID already on the file is never touched - it is what the stars
-    and play counts hang off. The album UUID comes from the registry, except
-    when the file arrives already carrying one for an album the registry has
-    never seen: that is a re-file of something already in the library, and
-    inventing a second UUID beside the one on disk would split the record.
-    """
+def _read_identity(path: Path) -> tuple[str | None, str | None]:
+    """The UUIDs already on a file, or (None, None) if it has none to read."""
     try:
-        existing_track, existing_album = uuidtags.read(path)
+        return uuidtags.read(path)
     except uuidtags.UnreadableFile as exc:
         log.debug("%s carries no readable identity (%s)", path.name, exc)
-        existing_track = existing_album = None
-
-    key = registry.album_key(meta.albumartist, meta.album)
-    if existing_album and registry.known(space.library_id, key) is None:
-        album_uuid = registry.adopt(space.library_id, key, existing_album)
-    else:
-        album_uuid = registry.uuid_for_key(space.library_id, key)
-
-    return _Identity(
-        track_uuid=existing_track or str(uuid.uuid4()),
-        album_uuid=album_uuid,
-        album_key=key,
-        track_needs_writing=not existing_track,
-        album_needs_writing=existing_album != album_uuid,
-    )
+        return None, None
 
 
 def file_track(space: workspace.Workspace, source: Path) -> Filed:
@@ -344,28 +323,23 @@ def file_track(space: workspace.Workspace, source: Path) -> Filed:
     migration pass run over the existing library.
     """
     meta = read_meta(source)
-    identity = _identity(space, source, meta)
+    had_track, had_album = _read_identity(source)
 
-    wanted = (identity.track_uuid if identity.track_needs_writing else None,
-              identity.album_uuid if identity.album_needs_writing else None)
-    if any(value is not None for value in wanted):
-        if not uuidtags.can_carry_tags(source):
-            # WAV and AIFF have nowhere to put it. Reporting these as missing
-            # a UUID would be noise: nothing can be done short of converting.
-            log.debug("%s cannot carry identity tags", source.name)
-        else:
-            try:
-                uuidtags.write(source, *wanted)
-            except Exception as exc:
-                # Worth filing anyway. A file in the library without a UUID is
-                # visible and playable and turns up in the review list; a file
-                # left in scratch space is none of those things.
-                log.warning("could not write identity onto %s: %s: %s",
-                            source.name, type(exc).__name__, exc)
+    # A track UUID already on the file is never touched - it is what the stars
+    # and play counts hang off. The album UUID comes from the registry, which
+    # keeps whatever the file already carried if it has never seen that album:
+    # inventing a second UUID beside the one on disk would split the record.
+    key = registry.album_key(meta.albumartist, meta.album)
+    track_uuid = had_track or str(uuid.uuid4())
+    album_uuid = registry.uuid_for_key(space.library_id, key, on_miss=had_album)
+
+    _write_identity(source,
+                    None if had_track else track_uuid,
+                    None if had_album == album_uuid else album_uuid)
 
     target = destination(space, meta, source.suffix.lower())
     if source.resolve() != target.resolve():
         target = _move_into_place(source, target)
 
-    return Filed(path=target, track_uuid=identity.track_uuid,
-                 album_uuid=identity.album_uuid, album_key=identity.album_key)
+    return Filed(path=target, track_uuid=track_uuid,
+                 album_uuid=album_uuid, album_key=key)

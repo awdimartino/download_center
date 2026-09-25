@@ -49,11 +49,6 @@ class Track:
     track_no: int
     tagged: bool
 
-    def as_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "path": self.path, "title": self.title,
-                "artist": self.artist, "track_no": self.track_no,
-                "tagged": self.tagged}
-
 
 @dataclass
 class Entry:
@@ -90,26 +85,6 @@ class Entry:
         }
 
 
-def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
-    return {row[1] for row in connection.execute(f"pragma table_info({table})")}
-
-
-def _live_clause(connection: sqlite3.Connection,
-                 library_ids: list[int]) -> str:
-    """Files Navidrome still believes are there, in libraries this person has.
-
-    `media_file.missing` alone is not enough: when a whole directory goes,
-    Navidrome marks the folder rather than every file under it.
-    """
-    columns = _columns(connection, "media_file")
-    clause = "1=1" if "missing" not in columns else "mf.missing = 0"
-    if "missing" in columns and "folder_id" in columns and _columns(connection, "folder"):
-        clause += (" and mf.folder_id in "
-                   "(select id from folder where missing = 0)")
-    inside = ",".join(str(int(i)) for i in library_ids) or "-1"
-    return clause + f" and mf.library_id in ({inside})"
-
-
 def _folder_of(path: str) -> str:
     """The album directory, relative to its library root.
 
@@ -133,7 +108,7 @@ def _load(connection: sqlite3.Connection,
         return {}
     names = {lib["id"]: lib["name"] for lib in identity.libraries}
 
-    columns = _columns(connection, "media_file")
+    columns = navidrome.columns_of(connection, "media_file")
     added = "mf.created_at" if "created_at" in columns else "''"
     rows = connection.execute(f"""
         select mf.id, mf.path, coalesce(mf.title, ''),
@@ -142,7 +117,7 @@ def _load(connection: sqlite3.Connection,
                coalesce(mf.mbz_recording_id, ''), mf.library_id,
                coalesce({added}, '')
           from media_file mf
-         where {_live_clause(connection, allowed)}""").fetchall()
+         where {navidrome.live_clause(connection, allowed)}""").fetchall()
 
     entries: dict[tuple[int, str], Entry] = {}
     for (track_id, path, title, album, album_artist, artist, track_no,
@@ -201,25 +176,6 @@ def listing(identity: navidrome.Identity, limit: int = PAGE,
         "limit": limit,
         "offset": offset,
     }
-
-
-def entry(identity: navidrome.Identity, library_id: int,
-          folder: str) -> dict[str, Any]:
-    """One album folder, with its tracks, so a row can be opened."""
-    try:
-        connection = navidrome.open_db()
-    except navidrome.Unavailable as exc:
-        raise ValueError(f"Navidrome's database is unreadable: {exc}") from exc
-
-    with connection:
-        entries = _load(connection, identity)
-
-    found = entries.get((int(library_id), folder))
-    if found is None:
-        raise ValueError("That album is not in one of your libraries.")
-    return {**found.as_dict(),
-            "items": [t.as_dict() for t in sorted(
-                found.tracks, key=lambda t: (t.track_no, t.title))]}
 
 
 def album_dir(identity: navidrome.Identity, library_id: int,

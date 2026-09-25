@@ -238,17 +238,13 @@ async def run_job(job: dict[str, Any], push: Push,
     await push(job)
 
     # Everything asked for is fetched. Re-download prevention was a ledger
-    # row saying a track had been downloaded once, which stayed true after
-    # the file was deleted, replaced or moved - so a track that left the
-    # library became permanently unfetchable with nothing to say why. Browse
-    # marks what the library actually holds, which is the same question asked
-    # of the thing that knows the answer.
-    pending = items
-
+    # row saying a track had been downloaded once, which stayed true after the
+    # file was deleted, replaced or moved - so a track that left the library
+    # became permanently unfetchable with nothing to say why.
     ticker = asyncio.create_task(_pusher(job, push, push_progress))
     try:
         await asyncio.gather(
-            *(_process(item, space, job["id"], gate()) for item in pending)
+            *(_process(item, space, job["id"], gate()) for item in items)
         )
     finally:
         ticker.cancel()
@@ -257,7 +253,7 @@ async def run_job(job: dict[str, Any], push: Push,
     # and nothing to import. An album that came up short is simply a few
     # tracks of that album, in that album's folder, playable now and listed
     # for review until someone confirms what they are.
-    filed = [item for item in pending if item["status"] == "complete"]
+    filed = [item for item in items if item["status"] == "complete"]
 
     await asyncio.to_thread(inbox.discard, space, job["id"])
 

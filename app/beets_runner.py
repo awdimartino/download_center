@@ -243,11 +243,6 @@ def ensure_config(space: workspace.Workspace) -> Path:
     return space.beets_config
 
 
-def library_root(space: workspace.Workspace) -> Path:
-    """Where beets files this person's music."""
-    return space.library_path
-
-
 def _library_size(space: workspace.Workspace) -> int:
     """How many items beets has indexed for this person.
 

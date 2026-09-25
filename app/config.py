@@ -38,8 +38,8 @@ class Settings(BaseModel):
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
 
-    # Root of the staging area beets imports from. Albums and singles are
-    # written to subdirectories so each can use a different beets import mode.
+    # Where each person's workspace lives: their inbox, the scratch space a
+    # download is built in, and the marker saying whose it is.
     output_dir: Path = ROOT / "untagged"
 
     concurrency: int = Field(default=3, ge=1, le=10)
@@ -95,14 +95,6 @@ class Settings(BaseModel):
     # https://acoustid.org/new-application - and left blank, the backfill
     # simply says so rather than running against somebody else's key.
     acoustid_key: str = ""
-
-    @property
-    def albums_dir(self) -> Path:
-        return self.output_dir / "albums"
-
-    @property
-    def singles_dir(self) -> Path:
-        return self.output_dir / "singles"
 
     @property
     def state_db(self) -> Path:
@@ -187,7 +179,7 @@ def load() -> Settings:
             raw[key] = value
 
     settings = Settings(**raw)
-    for directory in (CONFIG_DIR, settings.albums_dir, settings.singles_dir):
+    for directory in (CONFIG_DIR, settings.output_dir):
         directory.mkdir(parents=True, exist_ok=True)
     return settings
 
