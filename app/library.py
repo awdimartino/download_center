@@ -249,6 +249,32 @@ def tracks(identity: navidrome.Identity, library_id: int,
             "items": [t.as_dict() for t in found]}
 
 
+def track_path(identity: navidrome.Identity, library_id: int,
+               path: str) -> Path:
+    """Where one track is on disk, if it really is that person's.
+
+    The same boundary `album_dir` is, for the same reason: the path arrives
+    from the browser. It must be inside a library this account can see, and
+    it must be a file - a directory here would hand an editor something it
+    is not equipped to treat as one track.
+    """
+    root = next((Path(lib["path"]) for lib in identity.libraries
+                 if str(lib["id"]) == str(library_id)), None)
+    if root is None:
+        raise ValueError("That library does not belong to this account.")
+
+    parts = [part for part in path.replace("\\", "/").split("/") if part]
+    if not parts:
+        raise ValueError("That is not a track.")
+
+    here = root.joinpath(*parts).resolve()
+    if root.resolve() not in here.parents:
+        raise ValueError("That is not a track in your library.")
+    if not here.is_file():
+        raise ValueError(f"{path} is not on disk.")
+    return here
+
+
 def album_dir(identity: navidrome.Identity, library_id: int,
               folder: str) -> Path:
     """Where that album actually is on disk, if it really is that person's.

@@ -1157,6 +1157,124 @@ async def library_album(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+class AlbumEdit(BaseModel):
+    library_id: int
+    folder: str
+    album_artist: str
+    album: str
+
+
+class TrackEdit(BaseModel):
+    library_id: int
+    path: str
+    title: str | None = None
+    track_no: int | None = None
+    disc_no: int | None = None
+    album_artist: str | None = None
+    album: str | None = None
+
+
+def _named(*values: str | None) -> None:
+    """Refuse a blank where a name is wanted.
+
+    An empty artist or album is not a correction, it is how a file ends up
+    in `Unknown Artist/Unknown Album` - which is usually the thing somebody
+    opened this editor to escape.
+    """
+    for value in values:
+        if value is not None and not value.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="An artist and an album cannot be blank. Clearing "
+                       "them files the track under Unknown Artist.")
+
+
+@app.post("/api/library/album/edit")
+async def library_album_edit(
+    body: AlbumEdit,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Rename a whole album, and move its files to match.
+
+    Album-level because one album is one UUID: the artist and the title are
+    properties of the folder, and editing them on a single track is how a
+    record becomes two. The album keeps its identity through the change, so
+    album-level stars and play counts survive it - unless the new name is
+    already taken, in which case these files join the record that is there.
+    """
+    _named(body.album_artist, body.album)
+    try:
+        space = workspace.for_session(session.identity, body.library_id)
+        folder = library.album_dir(
+            session.identity, body.library_id, body.folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not inbox.settled(folder):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{folder.name} is still arriving; try again shortly.")
+
+    def run() -> dict[str, Any]:
+        filed = filer.retag_album(space, folder,
+                                  albumartist=body.album_artist,
+                                  album=body.album)
+        navidrome.notify()
+        return {"ran": True, "moved": len(filed),
+                "folder": str(filed[0].path.parent.relative_to(
+                    space.library_path)) if filed else body.folder,
+                "album_uuid": filed[0].album_uuid if filed else None}
+
+    try:
+        return await asyncio.to_thread(run)
+    except filer.NotEditable as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/library/track/edit")
+async def library_track_edit(
+    body: TrackEdit,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Change one track, and move it if its tags now say it belongs elsewhere.
+
+    Title and numbers rename it inside its own folder. Artist or album take
+    it *out* of its album and into another - which is what rescues a track
+    filed under the wrong record, and what splits one if it is done by
+    mistake. The browser confirms that before asking.
+    """
+    _named(body.album_artist, body.album)
+    if all(value is None for value in
+           (body.title, body.track_no, body.disc_no,
+            body.album_artist, body.album)):
+        raise HTTPException(status_code=400, detail="Nothing to change.")
+    try:
+        space = workspace.for_session(session.identity, body.library_id)
+        path = library.track_path(session.identity, body.library_id, body.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not inbox.settled(path):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{path.name} is still arriving; try again shortly.")
+
+    def run() -> dict[str, Any]:
+        filed = filer.retag_track(
+            space, path, albumartist=body.album_artist, album=body.album,
+            title=body.title, track_no=body.track_no, disc_no=body.disc_no)
+        navidrome.notify()
+        return {"ran": True,
+                "path": str(filed.path.relative_to(space.library_path)),
+                "album_uuid": filed.album_uuid,
+                "identified": filed.identified}
+
+    try:
+        return await asyncio.to_thread(run)
+    except filer.NotEditable as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/api/library/rescan")
 async def library_rescan(
     session: auth.Session = Depends(current_session),

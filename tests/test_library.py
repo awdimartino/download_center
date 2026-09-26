@@ -474,3 +474,42 @@ def test_another_persons_album_cannot_be_opened(db, identity):
 def test_an_album_that_is_not_there_is_refused(db, identity):
     with pytest.raises(ValueError):
         library.tracks(identity, 1, "Nobody/Nothing")
+
+
+# --- the boundary a track path has to clear ---------------------------------
+
+def test_a_track_resolves_inside_the_library(tmp_path, identity):
+    folder = tmp_path / "music" / "The Beatles" / "Abbey Road"
+    folder.mkdir(parents=True)
+    (folder / "01 - Come Together.mp3").write_bytes(b"x")
+
+    got = library.track_path(identity, 1,
+                             "The Beatles/Abbey Road/01 - Come Together.mp3")
+
+    assert got == folder / "01 - Come Together.mp3"
+
+
+@pytest.mark.parametrize("path", ["", "   ", "../../../etc/passwd", "/etc/passwd"])
+def test_a_path_that_leaves_the_library_is_refused(tmp_path, identity, path):
+    with pytest.raises(ValueError):
+        library.track_path(identity, 1, path)
+
+
+def test_a_directory_is_not_a_track(tmp_path, identity):
+    """An editor handed a folder would treat it as one file."""
+    (tmp_path / "music" / "The Beatles").mkdir(parents=True)
+    with pytest.raises(ValueError):
+        library.track_path(identity, 1, "The Beatles")
+
+
+def test_a_track_in_another_persons_library_is_refused(tmp_path, identity):
+    (tmp_path / "kelly" / "A").mkdir(parents=True)
+    (tmp_path / "kelly" / "A" / "x.mp3").write_bytes(b"x")
+    with pytest.raises(ValueError):
+        library.track_path(identity, 2, "A/x.mp3")
+
+
+def test_a_track_that_is_not_on_disk_is_refused(tmp_path, identity):
+    (tmp_path / "music").mkdir(exist_ok=True)
+    with pytest.raises(ValueError):
+        library.track_path(identity, 1, "Nobody/Nothing/gone.mp3")

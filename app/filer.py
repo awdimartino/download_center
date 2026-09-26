@@ -33,6 +33,7 @@ import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from . import registry, uuidtags, workspace
 
@@ -196,6 +197,136 @@ def destination(space: workspace.Workspace, meta: Meta, suffix: str) -> Path:
 # The one thing that is allowed to move a file after it is written, because a
 # person confirmed it. Everything else treats the path as frozen.
 
+# The tags a person may change, and what they are called through mutagen's
+# easy interface - which is the same spelling for MP3, FLAC, MP4 and Vorbis,
+# and the only reason this does not need a branch per container format.
+_EASY = {"albumartist": "albumartist", "album": "album", "title": "title",
+         "track_no": "tracknumber", "disc_no": "discnumber"}
+
+# Changing either of these changes which album the file is on, which moves
+# it and touches the registry. Everything else only renames it.
+ALBUM_FIELDS = ("albumartist", "album")
+
+
+class NotEditable(Exception):
+    """The file cannot carry the tags being written."""
+
+
+def write_tags(path: Path, **fields: Any) -> None:
+    """Set the named tags, leaving everything else on the file alone.
+
+    Surgical on purpose. `tagger.tag` deletes the whole frame set before
+    writing, which is right for a fresh download and destructive for a file
+    somebody is correcting by hand - it would take the cover art, the ISRC
+    and the Spotify id with it.
+
+    A number keeps whatever total was written beside it: `discnumber` of
+    "1/2" edited to disc 2 becomes "2/2", because dropping the total would
+    change how `read_meta` reads the release and rename every file on it.
+    """
+    from mutagen import File as MutagenFile
+
+    wanted = {name: value for name, value in fields.items()
+              if value is not None and name in _EASY}
+    if not wanted:
+        return
+
+    try:
+        audio = MutagenFile(path, easy=True)
+    except Exception as exc:
+        raise NotEditable(f"{type(exc).__name__}: {exc}") from exc
+    if audio is None:
+        raise NotEditable("not a format this can tag")
+    if audio.tags is None:
+        audio.add_tags()
+
+    for name, value in wanted.items():
+        key = _EASY[name]
+        text = str(value).strip()
+        if name in ("track_no", "disc_no"):
+            existing = (audio.tags.get(key) or [""])[0]
+            _, slash, total = str(existing).partition("/")
+            text = f"{text}/{total}" if slash and total else text
+        audio.tags[key] = text
+    try:
+        audio.save()
+    except Exception as exc:
+        raise NotEditable(f"{type(exc).__name__}: {exc}") from exc
+
+
+def _prune_upwards(folder: Path, stop_at: Path) -> None:
+    """Remove a directory the files have just left, and its empty parents.
+
+    Bounded by the library root, and it only ever removes a directory that
+    is already empty - so a folder still holding cover art or a cue sheet
+    stays, which is the right way to be wrong about somebody's files.
+    """
+    stop = stop_at.resolve()
+    here = folder.resolve()
+    while here != stop and stop in here.parents:
+        try:
+            if any(here.iterdir()):
+                return
+            here.rmdir()
+        except OSError:
+            return
+        here = here.parent
+
+
+def retag_album(space: workspace.Workspace, folder: Path,
+                **fields: Any) -> list[Filed]:
+    """Change what a whole folder says it is, and move it to match.
+
+    Album-level by construction: one album is one UUID, so the artist and
+    the album title are properties of the folder, not of a track in it.
+    Editing them on a single file is how a record ends up as two.
+
+    The album keeps its UUID, so its Navidrome identity and the stars and
+    play counts hanging off it survive - unless the new name is already
+    taken, in which case the incumbent wins and these files join it.
+    """
+    files = audio_in(folder)
+    if not files:
+        raise NotEditable("there is nothing in that folder to edit")
+
+    was = album_key_of(folder)
+    for path in files:
+        write_tags(path, **fields)
+
+    after_retag(space, files, was)
+    filed = [file_track(space, path) for path in files]
+    _prune_upwards(folder, space.library_path)
+    return filed
+
+
+def retag_track(space: workspace.Workspace, path: Path,
+                **fields: Any) -> Filed:
+    """Change one file's tags, and move it if they say it belongs elsewhere.
+
+    Changing the title or a number renames it inside its own folder.
+    Changing the artist or the album takes it *out* of its album and into
+    another - which is the operation that rescues a track filed under the
+    wrong record, and the operation that splits one if it is done by
+    mistake. Either way the caller has already confirmed it.
+
+    The album UUID on the file is deliberately not carried across. It
+    belongs to the album the track is leaving; registering it under the new
+    name would fuse the two rather than move the one.
+    """
+    moving = any(fields.get(name) is not None for name in ALBUM_FIELDS)
+    write_tags(path, **fields)
+    was = path.parent
+    filed = file_track(space, path, adopt_album=not moving)
+    if filed.path.parent != was:
+        _prune_upwards(was, space.library_path)
+    return filed
+
+
+def audio_in(folder: Path) -> list[Path]:
+    return sorted(p for p in folder.rglob("*")
+                  if p.is_file() and uuidtags.is_audio(p))
+
+
 def album_key_of(folder: Path) -> str:
     """The registry key the files in a folder currently answer to.
 
@@ -203,8 +334,7 @@ def album_key_of(folder: Path) -> str:
     Taken from the first file: they are one album, and after the filer put
     them there they agree about which.
     """
-    files = sorted(p for p in folder.rglob("*")
-                   if p.is_file() and uuidtags.is_audio(p))
+    files = audio_in(folder)
     if not files:
         return ""
     meta = read_meta(files[0])
@@ -359,7 +489,8 @@ def _read_identity(path: Path) -> tuple[str | None, str | None]:
         return None, None
 
 
-def file_track(space: workspace.Workspace, source: Path) -> Filed:
+def file_track(space: workspace.Workspace, source: Path,
+               adopt_album: bool = True) -> Filed:
     """Tag a finished file with its identity and move it into the library.
 
     Identity is written before the move, so the file appears at its final
@@ -369,6 +500,13 @@ def file_track(space: workspace.Workspace, source: Path) -> Filed:
     Idempotent. A file already in the right place with the right identity is
     read, not rewritten, and stays where it is - which is what lets the
     migration pass run over the existing library.
+
+    `adopt_album` is what makes a file arriving with an album UUID keep it:
+    a re-file of music that predates the registry should not have a second
+    UUID invented beside the one already on disk. It has to be turned off
+    when the album tags were *deliberately changed*, because then the UUID
+    on the file belongs to the album the track is leaving - and registering
+    it under the new key would fuse two records rather than move one track.
     """
     meta = read_meta(source)
     had_track, had_album = _read_identity(source)
@@ -380,7 +518,8 @@ def file_track(space: workspace.Workspace, source: Path) -> Filed:
     track_uuid = had_track or str(uuid.uuid4())
     key = (registry.album_key(meta.albumartist, meta.album) if meta.names_album
            else registry.loose_key(track_uuid))
-    album_uuid = registry.uuid_for_key(space.library_id, key, on_miss=had_album)
+    album_uuid = registry.uuid_for_key(
+        space.library_id, key, on_miss=had_album if adopt_album else None)
 
     identified = _write_identity(
         source,

@@ -932,7 +932,150 @@ async function useCandidate(album, candidate, button) {
    counts tracks, and paying for every track in the library to show twelve
    of them is the cost that split exists to avoid. */
 
+async function saveEdit(path, body, button, done) {
+  button.disabled = true;
+  const was = button.textContent;
+  button.textContent = "Saving…";
+  setNote("library-op", "");
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setNote("library-op", data.detail
+        || `That did not save (${response.status}).`, "warn");
+      return false;
+    }
+    done(data);
+    return true;
+  } catch (err) {
+    setNote("library-op", `Could not reach the server: ${err.message}`, "warn");
+    return false;
+  } finally {
+    button.disabled = false;
+    button.textContent = was;
+  }
+}
+
+function field(label, value, extra = {}) {
+  const wrap = el("label", "edit-field");
+  wrap.append(el("span", "edit-label", label));
+  const input = el("input");
+  input.type = extra.number ? "number" : "text";
+  input.value = value ?? "";
+  if (extra.number) input.min = "0";
+  if (extra.placeholder) input.placeholder = extra.placeholder;
+  wrap.append(input);
+  wrap.input = input;
+  return wrap;
+}
+
+// Renaming an album is one action over every file in it, because one album
+// is one UUID - the artist and the title are properties of the folder, and
+// editing them on a single track is how a record becomes two.
+function albumEditor(album, reload) {
+  const form = el("div", "album-edit");
+  const artist = field("Album artist", album.artist);
+  const name = field("Album", album.album);
+  const save = el("button", "ghost primary", "Save album");
+
+  save.addEventListener("click", async () => {
+    const wantArtist = artist.input.value.trim();
+    const wantAlbum = name.input.value.trim();
+    if (!wantArtist || !wantAlbum) {
+      setNote("library-op", "An artist and an album cannot be blank.", "warn");
+      return;
+    }
+    if (wantArtist === album.artist && wantAlbum === album.album) return;
+    if (!confirm(
+      `Rename this album to "${wantArtist} — ${wantAlbum}"?\n\n`
+      + `All ${album.tracks} track${album.tracks === 1 ? "" : "s"} are `
+      + "retagged and the files move to match.\n"
+      + "The album keeps its identity, so stars and play counts survive — "
+      + "unless an album of that name already exists, in which case these "
+      + "join it.")) return;
+
+    await saveEdit("/api/library/album/edit", {
+      library_id: album.library_id, folder: album.folder,
+      album_artist: wantArtist, album: wantAlbum,
+    }, save, (data) => {
+      setNote("library-op",
+              `Renamed, and ${data.moved} file${data.moved === 1 ? "" : "s"} `
+              + "moved to match.", "notice");
+      libraryOpen.delete(albumKey(album));
+      reload();
+    });
+  });
+
+  form.append(artist, name, save);
+  return form;
+}
+
+// One track. Title and number rename it where it is; artist and album take
+// it out of this album and into another, which is how a misfiled track is
+// rescued and how one gets split off by mistake.
+function trackEditor(album, track, reload) {
+  const form = el("div", "track-edit");
+  const title = field("Title", track.title);
+  const number = field("Track", track.track_no || "", { number: true });
+  const save = el("button", "ghost", "Save");
+
+  const moveWrap = el("div", "track-move");
+  moveWrap.hidden = true;
+  const moveArtist = field("Move to artist", album.artist);
+  const moveAlbum = field("Move to album", album.album);
+  const moveSave = el("button", "ghost", "Move this track");
+  moveWrap.append(moveArtist, moveAlbum, moveSave);
+
+  const reveal = el("button", "ghost", "Move to another album…");
+  reveal.addEventListener("click", () => { moveWrap.hidden = !moveWrap.hidden; });
+
+  save.addEventListener("click", async () => {
+    const body = { library_id: album.library_id, path: track.path };
+    if (title.input.value.trim() !== (track.title || "")) {
+      body.title = title.input.value.trim();
+    }
+    const n = parseInt(number.input.value, 10);
+    if (!Number.isNaN(n) && n !== track.track_no) body.track_no = n;
+    if (body.title === undefined && body.track_no === undefined) return;
+    await saveEdit("/api/library/track/edit", body, save, () => {
+      setNote("library-op", "Saved.", "notice");
+      reload();
+    });
+  });
+
+  moveSave.addEventListener("click", async () => {
+    const wantArtist = moveArtist.input.value.trim();
+    const wantAlbum = moveAlbum.input.value.trim();
+    if (!wantArtist || !wantAlbum) {
+      setNote("library-op", "An artist and an album cannot be blank.", "warn");
+      return;
+    }
+    if (!confirm(
+      `Move "${track.title}" to "${wantArtist} — ${wantAlbum}"?\n\n`
+      + "Only this track moves. It leaves this album and joins that one, "
+      + "taking its own stars with it.\n"
+      + "Everything else in this album stays where it is.")) return;
+
+    await saveEdit("/api/library/track/edit", {
+      library_id: album.library_id, path: track.path,
+      album_artist: wantArtist, album: wantAlbum,
+    }, moveSave, () => {
+      setNote("library-op", `"${track.title}" moved.`, "notice");
+      libraryOpen.delete(albumKey(album));
+      reload();
+    });
+  });
+
+  form.append(title, number, save, reveal, moveWrap);
+  return form;
+}
+
 async function loadTracks(album, into) {
+  const reload = () => loadLibrary();
   into.replaceChildren(el("div", "album-track", "Reading…"));
   try {
     const response = await fetch(
@@ -944,15 +1087,28 @@ async function loadTracks(album, into) {
         data.detail || `Could not read that album (${response.status}).`));
       return;
     }
-    into.replaceChildren(...data.items.map((track) => {
+
+    const nodes = [albumEditor(album, reload)];
+    for (const track of data.items) {
       const row = el("div", `album-track${track.tagged ? "" : " unmatched"}`);
+      const editor = el("div", "track-editor");
+      editor.hidden = true;
+      const edit = el("button", "ghost", "Edit");
+      edit.addEventListener("click", () => {
+        if (editor.hidden && !editor.childElementCount) {
+          editor.append(trackEditor(album, track, reload));
+        }
+        editor.hidden = !editor.hidden;
+      });
       row.append(
         el("span", "track-no", track.track_no ? String(track.track_no) : "—"),
         el("span", "track-title", track.title || "(untitled)"),
-        el("span", "track-meta", track.tagged ? "" : "no MusicBrainz match")
+        el("span", "track-meta", track.tagged ? "" : "no MusicBrainz match"),
+        edit
       );
-      return row;
-    }));
+      nodes.push(row, editor);
+    }
+    into.replaceChildren(...nodes);
   } catch (err) {
     into.replaceChildren(el("div", "album-track",
                             `Could not reach the server: ${err.message}`));

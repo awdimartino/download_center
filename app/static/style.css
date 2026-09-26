@@ -1526,3 +1526,36 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+
+/* Editing an album or a track, inside the row it belongs to. Wraps rather
+   than shrinking the inputs: a field below 16px makes iOS Safari zoom the
+   page and not zoom back. */
+.album-edit,
+.track-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-2);
+  padding: var(--s-2) 0;
+}
+
+.album-edit { border-bottom: 1px solid var(--line-soft); margin-bottom: var(--s-2); }
+
+.edit-field { display: flex; flex-direction: column; gap: var(--s-0); }
+.edit-field span { color: var(--muted); }
+.edit-field input { min-width: 9rem; }
+.edit-field input[type="number"] { max-width: 5rem; }
+
+.track-editor { grid-column: 1 / -1; padding-left: var(--s-4); }
+
+/* Moving one track out of its album is a different act from renaming it,
+   and is kept behind its own disclosure so it cannot be done by accident. */
+.track-move {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-2);
+  width: 100%;
+  padding-top: var(--s-2);
+}

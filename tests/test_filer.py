@@ -508,3 +508,177 @@ def test_the_inbox_uses_the_filers_numbering(space, tmp_path):
     source = track(tmp_path, name="x.mp3")
 
     assert inbox._move_in(source, taken).name == "x (2).mp3"
+
+
+# --- editing tags by hand ---------------------------------------------------
+#
+# The two cases this exists for: an album whose artist and title were both
+# crammed into the track title, and clearing files out of Unknown Album.
+
+def album_on_disk(space, artist, name, titles, tracked=True):
+    """A filed album, as the filer itself would have written it."""
+    filed = []
+    for n, title in enumerate(titles, start=1):
+        source = track(tmp_of(space), name=f"{name}-{n}.mp3",
+                       albumartist=artist, album=name, title=title,
+                       tracknumber=str(n))
+        filed.append(filer.file_track(space, source))
+    return filed
+
+
+def tmp_of(space):
+    return space.library_path.parent
+
+
+def test_renaming_an_album_moves_every_file(space):
+    filed = album_on_disk(space, "Unknown Artist", "Unknown Album",
+                          ["One", "Two"])
+    folder = filed[0].path.parent
+
+    moved = filer.retag_album(space, folder, albumartist="Boards of Canada",
+                              album="Music Has the Right to Children")
+
+    assert len(moved) == 2
+    for one in moved:
+        assert one.path.parent == (space.library_path / "Boards of Canada"
+                                   / "Music Has the Right to Children")
+        assert one.path.is_file()
+
+
+def test_renaming_an_album_keeps_its_identity(space):
+    """The album keeps its Navidrome identity, so album-level stars and
+    play counts survive the change."""
+    filed = album_on_disk(space, "Unkown Artist", "Abbey Road", ["One", "Two"])
+    before = filed[0].album_uuid
+
+    moved = filer.retag_album(space, filed[0].path.parent,
+                              albumartist="The Beatles", album="Abbey Road")
+
+    assert {one.album_uuid for one in moved} == {before}
+
+
+def test_renaming_an_album_onto_one_that_exists_merges_into_it(space):
+    """Only the newcomer can be rewritten, so the established record wins."""
+    incumbent = album_on_disk(space, "The Beatles", "Abbey Road", ["Come"])
+    stray = album_on_disk(space, "The Beatels", "Abbey Road", ["Something"])
+
+    moved = filer.retag_album(space, stray[0].path.parent,
+                              albumartist="The Beatles", album="Abbey Road")
+
+    assert moved[0].album_uuid == incumbent[0].album_uuid
+
+
+def test_the_emptied_folder_is_removed(space):
+    filed = album_on_disk(space, "Unknown Artist", "Unknown Album", ["One"])
+    was = filed[0].path.parent
+
+    filer.retag_album(space, was, albumartist="Real", album="Record")
+
+    assert not was.exists()
+    assert not was.parent.exists(), "the empty artist folder goes too"
+
+
+def test_a_folder_that_still_holds_something_is_kept(space):
+    filed = album_on_disk(space, "Unknown Artist", "Unknown Album", ["One"])
+    was = filed[0].path.parent
+    (was / "cover.jpg").write_bytes(b"art")
+
+    filer.retag_album(space, was, albumartist="Real", album="Record")
+
+    assert was.is_dir(), "somebody else's file is not ours to delete"
+
+
+# --- one track at a time ----------------------------------------------------
+
+def test_retitling_a_track_renames_it_in_place(space):
+    filed = album_on_disk(space, "The Beatles", "Abbey Road", ["Wrong Title"])
+
+    moved = filer.retag_track(space, filed[0].path, title="Come Together")
+
+    assert moved.path.name == "01 - Come Together.mp3"
+    assert moved.path.parent == filed[0].path.parent
+    assert moved.album_uuid == filed[0].album_uuid
+
+
+def test_changing_a_tracks_album_moves_only_that_track(space):
+    """The case for clearing out Unknown Album: one file at a time, out of
+    the pile and into the record it belongs to."""
+    pile = album_on_disk(space, "Unknown Artist", "Unknown Album",
+                         ["One", "Two"])
+
+    moved = filer.retag_track(space, pile[0].path,
+                              albumartist="Aphex Twin", album="Drukqs")
+
+    assert moved.path.parent == space.library_path / "Aphex Twin" / "Drukqs"
+    assert pile[1].path.is_file(), "the other one did not move"
+
+
+def test_a_track_moved_into_an_album_joins_its_uuid(space):
+    existing = album_on_disk(space, "Aphex Twin", "Drukqs", ["Avril 14th"])
+    stray = album_on_disk(space, "Unknown Artist", "Unknown Album", ["Xtal"])
+
+    moved = filer.retag_track(space, stray[0].path,
+                              albumartist="Aphex Twin", album="Drukqs")
+
+    assert moved.album_uuid == existing[0].album_uuid
+
+
+def test_a_moved_track_does_not_drag_its_old_album_uuid_with_it(space):
+    """The subtle one. The UUID on the file belongs to the album it is
+    leaving; registering that under the new name would fuse two records
+    rather than move one track."""
+    pile = album_on_disk(space, "Unknown Artist", "Unknown Album",
+                         ["One", "Two"])
+    left_behind = pile[1].album_uuid
+
+    moved = filer.retag_track(space, pile[0].path,
+                              albumartist="Real", album="Record")
+
+    assert moved.album_uuid != left_behind
+    assert registry.known(space.library_id,
+                          registry.album_key("Real", "Record")) \
+        == moved.album_uuid
+
+
+def test_a_track_number_edit_keeps_the_total_beside_it(space):
+    """Dropping the "/12" would change how the release reads and rename
+    every file on it."""
+    source = track(tmp_of(space), albumartist="A", album="B", title="C",
+                   tracknumber="3/12", discnumber="1/2")
+    filed = filer.file_track(space, source)
+
+    filer.write_tags(filed.path, track_no=4)
+
+    from mutagen.easyid3 import EasyID3
+    assert EasyID3(filed.path)["tracknumber"] == ["4/12"]
+    assert EasyID3(filed.path)["discnumber"] == ["1/2"]
+
+
+def test_editing_leaves_the_other_tags_alone(space):
+    """Surgical on purpose: `tagger.tag` deletes the frame set before
+    writing, which would take the cover art and the Spotify id with it."""
+    from mutagen.id3 import ID3, TXXX
+
+    source = track(tmp_of(space), albumartist="A", album="B", title="C",
+                   tracknumber="1")
+    filed = filer.file_track(space, source)
+    tags = ID3(filed.path)
+    tags.add(TXXX(encoding=3, desc="SPOTIFY_ID", text="abc123"))
+    tags.save(filed.path)
+
+    filer.write_tags(filed.path, title="Renamed")
+
+    after = ID3(filed.path)
+    assert [f.text[0] for f in after.getall("TXXX")
+            if f.desc == "SPOTIFY_ID"] == ["abc123"]
+
+
+def test_a_track_uuid_survives_every_edit(space):
+    """It carries the stars. Nothing here may touch it."""
+    filed = album_on_disk(space, "A", "B", ["C"])
+    before = filed[0].track_uuid
+
+    renamed = filer.retag_track(space, filed[0].path, title="D")
+    moved = filer.retag_track(space, renamed.path, albumartist="E", album="F")
+
+    assert moved.track_uuid == before
