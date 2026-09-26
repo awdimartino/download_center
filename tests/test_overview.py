@@ -26,12 +26,20 @@ def identity_with_db(navidrome_db, monkeypatch, identity):
     return identity
 
 
-def snapshot(day, track_uuid, count, user_id=ALEX, username="alex"):
+def snapshot(day, track_uuid, count, user_id=ALEX, username="alex",
+             played_at=None):
+    """One reading of the counter.
+
+    `played_at` is Navidrome's own record of when the track last played,
+    which is a different thing from when we looked - and the tests about
+    the arithmetic leave it out, so that a delta is attributed to the
+    reading that caught it and nothing else is in the way.
+    """
     store.connection().execute(
         "insert or replace into play_snapshot"
         " (taken_on, track_uuid, user_id, username, play_count, play_date)"
         " values (?, ?, ?, ?, ?, ?)",
-        (day, track_uuid, user_id, username, count, day))
+        (day, track_uuid, user_id, username, count, played_at))
     store.connection().commit()
 
 
@@ -361,3 +369,76 @@ def test_time_reads_in_the_coarsest_useful_unit(seconds, expected):
 def test_a_month_is_named_not_numbered():
     assert overview._month_name("2025-09") == "September 2025"
     assert overview._month_name("") == ""
+
+
+# --- when a play actually happened ------------------------------------------
+# The reason the counts are read every few minutes rather than nightly:
+# Navidrome stores the moment of a track's most recent play beside its
+# running total, so a reading that catches the count rising by one has that
+# play's exact time.
+
+def test_a_play_is_dated_by_when_it_played_not_when_we_looked(state_db):
+    snapshot("2026-09-25T17:05:00+00:00", "t1", 4)
+    snapshot("2026-09-25T17:10:00+00:00", "t1", 5,
+             played_at="2026-09-25 17:09:46.018+00:00")
+
+    assert overview._increments(ALEX) == [
+        ("2026-09-25T17:09:46+00:00", "t1", 1)]
+
+
+def test_the_reading_time_stands_in_when_the_play_has_no_time(state_db):
+    snapshot("2026-09-25T17:05:00+00:00", "t1", 4)
+    snapshot("2026-09-25T17:10:00+00:00", "t1", 5)
+
+    assert overview._increments(ALEX) == [
+        ("2026-09-25T17:10:00+00:00", "t1", 1)]
+
+
+def test_junk_in_the_play_date_does_not_lose_the_play(state_db):
+    snapshot("2026-09-25T17:05:00+00:00", "t1", 4)
+    snapshot("2026-09-25T17:10:00+00:00", "t1", 5, played_at="not a date")
+
+    assert overview._increments(ALEX) == [
+        ("2026-09-25T17:10:00+00:00", "t1", 1)]
+
+
+def test_two_plays_in_one_interval_share_the_one_recorded_time(state_db):
+    """Only the last of them has a timestamp. They are smeared onto it
+    rather than dropped - the plays are real, and at a five-minute cadence
+    the error is bounded by five minutes."""
+    snapshot("2026-09-25T17:05:00+00:00", "t1", 4)
+    snapshot("2026-09-25T17:10:00+00:00", "t1", 6,
+             played_at="2026-09-25 17:09:46+00:00")
+
+    assert overview._increments(ALEX) == [
+        ("2026-09-25T17:09:46+00:00", "t1", 2)]
+
+
+def test_rows_from_when_this_ran_nightly_still_read(state_db):
+    """A bare date, a timestamp and a converted play time all sort and
+    bucket alike, so the two years already on disk need no migration."""
+    snapshot("2026-09-01", "t1", 10)
+    snapshot("2026-09-02", "t1", 12)
+    snapshot("2026-09-25T17:10:00+00:00", "t1", 13,
+             played_at="2026-09-25 17:09:46+00:00")
+
+    assert overview._increments(ALEX) == [
+        ("2026-09-02", "t1", 2),
+        ("2026-09-25T17:09:46+00:00", "t1", 1)]
+
+
+def test_an_evening_play_counts_in_the_local_month_not_the_utc_one(
+        state_db, monkeypatch):
+    """22:00 on 30 September in New York is 02:00 on 1 October in UTC.
+    Bucketing the raw value would move the last hours of every month into
+    the month after it."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "play_day_timezone", "America/New_York")
+    snapshot("2026-10-01T01:00:00+00:00", "t1", 4)
+    snapshot("2026-10-01T03:00:00+00:00", "t1", 5,
+             played_at="2026-10-01 02:00:00+00:00")
+
+    when, _track, _n = overview._increments(ALEX)[0]
+
+    assert when.startswith("2026-09-30T22:00:00"), when
+    assert when[:7] == "2026-09"

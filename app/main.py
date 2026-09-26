@@ -259,27 +259,37 @@ async def _inbox_loop() -> None:
 # a day of listening history cannot be recovered afterwards. Checking on a
 # short cycle for "has today been done" catches up whenever the process
 # happens to be alive.
-SNAPSHOT_CHECK_MINUTES = 30
+# Every five minutes, not nightly. Navidrome records the moment of a
+# track's most recent play beside its running total, so a reading that
+# catches a count rising by one has that play's exact time - and reading
+# this often means the rise is almost always one. The cost is a single
+# indexed join over a few thousand annotation rows, measured at 34ms on the
+# Pi this runs on: about ten seconds of work a day for the difference
+# between "you played this 1,204 times" and a listening history.
+SNAPSHOT_MINUTES = 5
 
 
 async def _snapshot_loop() -> None:
-    """Record play counts once a day.
+    """Read the play counts, every few minutes, for ever.
 
-    Navidrome keeps a cumulative total and one date, so anything not
-    captured is gone for good - which is why this is driven by "is today
-    done" rather than by a time of day it might sleep through.
+    Navidrome keeps a cumulative total and the moment of the most recent
+    play, so anything not captured between two plays of the same track is
+    gone for good. Reading often is what makes the difference recoverable:
+    at this cadence a track's count almost always rises by exactly one
+    between readings, and the timestamp beside it is then that play's.
+
+    Unconditional, where this used to ask "has today been done". That
+    question belonged to a job that ran once a day and had to survive
+    restarts without repeating itself; here, repeating is free - only
+    changed counts are stored, so a reading that finds nothing new writes
+    nothing but the run-log row that says the collector is alive.
     """
     while True:
         try:
-            # The day it closes, not the day it runs on: a snapshot is a
-            # total at the moment it runs, so the last day it can describe
-            # in full is yesterday.
-            day = await asyncio.to_thread(playcounts.last_complete_day)
-            if not await asyncio.to_thread(playcounts.taken_on, day):
-                await asyncio.to_thread(playcounts.take)
+            await asyncio.to_thread(playcounts.take)
         except Exception:
             log.exception("play-count snapshot failed")
-        await asyncio.sleep(SNAPSHOT_CHECK_MINUTES * 60)
+        await asyncio.sleep(SNAPSHOT_MINUTES * 60)
 
 
 async def _audit_loop() -> None:
@@ -1486,7 +1496,11 @@ async def playcount_top(
     limit = max(1, min(limit, MAX_LISTENING_TRACKS))
 
     def collect() -> dict[str, Any]:
-        end = playcounts.last_complete_day()
+        # Today, not yesterday. The window stopped at the last *complete*
+        # day because a nightly reading could not describe a day still
+        # going on; reading every few minutes can, and the panel was
+        # otherwise unable to show anything played since midnight.
+        end = playcounts.today()
         start = (datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
                  - timedelta(days=days - 1)).strftime("%Y-%m-%d")
         tracks = playcounts.top_tracks(start, end, session.identity.user_id,

@@ -63,11 +63,27 @@ decision to make.
 duplicates flow set aside — source, target, keeper, who decided — because
 "nothing is deleted" is only useful if the file can be found again.
 
-`play_snapshot` and `play_anomaly` are the nightly play-count record.
-Navidrome keeps a cumulative count and only the latest date, so history it
-has already overwritten is unrecoverable - these are the only copy. Keyed by
-track UUID rather than `media_file.id`, and only *changed* counts are
-stored, so a year is tens of thousands of rows rather than near a million.
+`play_snapshot` and `play_anomaly` are the play-count record. Navidrome
+keeps a cumulative count and only the latest date, so history it has already
+overwritten is unrecoverable - these are the only copy. Keyed by track UUID
+rather than `media_file.id`, and only *changed* counts are stored, so a year
+is tens of thousands of rows rather than near a million.
+
+Read every five minutes, not nightly. Navidrome stores the moment of a
+track's *most recent* play beside its running total, so a reading that
+catches the count rising by one carries that play's exact timestamp - and at
+this cadence the rise is almost always one. That is what turns a running
+total into a log of individual plays, and it is the difference between
+"played 1,204 times" and being able to answer anything about sessions, time
+of day, or a particular evening. The cost is one indexed join over a few
+thousand `annotation` rows: 34ms on the Pi, about ten seconds of work a day.
+
+`taken_on` therefore holds a timestamp. Rows written while this ran nightly
+hold a bare `YYYY-MM-DD`, and the two coexist in the one column with no
+migration: a date is a prefix of every timestamp on the same day, so it
+sorts first and still sorts before the next day. The consequence for queries
+is that a day is bounded half-open - `taken_on < next_day(D)`, never
+`taken_on <= D`, which would exclude every reading actually taken on D.
 
 `play_imported` holds listening from before the snapshots began - alex's
 Last.fm history, imported once in September 2026 and matched to tracks by
@@ -353,7 +369,7 @@ quality mechanism.
   id and by normalised title, **always within one library**. Ranks copies,
   migrates stars and ratings onto the keeper, and *quarantines* losers to
   `duplicates-removed/`. Nothing is deleted.
-- **`playcounts.py`** — nightly snapshots of Navidrome's cumulative play
+- **`playcounts.py`** — five-minute readings of Navidrome's cumulative play
   counts, so listening history stops being unrecoverable. Read back by the
   Listening panel, which resolves each stored UUID to a title through
   Navidrome's index; a track that has left the library still counts, because
@@ -377,8 +393,8 @@ quality mechanism.
 
 `main.py` (~1,370 lines — it still wants splitting) holds every route. Three
 background loops run for the life of the process: `_inbox_loop` (every 15s,
-files what has been dropped in), `_audit_loop`, and `_snapshot_loop` (nightly
-play counts).
+files what has been dropped in), `_audit_loop`, and `_snapshot_loop` (play
+counts, every 5 minutes).
 
 - A `require_session` middleware gates all `/api/*` except the three auth
   paths. `/healthz` is deliberately ungated so the container healthcheck

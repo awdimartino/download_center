@@ -1687,9 +1687,9 @@ async function loadHome() {
     // does not run is a day of listening nobody can recover.
     const snaps = data.snapshots || {};
     setBanner(homeSnapshots, snaps.up_to_date === false
-      ? "No play snapshot since " + (snaps.last_run || "ever")
-        + " — listening from " + snaps.awaiting
-        + " onwards is not being recorded."
+      ? "Play counts have not been read since "
+        + (snaps.last_reading || "ever")
+        + " — listening since then is not being recorded."
       : "", "warn");
   } catch (err) {
     homeEmpty.hidden = false;
@@ -1730,13 +1730,15 @@ function coverage(cover, window) {
       `${(cover.imported_sources || []).join(", ")}, from ${cover.imported_from}`));
   }
   boxes.push(stat(
-    "Nightly snapshots", (cover.days_run || 0).toLocaleString(),
-    cover.last_run ? `last ${cover.last_run}` : "none yet"));
-  // The one that is a health question rather than a statistic: a nightly job
-  // that quietly stopped looks exactly like one that ran and found nothing.
+    "Days collecting", (cover.days_run || 0).toLocaleString(),
+    cover.last_run ? `most recently ${cover.last_run}` : "none yet"));
+  // The one that is a health question rather than a statistic: a collector
+  // that quietly stopped looks exactly like one that found nothing.
   boxes.push(stat(
-    "Up to date", cover.up_to_date ? "yes" : "no",
-    cover.up_to_date ? `through ${cover.awaiting}` : `waiting on ${cover.awaiting}`));
+    "Collecting", cover.up_to_date ? "yes" : "no",
+    cover.last_reading
+      ? `last read ${cover.last_reading.replace("T", " ")}`
+      : "never read"));
 
   listeningCoverage.replaceChildren(...boxes);
 }

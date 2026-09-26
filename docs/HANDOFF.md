@@ -89,9 +89,19 @@ whose files are gone (deleted during the migration) sit in folders Navidrome
 has flagged missing — harmless, and excluded from every query that matters.
 
 **Play history:** 41,203 plays imported from Last.fm covering 2022-09-18 to
-2026-09-05, plus nightly snapshots from 2026-09-06 onward. Snapshots run at
-local midnight (`play_day_timezone = America/New_York`) targeting the last
-complete day. `GET /api/playcounts` reports whether it is up to date.
+2026-09-05, plus snapshots from 2026-09-06 onward. Snapshots were nightly
+until 2026-09-26 and are now read every 5 minutes, which recovers each
+play's own timestamp from Navidrome's `play_date` - see `play_snapshot` in
+ARCHITECTURE.md. Days are bucketed in `play_day_timezone`
+(`America/New_York`). `GET /api/playcounts` reports whether the collector is
+alive, which since the cadence change means "read within the last 30
+minutes" rather than "yesterday was captured".
+
+The 38,559 imported rows are still day-granular. Last.fm holds a timestamp
+per scrobble and the retired importer already fetched them
+(`git show 6a9ff5e^:app/lastfm.py`, `plan()` collapsed them at the
+`strftime("%Y-%m-%d")`), so that history is backfillable with a fresh API
+key.
 
 **Staging, as of the deploy:** alex 14 albums + 1 single, kelly 3 singles,
 test 1 single — `Radiohead - Let Down.mp3`, the file the escape hatch was

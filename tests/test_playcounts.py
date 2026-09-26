@@ -9,6 +9,7 @@ no "run it again tomorrow" for yesterday.
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -425,15 +426,54 @@ def test_status_reports_imported_history_too(wired):
     assert status["imported"][0]["first_day"] == "2026-02-14"
 
 
-def test_status_says_whether_the_nightly_job_is_up_to_date(wired):
+def test_status_says_whether_the_collector_is_alive(wired):
+    """Not "has yesterday been captured" any more. Readings are taken every
+    few minutes, so the only way to be behind is to have stopped, and the
+    answer is how long ago the last one was."""
     add_track(wired, "t1", tags=UUID_A)
     played(wired, "t1", ALEX, 5)
 
     assert playcounts.status()["up_to_date"] is False
-    playcounts.take()          # defaults to the last complete day
+    playcounts.take()
     status = playcounts.status()
     assert status["up_to_date"] is True
-    assert status["awaiting"] == playcounts.last_complete_day()
+    assert status["awaiting"] == playcounts.last_reading()
+
+
+def test_a_collector_that_stopped_this_morning_is_not_healthy(wired):
+    """The failure this is here to catch: the loop dies, nobody listens for
+    a while anyway, and nothing distinguishes that from a quiet evening."""
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 5)
+    playcounts.take()
+    assert playcounts.read_recently() is True
+
+    stale = (datetime.now(UTC)
+             - timedelta(minutes=playcounts.STALE_AFTER_MINUTES + 1))
+    store.connection().execute(
+        "update play_snapshot_run set taken_at = ?",
+        (stale.isoformat(timespec="seconds"),))
+    store.connection().commit()
+
+    assert playcounts.read_recently() is False
+    assert playcounts.status()["up_to_date"] is False
+
+
+def test_a_quiet_hour_is_not_a_dead_collector(wired):
+    """Only changed counts are stored, so an hour when nobody listened
+    writes no snapshot rows. Health is read from the run log for exactly
+    this reason."""
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 5)
+    playcounts.take()
+    before = store.connection().execute(
+        "select count(*) from play_snapshot").fetchone()[0]
+
+    playcounts.take()
+
+    assert store.connection().execute(
+        "select count(*) from play_snapshot").fetchone()[0] == before
+    assert playcounts.read_recently() is True
 
 
 def test_status_with_nothing_recorded_yet(wired):

@@ -43,16 +43,25 @@ TOP_ARTISTS = 6
 
 
 def _increments(user_id: str) -> list[tuple[str, str, int]]:
-    """Every play this person made, as (day, track uuid, how many).
+    """Every play this person made, as (when, track uuid, how many).
 
     Both sources flattened into the same shape, so everything downstream is
     a sum over one list rather than two special cases.
+
+    `when` is the play's own time wherever it is known. Navidrome stores
+    the moment of a track's most recent play beside its running total, so a
+    reading that catches the count rising by one carries that play's exact
+    timestamp - which is the whole reason the counts are read every few
+    minutes rather than nightly. Where it is missing or unreadable the
+    reading's own time stands in, and for rows written while this ran
+    nightly that is a bare date. All three sort and bucket alike.
     """
     db = store.connection()
     with store._lock:
         rows = db.execute(
-            "select track_uuid, taken_on, play_count from play_snapshot"
-            " where user_id = ? order by track_uuid, taken_on",
+            "select track_uuid, taken_on, play_count, play_date"
+            "  from play_snapshot where user_id = ?"
+            " order by track_uuid, taken_on",
             (user_id,)).fetchall()
         imported = db.execute(
             "select day, track_uuid, plays from play_imported"
@@ -61,13 +70,18 @@ def _increments(user_id: str) -> list[tuple[str, str, int]]:
     plays: list[tuple[str, str, int]] = []
     previous_track = None
     previous_count = 0
-    for track_uuid, day, count in rows:
+    for track_uuid, taken_on, count, play_date in rows:
         if track_uuid != previous_track:
             # First reading of this track: a baseline, not listening.
             previous_track, previous_count = track_uuid, count
             continue
         if count > previous_count:
-            plays.append((day, track_uuid, count - previous_count))
+            # A rise of more than one means the same track was played
+            # twice inside one interval. Only the last of them has a
+            # recorded time, so they share it; at a five-minute cadence
+            # that smear is bounded by five minutes.
+            when = playcounts.local_stamp(play_date) or taken_on
+            plays.append((when, track_uuid, count - previous_count))
         previous_count = count
 
     plays.extend((day, track_uuid, n) for day, track_uuid, n in imported if n)
@@ -280,14 +294,13 @@ def _snapshot_health() -> dict[str, Any]:
     """Whether the thing that records listening is actually running.
 
     The one number on this page that is about the machinery rather than the
-    music, and it earns its place: every day this does not run is a day of
-    listening nobody can recover.
+    music, and it earns its place: Navidrome keeps only a running total, so
+    every interval this does not run is listening nobody can recover.
     """
     try:
         status = playcounts.status()
     except Exception as exc:
         log.warning("cannot read snapshot status: %s", exc)
-        return {"up_to_date": None}
-    wanted = status.get("awaiting") or playcounts.last_complete_day()
+        return {"up_to_date": None, "last_reading": ""}
     return {"up_to_date": bool(status.get("up_to_date")),
-            "last_run": status.get("last_run"), "awaiting": wanted}
+            "last_reading": status.get("last_reading") or ""}

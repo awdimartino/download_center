@@ -81,6 +81,57 @@ def today() -> str:
     return datetime.now(zone()).strftime("%Y-%m-%d")
 
 
+def now_stamp() -> str:
+    """The moment a reading is taken, to the second, in UTC.
+
+    UTC because this labels machinery rather than listening: it has to
+    order readings, and a local stamp goes backwards for an hour every
+    autumn. Where the play *happened* is a different question, answered by
+    `local_stamp` below.
+
+    Sorts correctly beside the plain `YYYY-MM-DD` labels written while this
+    ran nightly: a date is a prefix of any timestamp on the same day, so it
+    sorts first, and still sorts before the next day. The two coexist in one
+    column with no migration.
+    """
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
+def local_stamp(raw: str | None) -> str:
+    """Navidrome's play_date, in the listener's own time zone.
+
+    Navidrome writes UTC, to the nanosecond: `2026-09-25 17:09:46.018+00:00`.
+    Converted here because every question asked of it is a local one - an
+    evening's listening on the US east coast is the next day in UTC, and
+    bucketing the raw value puts the last four hours of every month into
+    the month after it.
+
+    Returns "" for anything unparseable, which the caller reads as "no time
+    for this play" and falls back to when the reading was taken.
+    """
+    if not raw:
+        return ""
+    try:
+        moment = datetime.fromisoformat(str(raw).strip())
+    except ValueError:
+        return ""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(zone()).isoformat(timespec="seconds")
+
+
+def next_day(day: str) -> str:
+    """The day after, so a timestamp can be bounded by a date.
+
+    Every reading taken on day D satisfies `D <= taken_on < D+1`, whether it
+    is stored as a bare date or as a timestamp. A query that instead asked
+    for `taken_on <= D` would exclude every reading actually taken that day,
+    because "D" sorts before "DT10:00".
+    """
+    return (datetime.strptime(day, "%Y-%m-%d").date()
+            + timedelta(days=1)).strftime("%Y-%m-%d")
+
+
 def last_complete_day() -> str:
     """The most recent day that has actually finished.
 
@@ -165,12 +216,29 @@ def _last_known() -> dict[tuple[str, str], int]:
 # --- taking one -------------------------------------------------------------
 
 def take(when: str | None = None) -> dict[str, Any]:
-    """Record every play count that has changed since the last snapshot.
+    """Record every play count that has changed since the last reading.
 
-    Idempotent for a given day: the primary key is (day, track, user), so
-    running it twice replaces rather than duplicates.
+    Taken every few minutes rather than nightly. Navidrome stores, beside
+    the cumulative count, the moment of the *most recent* play - so when a
+    track's count rises by one between two readings, that moment is the
+    exact time of that play. Reading often enough that the usual rise is
+    one turns a running total into a log of individual plays, which is what
+    a listening history has to be to answer anything about sessions, time
+    of day, or a particular evening.
+
+    A rise of more than one means the same track was played twice inside
+    one interval; those plays share the last one's timestamp. At a few
+    minutes' cadence that smear is bounded by the interval.
+
+    Idempotent for a given reading: the primary key is (taken_on, track,
+    user), so running it twice with the same stamp replaces rather than
+    duplicates.
     """
-    day = when or last_complete_day()
+    at = when or now_stamp()
+    # The local day this reading belongs to. Taken from `when` when a caller
+    # names one, so a reading deliberately labelled with a past day is
+    # logged against that day rather than against the day it was typed.
+    run_day = when[:10] if when else today()
     try:
         source = navidrome.open_db()
     except navidrome.Unavailable as exc:
@@ -190,8 +258,12 @@ def take(when: str | None = None) -> dict[str, Any]:
         if was is not None and was == row["play_count"]:
             continue
         if was is not None and row["play_count"] < was:
-            anomalies.append((day, key[0], key[1], was, row["play_count"]))
-        changed.append((day, key[0], key[1], row["username"],
+            # Noticed on a day, not at a reading: a counter that fell is
+            # one event however many times the next readings re-observe it,
+            # and the primary key collapses them.
+            anomalies.append((run_day, key[0], key[1], was,
+                              row["play_count"]))
+        changed.append((at, key[0], key[1], row["username"],
                         row["play_count"], row["play_date"]))
 
     db = store.connection()
@@ -208,17 +280,26 @@ def take(when: str | None = None) -> dict[str, Any]:
         # listened produces no snapshot rows, and without this the day never
         # counts as done - so the job repeats it every half hour and the
         # status never catches up.
+        # One row per local day, rewritten by each reading within it. The
+        # run log answers "is this collecting?", which is a question about
+        # days; two hundred rows a day would answer it no better.
         db.execute(
-            "INSERT OR REPLACE INTO play_snapshot_run"
+            "INSERT INTO play_snapshot_run"
             " (day, taken_at, tracked, changed, anomalies)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (day, datetime.now(UTC).isoformat(timespec="seconds"),
+            " VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(day) DO UPDATE SET"
+            "   taken_at = excluded.taken_at,"
+            "   tracked = excluded.tracked,"
+            "   changed = changed + excluded.changed,"
+            "   anomalies = anomalies + excluded.anomalies",
+            (run_day, datetime.now(UTC).isoformat(timespec="seconds"),
              len(current), len(changed), len(anomalies)))
         db.commit()
 
     result = {
         "taken": True,
-        "day": day,
+        "at": at,
+        "day": run_day,
         # The first run records everything and means nothing: there is no
         # earlier snapshot to subtract from. Real data starts tomorrow.
         "baseline": baseline,
@@ -227,7 +308,7 @@ def take(when: str | None = None) -> dict[str, Any]:
         "anomalies": len(anomalies),
         "without_uuid": unidentifiable,
     }
-    log.info("play snapshot %s: %d changed of %d tracked%s%s", day,
+    log.info("play snapshot %s: %d changed of %d tracked%s%s", at,
              len(changed), len(current),
              " (baseline)" if baseline else "",
              f", {len(anomalies)} anomal{'y' if len(anomalies) == 1 else 'ies'}"
@@ -248,6 +329,39 @@ def taken_on(day: str) -> bool:
     return row is not None
 
 
+# Six missed readings at the cadence in main.py. Long enough that a slow
+# run or a restart is not an alarm, short enough that a collector which
+# died this morning is not still reported healthy this evening.
+STALE_AFTER_MINUTES = 30
+
+
+def last_reading() -> str:
+    """When the counts were last read, however long ago that was."""
+    row = store.connection().execute(
+        "SELECT MAX(taken_at) FROM play_snapshot_run").fetchone()
+    return row[0] if row and row[0] else ""
+
+
+def read_recently() -> bool:
+    """Whether the collector is alive.
+
+    Asked of the run log rather than of the rows: a quiet hour writes no
+    snapshot rows at all, and judging by those would call a working
+    collector dead every time nobody was listening.
+    """
+    when = last_reading()
+    if not when:
+        return False
+    try:
+        last = datetime.fromisoformat(when)
+    except ValueError:
+        return False
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    age = (datetime.now(UTC) - last).total_seconds()
+    return age <= STALE_AFTER_MINUTES * 60
+
+
 def status() -> dict[str, Any]:
     """Enough to tell whether this is working, before there is anything to
     show for it. Statistics need weeks; this needs to be checkable tonight.
@@ -266,15 +380,17 @@ def status() -> dict[str, Any]:
         "SELECT source, COUNT(*), SUM(plays), MIN(day), MAX(day)"
         "  FROM play_imported GROUP BY source").fetchall()
 
-    # The day the loop is aiming at. `today` is never the answer - a day
-    # cannot be summarised until it has finished.
-    wanted = last_complete_day()
+    # Days, from readings: there are hundreds of readings a day now, and
+    # "how long has this been collecting" is still a question about days.
     return {
         "snapshots": {
-            "days": one("SELECT COUNT(DISTINCT taken_on) FROM play_snapshot"),
+            "days": one("SELECT COUNT(DISTINCT substr(taken_on, 1, 10))"
+                        "  FROM play_snapshot"),
             "rows": one("SELECT COUNT(*) FROM play_snapshot"),
-            "first_day": one("SELECT MIN(taken_on) FROM play_snapshot"),
-            "last_day": one("SELECT MAX(taken_on) FROM play_snapshot"),
+            "first_day": one("SELECT substr(MIN(taken_on), 1, 10)"
+                             "  FROM play_snapshot"),
+            "last_day": one("SELECT substr(MAX(taken_on), 1, 10)"
+                            "  FROM play_snapshot"),
             "anomalies": one("SELECT COUNT(*) FROM play_anomaly"),
             # Days the job actually ran, which is not the same as days that
             # produced rows.
@@ -286,9 +402,14 @@ def status() -> dict[str, Any]:
              "first_day": first, "last_day": last}
             for source, rows, plays, first, last in imported
         ],
-        # The question worth asking of a nightly job: is it up to date?
-        "up_to_date": taken_on(wanted),
-        "awaiting": wanted,
+        # What "up to date" means changed with the cadence. While this ran
+        # nightly the question was whether yesterday had been captured; now
+        # that it reads every few minutes, the only way to be behind is to
+        # have stopped, and the answer is how long ago the last reading was.
+        "up_to_date": read_recently(),
+        "last_reading": last_reading(),
+        # How far back the blind spot reaches, if there is one.
+        "awaiting": last_reading() or "the first reading",
     }
 
 
@@ -303,17 +424,25 @@ def plays_between(start: str, end: str,
     plays rather than a negative number; the drop itself is in play_anomaly.
     """
     def value_at(day: str) -> dict[tuple[str, str], int]:
+        """The last count known at the end of `day`.
+
+        Bounded by the start of the day after, not by `day` itself. Readings
+        are stamped to the second now, and "2026-09-25T17:09:46+00:00" sorts
+        *after* "2026-09-25" - so the obvious `taken_on <= day` excluded
+        every reading actually taken that day and reported the total as it
+        stood the previous midnight.
+        """
         rows = store.connection().execute("""
             select s.track_uuid, s.user_id, s.play_count
               from play_snapshot s
               join (select track_uuid, user_id, max(taken_on) as taken_on
                       from play_snapshot
-                     where taken_on <= ?
+                     where taken_on < ?
                      group by track_uuid, user_id) latest
                 on latest.track_uuid = s.track_uuid
                and latest.user_id = s.user_id
                and latest.taken_on = s.taken_on
-        """, (day,)).fetchall()
+        """, (next_day(day),)).fetchall()
         return {(t, u): c for t, u, c in rows}
 
     # A snapshot labelled D holds the total at the *end* of D, so the
@@ -336,12 +465,15 @@ def plays_between(start: str, end: str,
     # Days before the snapshots began, imported from Last.fm. Added rather
     # than merged: the two sources cover disjoint periods by construction -
     # the import stops the day snapshots start - so nothing is counted twice.
+    # Half-open on the right for the same reason as `value_at`: an imported
+    # row carries a timestamp wherever one could be recovered, and `between`
+    # would drop every play after midnight on the closing day.
     imported = store.connection().execute("""
         select track_uuid, user_id, username, sum(plays)
           from play_imported
-         where day between ? and ?
+         where day >= ? and day < ?
          group by track_uuid, user_id, username
-    """, (start, end)).fetchall()
+    """, (start, next_day(end))).fetchall()
     for track_uuid, who, username, plays in imported:
         if user_id is not None and who != user_id:
             continue
@@ -415,9 +547,9 @@ def coverage(user_id: str) -> dict[str, Any]:
     whoever listened to it, and 41,203 plays shown to an account that has
     never played anything is both confusing and somebody else's business.
 
-    The job facts - whether the nightly run happened, and which day it is
-    working towards - stay global, because they are about the collector
-    rather than the collection.
+    The job facts - whether the collector is alive and when it last read -
+    stay global, because they are about the collector rather than the
+    collection.
     """
     db = store.connection()
     imported, first, last = db.execute(
@@ -426,11 +558,12 @@ def coverage(user_id: str) -> dict[str, Any]:
     sources = [row[0] for row in db.execute(
         "SELECT DISTINCT source FROM play_imported WHERE user_id = ?",
         (user_id,)).fetchall()]
+    # Days, not readings. There are a few hundred readings a day now, and
+    # "how long has this been collecting for me" is a question about days.
     snapshot_days = db.execute(
-        "SELECT COUNT(DISTINCT taken_on) FROM play_snapshot WHERE user_id = ?",
-        (user_id,)).fetchone()[0]
+        "SELECT COUNT(DISTINCT substr(taken_on, 1, 10)) FROM play_snapshot"
+        " WHERE user_id = ?", (user_id,)).fetchone()[0]
 
-    wanted = last_complete_day()
     return {
         "imported_plays": imported,
         "imported_from": first,
@@ -442,6 +575,6 @@ def coverage(user_id: str) -> dict[str, Any]:
             "SELECT COUNT(*) FROM play_snapshot_run").fetchone()[0],
         "last_run": db.execute(
             "SELECT MAX(day) FROM play_snapshot_run").fetchone()[0],
-        "up_to_date": taken_on(wanted),
-        "awaiting": wanted,
+        "up_to_date": read_recently(),
+        "last_reading": last_reading(),
     }
