@@ -187,6 +187,16 @@ def build(found: survey_module.Survey, library_id: int,
     for group in found.fused:
         group = [album for album in group if album.key not in settled]
         if len(group) < 2:
+            # An earlier group settled the others, so nothing here shares a
+            # UUID any more. What is left can still disagree with *itself*
+            # though, and skipping it outright left one album split behind:
+            # Radiohead's KID A MNESIA, whose partner in this group was Kid
+            # A, already settled by the group it shared a different UUID
+            # with. The survey files a split-and-fused album under fused, so
+            # the split pass below never sees it either.
+            for album in group:
+                _unify(plan, album, found.root, "split")
+                settled.add(album.key)
             continue
         showing: collections.Counter = collections.Counter()
         if connection is not None:
@@ -227,15 +237,8 @@ def build(found: survey_module.Survey, library_id: int,
     for album in found.split:
         if album.key in settled:
             continue
-        best = _majority(album)
-        for path in album.files:
-            was = _read_album_uuid(path)
-            if was == best:
-                continue
-            plan.changes.append(Change(
-                path=_relative(path, found.root), album=album.name,
-                key=album.key, was=was, becomes=best, why="split"))
-        plan.retired.extend(v for v in album.uuids if v != best)
+        _unify(plan, album, found.root, "split")
+        settled.add(album.key)
 
     # --- loose files sharing one identity --------------------------------
     by_uuid: dict[str, list[str]] = collections.defaultdict(list)
@@ -261,6 +264,21 @@ def build(found: survey_module.Survey, library_id: int,
 
     plan.changes.sort(key=lambda c: (c.why, c.album, c.path))
     return plan
+
+
+def _unify(plan: Plan, album: survey_module.Album, root: Path,
+           why: str) -> str:
+    """Put every file of one album onto the one UUID most of them carry."""
+    best = _majority(album)
+    for path in album.files:
+        was = _read_album_uuid(path)
+        if was == best:
+            continue
+        plan.changes.append(Change(
+            path=_relative(path, root), album=album.name, key=album.key,
+            was=was, becomes=best, why=why))
+    plan.retired.extend(v for v in album.uuids if v != best)
+    return best
 
 
 def _relative(path: Path, root: Path) -> str:

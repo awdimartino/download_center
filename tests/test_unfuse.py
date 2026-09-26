@@ -346,3 +346,27 @@ def test_the_plan_can_be_applied_backwards(state_db, library):
         uuidtags.write(library / change.path, None, change.was)
 
     assert {p: album_uuid(p) for p in one + two} == before
+
+
+def test_an_album_in_two_fused_groups_still_gets_unified(state_db, library):
+    """The case that survived the first real run. Kid A shared one UUID
+    with one album and another with KID A MNESIA. The first group settled
+    Kid A, which shrank the second group to one album - and skipping it
+    outright left KID A MNESIA's own internal split unfixed, because the
+    survey files a split-and-fused album under fused so the split pass
+    never sees it either."""
+    C = "33333333-3333-4333-8333-333333333333"
+    # Kid A shares A with Amnesiac and B with KID A MNESIA, and is the
+    # bigger album so it keeps A. Processing the A group settles it, which
+    # leaves the B group holding only MNESIA - which is itself split, on B
+    # and C.
+    album(library, "Radiohead", "Amnesiac", 1, [A])
+    album(library, "Radiohead", "Kid A", 3, [A, A, B])
+    mnesia = album(library, "Radiohead", "KID A MNESIA", 2, [B, C])
+
+    unfuse.apply_plan(planned(library), dry_run=False)
+
+    assert len({album_uuid(p) for p in mnesia}) == 1, (
+        "left split because its only partner was settled elsewhere")
+    assert survey.collect(library).split == []
+    assert survey.collect(library).fused == []
