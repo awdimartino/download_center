@@ -341,7 +341,9 @@ async def test_a_retry_does_not_re_download_what_already_finished(library,
 
     assert items[0]["status"] == "complete"
     assert items[1]["status"] == "failed"
-    assert fetched == ["i1", "i2"]
+    # Sorted, not in order: the items download concurrently, so which one
+    # reaches the downloader first is not a fact about anything.
+    assert sorted(fetched) == ["i1", "i2"]
 
     # What retry_job does: reset only the failures, then run the job again.
     broken.clear()
