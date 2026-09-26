@@ -459,3 +459,55 @@ def test_the_poller_leaves_a_file_the_worker_is_delivering(space):
     finally:
         inbox._delivering.discard(path)
     assert path in inbox.waiting(space)
+
+
+# --- the inbox has to exist before anything can be dropped in it ------------
+
+def test_draining_makes_the_inbox_if_it_is_missing(space):
+    """`prepare()` is reached only from `ensure_config`, which runs when a
+    download is queued or an album is matched. A workspace that has done
+    neither has nowhere to drop a file, and `waiting()` reports that as an
+    empty inbox rather than a missing one."""
+    import shutil as _shutil
+    _shutil.rmtree(space.inbox_dir)
+    assert not space.inbox_dir.exists()
+
+    inbox.drain_all()
+
+    assert space.inbox_dir.is_dir()
+    assert space.incomplete_dir.is_dir()
+
+
+def test_a_workspace_that_cannot_be_prepared_does_not_stop_the_others(
+        space, monkeypatch, tmp_path):
+    from app import workspace as ws
+
+    other = ws.Workspace("kelly", 2, "Kelly", tmp_path / "kelly")
+    (tmp_path / "kelly").mkdir()
+    monkeypatch.setattr(ws, "existing", lambda: [other, space])
+
+    real = ws.Workspace.prepare
+
+    def refuse(self):
+        if self.username == "kelly":
+            raise ValueError("that directory belongs to somebody else")
+        real(self)
+
+    monkeypatch.setattr(ws.Workspace, "prepare", refuse)
+    drop(space, albumartist="Artist", album="Album", title="Song",
+         tracknumber="1")
+
+    results = inbox.drain_all()
+
+    assert set(results) == {"alex"}, "the good workspace still drained"
+
+
+def test_preparing_does_not_disturb_an_inbox_that_is_already_there(space):
+    dropped = drop(space, albumartist="Artist", album="Album", title="Song",
+                   tracknumber="1")
+    assert dropped.exists()
+
+    inbox.drain_all()
+
+    assert not dropped.exists(), "it was filed, not left alone"
+    assert space.inbox_dir.is_dir()

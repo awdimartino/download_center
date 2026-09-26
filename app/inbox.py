@@ -297,6 +297,25 @@ def drain_all() -> dict[str, Result]:
                             "inbox alone", space.username, space.library_path)
             continue
         _unmounted.discard(space.library_path)
+
+        # Make the inbox if it is not there. Nothing else does: `prepare()`
+        # is reached only from `ensure_config`, which runs when a download
+        # is queued or an album is matched - so a workspace that has done
+        # neither since this code shipped has nowhere to drop a file, and
+        # `waiting()` reports that as an empty inbox rather than a missing
+        # one. The README tells people to drop music into a directory the
+        # application had never made for them.
+        #
+        # Idempotent, and this loop runs every POLL_SECONDS anyway.
+        try:
+            space.prepare()
+        except Exception as exc:
+            # A marker naming somebody else, a read-only mount. Neither is
+            # this loop's to resolve, and neither should stop the others.
+            log.warning("could not prepare %s's workspace: %s",
+                        space.username, exc)
+            continue
+
         result = drain(space)
         if result.changed or result.failures:
             results[space.username] = result
