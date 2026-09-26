@@ -377,7 +377,8 @@ def status() -> dict[str, Any]:
         return db.execute(sql).fetchone()[0]
 
     imported = db.execute(
-        "SELECT source, COUNT(*), SUM(plays), MIN(day), MAX(day)"
+        "SELECT source, COUNT(*), SUM(plays),"
+        "       substr(MIN(played_at), 1, 10), substr(MAX(played_at), 1, 10)"
         "  FROM play_imported GROUP BY source").fetchall()
 
     # Days, from readings: there are hundreds of readings a day now, and
@@ -471,7 +472,7 @@ def plays_between(start: str, end: str,
     imported = store.connection().execute("""
         select track_uuid, user_id, username, sum(plays)
           from play_imported
-         where day >= ? and day < ?
+         where played_at >= ? and played_at < ?
          group by track_uuid, user_id, username
     """, (start, next_day(end))).fetchall()
     for track_uuid, who, username, plays in imported:
@@ -553,7 +554,8 @@ def coverage(user_id: str) -> dict[str, Any]:
     """
     db = store.connection()
     imported, first, last = db.execute(
-        "SELECT COALESCE(SUM(plays), 0), MIN(day), MAX(day)"
+        "SELECT COALESCE(SUM(plays), 0),"
+        "       substr(MIN(played_at), 1, 10), substr(MAX(played_at), 1, 10)"
         "  FROM play_imported WHERE user_id = ?", (user_id,)).fetchone()
     sources = [row[0] for row in db.execute(
         "SELECT DISTINCT source FROM play_imported WHERE user_id = ?",

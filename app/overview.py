@@ -64,7 +64,7 @@ def _increments(user_id: str) -> list[tuple[str, str, int]]:
             " order by track_uuid, taken_on",
             (user_id,)).fetchall()
         imported = db.execute(
-            "select day, track_uuid, plays from play_imported"
+            "select played_at, track_uuid, plays from play_imported"
             " where user_id = ?", (user_id,)).fetchall()
 
     plays: list[tuple[str, str, int]] = []

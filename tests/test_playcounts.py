@@ -343,12 +343,14 @@ def test_the_target_day_does_not_move_during_a_day(monkeypatch):
 
 # --- imported history sits beside the snapshots ----------------------------
 
-def _import(day, track_uuid, user_id, plays, username="alex"):
+def _import(when, track_uuid, user_id, plays, username="alex"):
+    """`when` is a bare date for history whose time was never recovered, or
+    a full timestamp for a scrobble that has one."""
     store.connection().execute(
         "INSERT OR REPLACE INTO play_imported"
-        " (day, track_uuid, user_id, username, plays, source)"
+        " (played_at, track_uuid, user_id, username, plays, source)"
         " VALUES (?, ?, ?, ?, ?, 'lastfm')",
-        (day, track_uuid, user_id, username, plays))
+        (when, track_uuid, user_id, username, plays))
     store.connection().commit()
 
 
@@ -580,8 +582,9 @@ def test_coverage_is_one_persons_own_history(wired):
     check and wrong for a panel: one account's imported Last.fm history is
     not another account's to read."""
     store.connection().execute(
-        "insert into play_imported (track_uuid, user_id, username, day, plays,"
-        " source) values ('uuid-a', ?, 'alex', '2024-01-01', 40, 'lastfm')",
+        "insert into play_imported"
+        " (track_uuid, user_id, username, played_at, plays, source)"
+        " values ('uuid-a', ?, 'alex', '2024-01-01', 40, 'lastfm')",
         (ALEX,))
     store.connection().commit()
 

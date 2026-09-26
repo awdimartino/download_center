@@ -110,16 +110,22 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_day ON play_snapshot(taken_on);
 --
 -- `source` is part of the key so a second import replaces its own rows and
 -- cannot double anyone's history.
+-- `played_at` is a date, `YYYY-MM-DD`, for a play whose time is not known,
+-- and a full timestamp where it has been recovered. The two sort and bucket
+-- alike, which is what lets one column hold both: a date is a prefix of
+-- every timestamp on the same day, so it sorts first and still sorts before
+-- the next day. Queries bound a day half-open, `>= D and < D+1`, because
+-- `<= D` would exclude every timestamped play on D.
 CREATE TABLE IF NOT EXISTS play_imported (
-    day         TEXT NOT NULL,
+    played_at   TEXT NOT NULL,
     track_uuid  TEXT NOT NULL,
     user_id     TEXT NOT NULL,
     username    TEXT,
     plays       INTEGER NOT NULL,
     source      TEXT NOT NULL,
-    PRIMARY KEY (day, track_uuid, user_id, source)
+    PRIMARY KEY (played_at, track_uuid, user_id, source)
 );
-CREATE INDEX IF NOT EXISTS idx_imported_day ON play_imported(day);
+CREATE INDEX IF NOT EXISTS idx_imported_day ON play_imported(played_at);
 
 -- That a day was captured, separately from whether anything changed on it.
 -- Only changed counts go into play_snapshot, so a day when nobody listened
@@ -150,8 +156,32 @@ def connect(path: Path) -> None:
     global _conn
     path.parent.mkdir(parents=True, exist_ok=True)
     _conn = sqlite3.connect(path, check_same_thread=False)
+    _migrate(_conn)
     _conn.executescript(SCHEMA)
     _conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Changes the CREATE TABLE statements above cannot make on their own.
+
+    Everything here runs before the schema and must be safe on a database
+    that has never seen it, safe to run twice, and safe on one that predates
+    the change - so each step asks the database what it looks like rather
+    than trusting a version number nothing has been keeping.
+    """
+    tables = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+    # play_imported.day -> played_at. The column held a date because that
+    # was all the importer kept; it now holds a timestamp wherever one has
+    # been recovered, and a column named `day` holding 17:09:46 is a lie
+    # the next reader has to work out for themselves.
+    if "play_imported" in tables:
+        columns = {row[1] for row in
+                   conn.execute("PRAGMA table_info(play_imported)")}
+        if "day" in columns and "played_at" not in columns:
+            conn.execute(
+                "ALTER TABLE play_imported RENAME COLUMN day TO played_at")
 
 
 def connection() -> sqlite3.Connection:

@@ -86,14 +86,27 @@ is that a day is bounded half-open - `taken_on < next_day(D)`, never
 `taken_on <= D`, which would exclude every reading actually taken on D.
 
 `play_imported` holds listening from before the snapshots began - alex's
-Last.fm history, imported once in September 2026 and matched to tracks by
-artist and title. Kept apart from `play_snapshot` because the two are
-different kinds of evidence: a snapshot is a cumulative total this app read
-itself, an import is somebody else's record matched by text.
+Last.fm history, imported in September 2026 and matched to tracks by artist
+and title. Kept apart from `play_snapshot` because the two are different
+kinds of evidence: a snapshot is a cumulative total this app read itself, an
+import is somebody else's record matched by text.
 `playcounts.plays_between` reads both, and the two cover disjoint periods by
 construction - the import stops the day snapshots start.
 
-The tool that produced it is deliberately not in the tree. It ran once.
+`played_at` holds a bare date for a play whose time was never recovered and
+a full timestamp for one that has been, exactly as `play_snapshot.taken_on`
+does, and for the same reason: the two forms sort and bucket alike, so one
+column holds both and no migration is needed to move between them.
+
+`app/lastfm.py --times` is what recovers those timestamps. It is **not** a
+re-import, and the distinction matters: the stored rows record decisions,
+including 3,402 ambiguous scrobbles assigned by hand to the copy
+`duplicates.py` would keep, which no code here reproduces. So it joins fresh
+scrobbles onto the answer already stored - for a row saying "this track,
+this day, N plays" it looks for N scrobbles that day resolving to that
+track, and takes their times. A row it cannot resolve is left exactly as it
+is, which makes the play total invariant by construction; `write_times`
+checks it before committing anyway and rolls back if it moved.
 
 It deliberately holds no user table, no library table and no copy of
 anything Navidrome knows. `library_id` is a foreign key in spirit only:

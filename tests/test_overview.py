@@ -43,12 +43,14 @@ def snapshot(day, track_uuid, count, user_id=ALEX, username="alex",
     store.connection().commit()
 
 
-def imported(day, track_uuid, plays, user_id=ALEX):
+def imported(when, track_uuid, plays, user_id=ALEX):
+    """`when` is a bare date for history whose time was never recovered, or
+    a full timestamp for a scrobble that has one."""
     store.connection().execute(
         "insert or replace into play_imported"
-        " (day, track_uuid, user_id, username, source, plays)"
+        " (played_at, track_uuid, user_id, username, source, plays)"
         " values (?, ?, ?, 'alex', 'lastfm', ?)",
-        (day, track_uuid, user_id, plays))
+        (when, track_uuid, user_id, plays))
     store.connection().commit()
 
 
