@@ -288,12 +288,24 @@ existed only because files moved.
 
 ---
 
-## Review: what has not been confirmed
+## Library: everything you own, filtered
 
-`review.py` and the Review panel replaced Staging. The distinction is the
-whole point of the redesign: the staging list was music that had **not
-arrived**, and every row on it was a failure. The review list is music that
-**has** arrived, is filed and playable, and simply has not been checked.
+`library.py` and the Library panel. This was Review, which showed only
+albums with something unconfirmed - and that made a matched album
+**unreachable**: applying a release gave it MusicBrainz ids, dropped it off
+the only list carrying the button, and left no way to correct a wrong
+choice. So the list is everything and the narrowing is a filter.
+
+The filter is named for what it is - **"no MusicBrainz match"**, not
+"untagged". A doujin release or a bootleg can be tagged perfectly by hand
+and will never have an ID, so those albums live in the filter for ever and
+that is correct. The count is a statement about MusicBrainz, not a queue
+that empties.
+
+The album is the unit, and a row opens to show its tracks. The listing
+**counts** tracks rather than building them - paging 2,800 albums to show
+fifty rows would otherwise materialise 6,800 track objects - and one
+album's tracks are read by their own query when a row is opened.
 
 **Untagged means no MusicBrainz recording id**, read off Navidrome's database
 every time. Nothing is stored, so a track leaves the list by gaining an id and
@@ -306,11 +318,12 @@ per-track correction is what splits an album. **Per user, strictly private**,
 scoped through `identity.libraries`; an admin does not see another person's
 list.
 
-Matching is manual, one album at a time. `POST /api/review/match` asks beets
+Matching is manual, one album at a time. `POST /api/library/match` asks beets
 for the candidate list that `quiet_fallback: skip` throws away, and is the
-seam where Picard could replace beets later. `POST /api/review/match/apply`
-retags the files as the release somebody picked, then calls
-`filer.after_retag()` to re-point the album UUID rather than reissue it.
+seam where Picard could replace beets later. `POST /api/library/match/apply`
+retags the files **in place** - beets runs with `move: no` and `copy: no`, so
+it tags and nothing else - and then `filer.after_retag()` re-points the album
+UUID and the filer moves each file. One function decides where a track lives.
 
 On day one the list is large and honest: 1,113 of Alex's 6,495 tracks have no
 MusicBrainz id. That was always the number - beets was keeping it outside the
@@ -393,7 +406,7 @@ play counts).
 health, duplicates, playlists, listening, settings. It still wants splitting
 (FIXES item 29).
 
-The Review panel is the old Staging panel's markup and CSS classes with a
+The Library panel is the old Staging panel's markup and CSS classes with a
 different question behind it — `staging-item`, `staging-name` and friends are
 still the layout class names, and renaming them is cosmetic work nobody has
 done. The ids were renamed (`#review`, `#review-op`, `#review-badge`)

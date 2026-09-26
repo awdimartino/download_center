@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
-from . import filer, inbox, registry, review, spotify, worker, workspace
+from . import filer, inbox, library, registry, spotify, worker, workspace
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -1120,37 +1120,53 @@ def _navidrome_error(exc: Exception) -> str:
     return f"Navidrome refused that: {detail}" if detail else f"Navidrome is unreachable: {exc}"
 
 
-# --- review ----------------------------------------------------------------
+# --- library ---------------------------------------------------------------
 
 
-@app.get("/api/review")
-async def review_list(
-    limit: int = review.PAGE,
+@app.get("/api/library")
+async def library_list(
+    limit: int = library.PAGE,
     offset: int = 0,
+    unmatched: bool = False,
+    q: str = "",
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """Music that is in the library and playable, but never confirmed.
+    """Every album this person owns, newest first.
 
-    Nothing like the staging list it replaces. That one was the music that
-    had not arrived; this one is the music that has, listed because no
-    MusicBrainz recording ID is written on it. Derived from the file every
-    time, so a track leaves the list by gaining an ID and no flag is ever
-    cleared.
+    `unmatched` narrows to albums MusicBrainz has not confirmed, which is
+    derived from the files every time rather than stored. It is a filter,
+    not the definition of the list - an album can be tagged perfectly by
+    hand and still never have a MusicBrainz ID, and hiding the rest is what
+    made a matched album unreachable once it had been matched.
     """
     return await asyncio.to_thread(
-        review.listing, session.identity, limit, offset)
+        library.listing, session.identity, limit, offset, unmatched, q)
 
 
-@app.post("/api/review/rescan")
-async def review_rescan(
+@app.get("/api/library/album")
+async def library_album(
+    library_id: int,
+    folder: str,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """One album's tracks, for a row that has been opened."""
+    try:
+        return await asyncio.to_thread(
+            library.tracks, session.identity, library_id, folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/library/rescan")
+async def library_rescan(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
     """Ask Navidrome to look again, now.
 
     The list is read from Navidrome's database, which refreshes on scan, so
     it can be a few minutes behind what is on disk. That is fine for a page
-    somebody opens deliberately and not fine when they have just fixed
-    something and want to see it go.
+    somebody opens deliberately and not fine when they have just changed
+    something and want to see it.
     """
     if not navidrome.service_configured():
         raise HTTPException(
@@ -1168,14 +1184,14 @@ async def review_rescan(
     return {"scanning": True}
 
 
-class ReviewMatch(BaseModel):
+class AlbumTarget(BaseModel):
     library_id: int
     folder: str
 
 
-@app.post("/api/review/match")
-async def review_match(
-    body: ReviewMatch,
+@app.post("/api/library/match")
+async def library_match(
+    body: AlbumTarget,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
     """What this album would match against, asked on demand.
@@ -1192,7 +1208,7 @@ async def review_match(
     """
     try:
         space = workspace.for_session(session.identity, body.library_id)
-        path = review.album_dir(session.identity, body.library_id, body.folder)
+        path = library.album_dir(session.identity, body.library_id, body.folder)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1204,15 +1220,15 @@ async def review_match(
     return {"started": started, "operation": operation.as_dict()}
 
 
-class ReviewChoice(BaseModel):
+class AlbumChoice(BaseModel):
     library_id: int
     folder: str
     release_id: str
 
 
-@app.post("/api/review/match/apply")
-async def review_match_apply(
-    body: ReviewChoice,
+@app.post("/api/library/match/apply")
+async def library_match_apply(
+    body: AlbumChoice,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
     """Tag an album as the release somebody picked from the candidate list.
@@ -1225,7 +1241,7 @@ async def review_match_apply(
     """
     try:
         space = workspace.for_session(session.identity, body.library_id)
-        path = review.album_dir(session.identity, body.library_id, body.folder)
+        path = library.album_dir(session.identity, body.library_id, body.folder)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

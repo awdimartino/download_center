@@ -46,7 +46,8 @@ CREATE TABLE media_file (
     id TEXT PRIMARY KEY,
     path TEXT, title TEXT, album TEXT, artist TEXT, album_artist TEXT,
     suffix TEXT, bit_rate INTEGER, duration REAL, size INTEGER,
-    mbz_recording_id TEXT, track_number INTEGER, rg_track_gain REAL,
+    mbz_recording_id TEXT, track_number INTEGER, disc_number INTEGER,
+    rg_track_gain REAL,
     tags TEXT, library_id INTEGER, folder_id TEXT, missing INTEGER DEFAULT 0,
     created_at TEXT
 );
@@ -97,7 +98,7 @@ def add_track(db: Path, track_id: str, **fields) -> None:
         "album": "Album", "artist": "Artist", "album_artist": "Artist",
         "suffix": "mp3", "bit_rate": 320, "duration": 200.0,
         "size": 8_000_000, "mbz_recording_id": "", "track_number": 1,
-        "rg_track_gain": None, "tags": None, "library_id": 1,
+        "disc_number": 1, "rg_track_gain": None, "tags": None, "library_id": 1,
         "folder_id": "f1", "missing": 0, "created_at": "2026-01-01T00:00:00Z",
     }
     row.update(fields)

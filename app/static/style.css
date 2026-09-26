@@ -702,7 +702,7 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   gap: var(--s-4);
   /* Both margins. It had only the lower one, so the box sat flush against
      the paragraph explaining it while every other panel stood clear of its
-     note - the same value as #review, #dupes and #health above. */
+     note - the same value as #library, #dupes and #health above. */
   margin: var(--s-4) 0;
   padding: var(--s-5);
   background: var(--panel);
@@ -877,15 +877,15 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
 /* --- staging -------------------------------------------------------------- */
 
-#review, #dupes, #health { margin-top: var(--s-4); }
+#library, #dupes, #health { margin-top: var(--s-4); }
 
-#review {
+#library {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   overflow: hidden;
 }
-#review:empty { display: none; }
+#library:empty { display: none; }
 
 .staging-item {
   display: grid;
@@ -1468,4 +1468,61 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   .candidate { grid-template-columns: 1fr auto; }
   .candidate-detail { grid-column: 1 / -1; }
   .candidate-distance { grid-column: 1; text-align: left; }
+}
+
+
+/* The Library filter row. Wraps to two lines on a phone rather than
+   squeezing the search box to nothing - a search field below 16px makes
+   iOS Safari zoom the page and not zoom back. */
+.library-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+}
+
+.library-controls .field-inline { flex: 1 1 14rem; }
+.library-controls input[type="search"] { width: 100%; }
+
+.check-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* An album row that has been opened. Indented under its own row so the
+   tracks read as belonging to it rather than as more albums. */
+.album-tracks {
+  grid-column: 1 / -1;
+  margin: var(--s-2) 0 var(--s-1) var(--s-4);
+  border-left: 1px solid var(--line);
+  padding-left: var(--s-3);
+}
+
+.album-track {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: var(--s-1) 0;
+  color: var(--muted);
+}
+
+.album-track .track-no { min-width: 2.5rem; text-align: right; }
+.album-track .track-title { color: var(--text); }
+.album-track.unmatched .track-title { color: var(--muted); }
+
+/* Labelled for a screen reader, invisible on screen. The search box has a
+   placeholder, which is not a label - it vanishes the moment you type. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

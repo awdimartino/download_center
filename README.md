@@ -54,10 +54,11 @@ your library already holds are marked, so you can tell what you are missing
 from a record before queuing it. It is a note, not a gate — nothing is
 refused because of it.
 
-**Review** — music that is in your library and playing, but that has never
-been matched against MusicBrainz. Nothing here is waiting for permission; the
-row only says nobody has confirmed it. *Find matches* asks beets what one
-album would match against, and you pick from the list.
+**Library** — every album you own, newest first, with a search box and a
+filter for the ones MusicBrainz has never matched. Open a row to see its
+tracks. *Find matches* asks beets what one album would match against, and
+you pick from the list. Nothing here is waiting for permission - it is all
+filed and playing already.
 
 **Health** — a list of numbers that should be zero: tracks with no UUID,
 duplicate UUIDs, stars pointing at files that no longer exist, unreadable
@@ -108,7 +109,7 @@ library roots.
 
 Beets no longer files anything on its own. A download goes into the library
 immediately, tagged from Spotify; beets is consulted by hand, one album at a
-time, from the Review tab. It ran unattended once and refused 82% of what it
+time, from the Library tab. It ran unattended once and refused 82% of what it
 was given — almost all of it for mechanical reasons that had nothing to do
 with the music.
 
@@ -130,7 +131,7 @@ before editing it:
 rather than by tags.
 
 Set `beets_enabled = false` to turn matching off entirely. Downloads still
-land in the library; the Review tab simply stops offering to identify them.
+land in the library; the Library tab simply stops offering to identify them.
 
 ## Track identity
 
@@ -189,12 +190,12 @@ $albumartist/$album/$disc-$track - $title.ext
 
 The disc prefix appears only on a multi-disc release. A track with no album
 goes to `$artist/Unknown Album/`; a file with no readable tags at all goes to
-`Unknown Artist/Unknown Album/` and shows up in the Review tab. Nothing is
+`Unknown Artist/Unknown Album/` and shows up in the Library tab. Nothing is
 held outside the library waiting to be identified.
 
 After that no automatic process moves a file. Navidrome identifies a track by
 its UUID and groups albums by tag, never by path, so a path that drifts from
-the tags is cosmetic. Only a retag you confirm in the Review tab moves
+the tags is cosmetic. Only a retag you confirm in the Library tab moves
 anything.
 
 ### Which album a track belongs to
@@ -324,7 +325,7 @@ panel writes.
 | `audio_bitrate` | `320` | `DC_AUDIO_BITRATE` | MP3 kbps |
 | `max_attempts` | `3` | `DC_MAX_ATTEMPTS` | tries per track before failing |
 | `rate_limit_sleep` | `2.0` | `DC_RATE_LIMIT_SLEEP` | seconds between downloads |
-| `beets_enabled` | `true` | `DC_BEETS_ENABLED` | offer MusicBrainz matching on the Review page |
+| `beets_enabled` | `true` | `DC_BEETS_ENABLED` | offer MusicBrainz matching on the Library page |
 | `inbox_quiet_seconds` | `120` | `DC_INBOX_QUIET_SECONDS` | how long a dropped file must sit unchanged before it is filed |
 | `navidrome_url` | | `DC_NAVIDROME_URL` | required to sign in |
 | `navidrome_user` | | `DC_NAVIDROME_USER` | admin account, for triggering scans |

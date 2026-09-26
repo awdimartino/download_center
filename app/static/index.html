@@ -48,9 +48,9 @@
     <button class="nav-item" data-view="browse" type="button">
       <span class="nav-label">Browse</span>
     </button>
-    <button class="nav-item" data-view="review" type="button">
-      <span class="nav-label">Review</span>
-      <span id="review-badge" class="badge" hidden></span>
+    <button class="nav-item" data-view="library" type="button">
+      <span class="nav-label">Library</span>
+      <span id="library-badge" class="badge" hidden></span>
     </button>
     <button class="nav-item" data-view="health" type="button">
       <span class="nav-label">Health</span>
@@ -111,30 +111,41 @@
     <p id="browse-empty" class="empty">Search for an artist, album, or track.</p>
   </section>
 
-  <!-- Everything listed here is already in your library and playing. The
-       row only says nobody has confirmed it against MusicBrainz yet, which
-       is a very different thing from the staging list this replaces - that
-       one was music that had not arrived. -->
-  <section id="view-review" hidden>
+  <!-- Everything you own, one row per album. The filter narrows to albums
+       MusicBrainz has not confirmed; it is a filter rather than the whole
+       list, because hiding matched albums is what made one unreachable once
+       it had been matched. -->
+  <section id="view-library" hidden>
     <div class="panel-note">
       <p>
-        In your library and playable now, but never matched against
-        MusicBrainz. Nothing here is waiting for permission.
+        Every album in your library. The filter narrows to the ones
+        MusicBrainz has never confirmed.
       </p>
-      <button id="review-rescan" class="ghost" type="button">Rescan</button>
+      <button id="library-rescan" class="ghost" type="button">Rescan</button>
     </div>
-    <p id="review-count" class="panel-sub" hidden></p>
+    <div class="library-controls">
+      <label class="field-inline">
+        <span class="sr-only">Search your library</span>
+        <input id="library-search" type="search" autocomplete="off"
+               placeholder="Search artist or album">
+      </label>
+      <label class="check-inline">
+        <input id="library-unmatched" type="checkbox">
+        <span>No MusicBrainz match only</span>
+      </label>
+    </div>
+    <p id="library-count" class="panel-sub" hidden></p>
     <!-- How the last match went. In the panel that started it, not in the
          banner at the top of the page: that one sits outside every section,
          so a message left there followed you onto every other tab. -->
-    <p id="review-op" class="warn" hidden></p>
+    <p id="library-op" class="warn" hidden></p>
     <!-- The releases beets found and would not choose between. Shown in the
          panel rather than a dialog: a modal over a list on a phone is how
          the last three layout bugs happened. -->
     <section id="candidates" class="candidates" hidden></section>
-    <div id="review"></div>
-    <p id="review-empty" class="empty">Nothing waiting.</p>
-    <button id="review-more" class="ghost" type="button" hidden>Show more</button>
+    <div id="library"></div>
+    <p id="library-empty" class="empty">Nothing here yet.</p>
+    <button id="library-more" class="ghost" type="button" hidden>Show more</button>
   </section>
 
   <section id="view-health" hidden>

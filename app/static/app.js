@@ -538,7 +538,7 @@ function showView(view) {
   if (view === "browse" && matchMedia("(hover: hover) and (pointer: fine)").matches) {
     queryInput.focus();
   }
-  if (view === "review") loadReview();
+  if (view === "library") loadLibrary();
   if (view === "health") loadHealth();
   if (view === "dupes") loadDupes();
   if (view === "playlists") loadPlaylists();
@@ -786,27 +786,41 @@ searchForm.addEventListener("submit", (event) => {
   runSearch();
 });
 
-/* --- review ---------------------------------------------------------------
-   Everything listed here is already filed and playing. The row says only
-   that no MusicBrainz recording ID is written on it, which is read off the
-   file every time - so a track leaves the list by gaining an ID, and there
-   is no flag anywhere that can fall out of step with what is true. */
+/* --- library --------------------------------------------------------------
+   Every album you own, one row per folder, newest first. The filter narrows
+   to albums MusicBrainz has never confirmed - which is derived from the
+   files every time, never stored, so nothing here can fall out of step with
+   what is true.
 
-const reviewEl = document.getElementById("review");
-const reviewEmpty = document.getElementById("review-empty");
-const reviewBadge = document.getElementById("review-badge");
-const reviewCount = document.getElementById("review-count");
-const reviewMore = document.getElementById("review-more");
+   It is a filter and not the list itself, because hiding matched albums is
+   what made one unreachable: applying the wrong release gave it MusicBrainz
+   ids, dropped it off the only list carrying the button, and left no way to
+   correct it. */
 
-// How much of the list is on screen. Day one is a few hundred albums and a
-// phone should not be handed all of it at once.
+const libraryEl = document.getElementById("library");
+const libraryEmpty = document.getElementById("library-empty");
+const libraryBadge = document.getElementById("library-badge");
+const libraryCount = document.getElementById("library-count");
+const libraryMore = document.getElementById("library-more");
+const librarySearch = document.getElementById("library-search");
+const libraryUnmatched = document.getElementById("library-unmatched");
+
+// How much of the list is on screen.
 //
 // Paged by offset rather than by asking for an ever-larger limit: the server
 // clamps a limit at MAX_PAGE, so growing it stopped having any effect past
 // 200 albums and "Show more" re-fetched the same rows for ever. Each page is
 // appended, so the ones already read stay put.
-const REVIEW_PAGE = 50;
-let reviewShownCount = 0;
+const LIBRARY_PAGE = 50;
+let libraryShownCount = 0;
+
+// Which album rows are open, by "library_id/folder", so re-rendering a page
+// does not close what somebody was reading.
+const libraryOpen = new Set();
+
+function albumKey(album) {
+  return `${album.library_id}/${album.folder}`;
+}
 
 /* --- choosing a match by hand ---------------------------------------------
    Beets refuses whenever it cannot tell two releases apart, which for a
@@ -825,12 +839,12 @@ function closeCandidates() {
   candidatesEl.hidden = true;
 }
 
-function entryName(entry) {
-  return [entry.artist, entry.album].filter(Boolean).join(" - ")
-    || entry.folder || "this album";
+function albumName(album) {
+  return [album.artist, album.album].filter(Boolean).join(" - ")
+    || album.folder || "this album";
 }
 
-function candidateRow(entry, candidate) {
+function candidateRow(album, candidate) {
   const row = el("div", "candidate");
   const title = candidate.title || "(untitled)";
   const detail = [
@@ -838,10 +852,10 @@ function candidateRow(entry, candidate) {
     candidate.year || null,
     candidate.tracks ? `${candidate.tracks} tracks` : null,
     candidate.album || null,
-  ].filter(Boolean).join(" \u00b7 ");
+  ].filter(Boolean).join(" · ");
 
   const use = el("button", "ghost primary", "Use this");
-  use.addEventListener("click", () => useCandidate(entry, candidate, use));
+  use.addEventListener("click", () => useCandidate(album, candidate, use));
 
   row.append(
     el("div", "candidate-title", title),
@@ -852,18 +866,17 @@ function candidateRow(entry, candidate) {
     use
   );
   if (candidate.penalties && candidate.penalties.length) {
-    const why = el("div", "candidate-why",
-                   `held against it: ${candidate.penalties.join(", ")}`);
-    row.append(why);
+    row.append(el("div", "candidate-why",
+                  `held against it: ${candidate.penalties.join(", ")}`));
   }
   return row;
 }
 
 function showCandidates(result) {
-  const entry = candidatesFor;
-  if (!entry) return;
+  const album = candidatesFor;
+  if (!album) return;
   const head = el("div", "candidates-head");
-  head.append(el("span", "candidates-title", `Matches for ${entryName(entry)}`));
+  head.append(el("span", "candidates-title", `Matches for ${albumName(album)}`));
   const close = el("button", "ghost", "Close");
   close.addEventListener("click", closeCandidates);
   head.append(close);
@@ -876,121 +889,209 @@ function showCandidates(result) {
       "MusicBrainz has nothing close enough to offer. The album stays as it "
       + "is, tagged the way it arrived."));
   } else {
-    nodes.push(...result.candidates.map((c) => candidateRow(entry, c)));
+    nodes.push(...result.candidates.map((c) => candidateRow(album, c)));
   }
   candidatesEl.replaceChildren(...nodes);
   candidatesEl.hidden = false;
 }
 
-async function askForCandidates(entry, button) {
-  candidatesFor = entry;
+async function askForCandidates(album, button) {
+  candidatesFor = album;
   button.disabled = true;
   candidatesEl.replaceChildren(
     el("p", "candidates-empty",
-       `Asking MusicBrainz about ${entryName(entry)}\u2026`));
+       `Asking MusicBrainz about ${albumName(album)}…`));
   candidatesEl.hidden = false;
   const payload = await startOperation(
-    "candidates", "/api/review/match",
-    { library_id: entry.library_id, folder: entry.folder });
+    "candidates", "/api/library/match",
+    { library_id: album.library_id, folder: album.folder });
   if (!payload || payload.detail) {
     closeCandidates();
-    loadReview();
+    loadLibrary();
   }
 }
 
-async function useCandidate(entry, candidate, button) {
+async function useCandidate(album, candidate, button) {
   if (!confirm(
-    `Tag "${entryName(entry)}" as "${candidate.title}"`
+    `Tag "${albumName(album)}" as "${candidate.title}"`
     + `${candidate.artist ? ` by ${candidate.artist}` : ""}?\n\n`
-    + "The files are retagged where they are. If the artist or album changes "
-    + "they move to match, and the album keeps its identity \u2014 stars and "
-    + "play counts survive.")) {
+    + "Every track in the folder is retagged. If the artist or album "
+    + "changes they move to match, and the album keeps its identity — "
+    + "stars and play counts survive.")) {
     return;
   }
   button.disabled = true;
   closeCandidates();
-  await startOperation("import", "/api/review/match/apply",
-                       { library_id: entry.library_id, folder: entry.folder,
+  await startOperation("import", "/api/library/match/apply",
+                       { library_id: album.library_id, folder: album.folder,
                          release_id: candidate.id });
 }
 
-function reviewRow(entry) {
-  const row = el("div", "staging-item");
-  const actions = el("div", "staging-actions");
-  const match = el("button", "ghost", "Find matches");
-  match.addEventListener("click", () => askForCandidates(entry, match));
-  actions.append(match);
+/* --- one album's tracks ---------------------------------------------------
+   Fetched when a row is opened rather than with the listing: the listing
+   counts tracks, and paying for every track in the library to show twelve
+   of them is the cost that split exists to avoid. */
 
-  // "3 of 12" and "12 of 12" call for different answers: the first is a
-  // download that joined an album already matched, the second is a record
-  // nobody has looked at.
-  const counted = entry.partial
-    ? `${entry.untagged} of ${entry.tracks} unconfirmed`
-    : `${entry.tracks} track${entry.tracks === 1 ? "" : "s"}, none confirmed`;
-
-  row.append(
-    el("span", "staging-kind", entry.library || "library"),
-    el("span", "staging-name", entryName(entry)),
-    el("span", "staging-meta", counted),
-    actions
-  );
-  row.title = entry.folder;
-  return row;
-}
-
-async function loadReview(append = false) {
-  const offset = append ? reviewShownCount : 0;
+async function loadTracks(album, into) {
+  into.replaceChildren(el("div", "album-track", "Reading…"));
   try {
     const response = await fetch(
-      `/api/review?limit=${REVIEW_PAGE}&offset=${offset}`);
-    // fetch does not throw on 4xx or 5xx, and the body of an error is a
-    // {detail} with no `available` key - which fell through to the empty
-    // state and told somebody with a 1,113-track backlog that everything
-    // had been matched. The most reassuring possible way to be wrong.
+      `/api/library/album?library_id=${album.library_id}`
+      + `&folder=${encodeURIComponent(album.folder)}`);
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.available === false) {
-      reviewEl.replaceChildren();
-      reviewShownCount = 0;
-      reviewCount.hidden = true;
-      reviewMore.hidden = true;
-      reviewEmpty.textContent =
-        `Could not read the review list: ${data.reason || data.detail
-         || `the server answered ${response.status}`}`;
-      reviewEmpty.hidden = false;
+    if (!response.ok) {
+      into.replaceChildren(el("div", "album-track",
+        data.detail || `Could not read that album (${response.status}).`));
       return;
     }
-    const entries = data.entries || [];
-    const rows = entries.map(reviewRow);
-    if (append) {
-      reviewEl.append(...rows);
-      reviewShownCount += entries.length;
-    } else {
-      reviewEl.replaceChildren(...rows);
-      reviewShownCount = entries.length;
-    }
-    // The two numbers that say how far through this is. Large and honest on
-    // day one: the backlog was always this size, beets was just hiding it
-    // outside the library.
-    reviewCount.textContent =
-      `${data.untagged} of ${data.tracks} tracks unconfirmed, across `
-      + `${data.total} album${data.total === 1 ? "" : "s"}.`;
-    reviewCount.hidden = !data.tracks;
-    reviewEmpty.textContent = reviewShownCount
-      ? "" : "Everything in your library has been matched.";
-    reviewEmpty.hidden = reviewShownCount > 0;
-    // A page that came back short means there is no more, however the total
-    // compares - the list can shrink under you while you read it.
-    reviewMore.hidden = reviewShownCount >= data.total || !entries.length;
-    setBadge(reviewBadge, data.total);
+    into.replaceChildren(...data.items.map((track) => {
+      const row = el("div", `album-track${track.tagged ? "" : " unmatched"}`);
+      row.append(
+        el("span", "track-no", track.track_no ? String(track.track_no) : "—"),
+        el("span", "track-title", track.title || "(untitled)"),
+        el("span", "track-meta", track.tagged ? "" : "no MusicBrainz match")
+      );
+      return row;
+    }));
   } catch (err) {
-    reviewEmpty.textContent = `Could not read the review list: ${err.message}`;
-    reviewEmpty.hidden = false;
+    into.replaceChildren(el("div", "album-track",
+                            `Could not reach the server: ${err.message}`));
   }
 }
 
-reviewMore.addEventListener("click", () => {
-  reviewMore.disabled = true;
-  loadReview(true).finally(() => { reviewMore.disabled = false; });
+function albumRow(album) {
+  const row = el("div", "staging-item");
+  const actions = el("div", "staging-actions");
+  const match = el("button", "ghost", "Find matches");
+  match.addEventListener("click", (event) => {
+    event.stopPropagation();
+    askForCandidates(album, match);
+  });
+  actions.append(match);
+
+  // Three states, not two. An album where a few tracks are unconfirmed is
+  // usually a download that joined a matched record; one where none are is
+  // a record nobody has looked at; and a matched one is simply done.
+  let counted;
+  if (album.matched) {
+    counted = `${album.tracks} track${album.tracks === 1 ? "" : "s"}`;
+  } else if (album.partial) {
+    counted = `${album.untagged} of ${album.tracks} unmatched`;
+  } else {
+    counted = `${album.tracks} track${album.tracks === 1 ? "" : "s"}, `
+            + "no MusicBrainz match";
+  }
+
+  row.append(
+    el("span", "staging-kind", album.library || "library"),
+    el("span", "staging-name", albumName(album)),
+    el("span", "staging-meta", counted),
+    actions
+  );
+  row.title = album.folder;
+
+  // Opening a row is how you see what is in it. Kept in `libraryOpen` so a
+  // re-render - a finished retag, another page - does not close it.
+  const tracks = el("div", "album-tracks");
+  tracks.hidden = true;
+  row.append(tracks);
+  const toggle = () => {
+    const key = albumKey(album);
+    if (tracks.hidden) {
+      libraryOpen.add(key);
+      tracks.hidden = false;
+      loadTracks(album, tracks);
+    } else {
+      libraryOpen.delete(key);
+      tracks.hidden = true;
+    }
+  };
+  row.addEventListener("click", (event) => {
+    if (event.target.closest("button")) return;
+    toggle();
+  });
+  if (libraryOpen.has(albumKey(album))) {
+    tracks.hidden = false;
+    loadTracks(album, tracks);
+  }
+  return row;
+}
+
+async function loadLibrary(append = false) {
+  const offset = append ? libraryShownCount : 0;
+  const query = new URLSearchParams({
+    limit: String(LIBRARY_PAGE),
+    offset: String(offset),
+    unmatched: libraryUnmatched.checked ? "true" : "false",
+    q: librarySearch.value.trim(),
+  });
+  try {
+    const response = await fetch(`/api/library?${query}`);
+    // fetch does not throw on 4xx or 5xx, and the body of an error is a
+    // {detail} with no `available` key - which fell through to the empty
+    // state and reported an empty library, the most alarming possible way
+    // to be wrong.
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.available === false) {
+      libraryEl.replaceChildren();
+      libraryShownCount = 0;
+      libraryCount.hidden = true;
+      libraryMore.hidden = true;
+      libraryEmpty.textContent =
+        `Could not read your library: ${data.reason || data.detail
+         || `the server answered ${response.status}`}`;
+      libraryEmpty.hidden = false;
+      return;
+    }
+
+    const albums = data.albums || [];
+    const rows = albums.map(albumRow);
+    if (append) {
+      libraryEl.append(...rows);
+      libraryShownCount += albums.length;
+    } else {
+      libraryEl.replaceChildren(...rows);
+      libraryShownCount = albums.length;
+    }
+
+    // About the whole library, not the filtered page - so the numbers do not
+    // move when the filter does.
+    libraryCount.textContent =
+      `${data.albums_total} album${data.albums_total === 1 ? "" : "s"}, `
+      + `${data.tracks} track${data.tracks === 1 ? "" : "s"}. `
+      + `${data.unmatched_albums} album`
+      + `${data.unmatched_albums === 1 ? "" : "s"} have no MusicBrainz match.`;
+    libraryCount.hidden = !data.tracks;
+
+    const filtered = libraryUnmatched.checked || librarySearch.value.trim();
+    libraryEmpty.textContent = libraryShownCount
+      ? ""
+      : filtered ? "Nothing matches that." : "Nothing in your library yet.";
+    libraryEmpty.hidden = libraryShownCount > 0;
+    // A page that came back short means there is no more, however the total
+    // compares - the list can change under you while you read it.
+    libraryMore.hidden = libraryShownCount >= data.total || !albums.length;
+    // The badge counts what wants attention, not what exists.
+    setBadge(libraryBadge, data.unmatched_albums);
+  } catch (err) {
+    libraryEmpty.textContent = `Could not read your library: ${err.message}`;
+    libraryEmpty.hidden = false;
+  }
+}
+
+libraryMore.addEventListener("click", () => {
+  libraryMore.disabled = true;
+  loadLibrary(true).finally(() => { libraryMore.disabled = false; });
+});
+
+libraryUnmatched.addEventListener("change", () => loadLibrary());
+
+// Debounced: one request per pause, not one per keystroke. Each costs a walk
+// of every row in Navidrome's index.
+let librarySearchTimer = null;
+librarySearch.addEventListener("input", () => {
+  clearTimeout(librarySearchTimer);
+  librarySearchTimer = setTimeout(() => loadLibrary(), 250);
 });
 
 // Import and audit are started, not awaited - beets gets 900s per path and
@@ -1000,12 +1101,12 @@ const OPERATION_LABELS = {
   // Applying a chosen match runs beets, which takes far longer than a
   // request should be held open. It has no button of its own - it is started
   // from a candidate row - so only the note is named here.
-  import: { note: "review-op" },
+  import: { note: "library-op" },
   audit: { button: "health-audit", idle: "Re-read files", busy: "Reading…",
            note: "health-op" },
   // No button of its own: it is started from a row, and its result is a
   // list rather than a message.
-  candidates: { note: "review-op" },
+  candidates: { note: "library-op" },
 };
 
 // An operation's outcome belongs to the panel that started it. The banner at
@@ -1044,7 +1145,7 @@ function showOperation(operation) {
   if (operation.name === "import") {
     // The per-row buttons run the same beets lock, so they cannot be live
     // while a retag is in flight. A finished one re-renders them.
-    reviewEl.querySelectorAll("button").forEach((b) => { b.disabled = running; });
+    libraryEl.querySelectorAll("button").forEach((b) => { b.disabled = running; });
   }
   if (running) return;
 
@@ -1056,8 +1157,8 @@ function showOperation(operation) {
   const result = operation.result || {};
   if (operation.name === "candidates") {
     showCandidates(result);
-    // The review rows re-render with their buttons live again.
-    loadReview();
+    // The album rows re-render with their buttons live again.
+    loadLibrary();
     return;
   }
   if (operation.name === "import") {
@@ -1070,7 +1171,7 @@ function showOperation(operation) {
       const [message, tone] = importSummary(result);
       setNote(spec.note, message, tone);
     }
-    loadReview();
+    loadLibrary();
   } else {
     setNote(spec.note, "");
     loadHealth();
@@ -1106,20 +1207,20 @@ async function startOperation(name, path, body) {
 // The list is read from Navidrome's database, which refreshes on scan, so it
 // can be a few minutes behind the disk. That is fine for a page somebody
 // opens deliberately and not fine when they have just fixed something.
-document.getElementById("review-rescan").addEventListener("click", async () => {
-  const button = document.getElementById("review-rescan");
+document.getElementById("library-rescan").addEventListener("click", async () => {
+  const button = document.getElementById("library-rescan");
   button.disabled = true;
   button.textContent = "Scanning…";
   try {
-    const payload = await fetch("/api/review/rescan", { method: "POST" })
+    const payload = await fetch("/api/library/rescan", { method: "POST" })
       .then((r) => r.json());
-    setNote("review-op", payload.detail || "", payload.detail ? "warn" : "");
+    setNote("library-op", payload.detail || "", payload.detail ? "warn" : "");
   } catch (err) {
-    setNote("review-op", `Could not ask for a scan: ${err.message}`, "warn");
+    setNote("library-op", `Could not ask for a scan: ${err.message}`, "warn");
   } finally {
     button.disabled = false;
     button.textContent = "Rescan";
-    loadReview();
+    loadLibrary();
   }
 });
 
@@ -1982,7 +2083,7 @@ function start() {
   started = true;
   connect();
   loadHealth();
-  loadReview();
+  loadLibrary();
   checkSpotify();
   healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
 }
