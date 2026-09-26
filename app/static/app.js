@@ -1179,7 +1179,7 @@ function albumRow(album) {
   // which made the editor unusable rather than merely annoying.
   const row = el("div", "album-row");
   const head = el("div", "album-head");
-  const actions = el("div", "staging-actions");
+  const actions = el("div", "album-actions");
   const match = el("button", "ghost", "Find matches");
   match.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -1204,9 +1204,9 @@ function albumRow(album) {
   head.append(
     caret,
     cover(album.art_id, 48),
-    el("span", "staging-name", albumName(album)),
-    el("span", "staging-meta", counted),
-    el("span", "staging-kind", album.library || "library"),
+    el("span", "album-name", albumName(album)),
+    el("span", "album-meta", counted),
+    el("span", "album-library", album.library || "library"),
     actions
   );
   head.title = album.folder;

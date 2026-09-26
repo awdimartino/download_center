@@ -374,3 +374,93 @@ def test_survey_does_not_show_another_librarys_quarantine(tmp_path, state_db,
 
     # alex can only see library 1, whose root is tmp_path/music.
     assert duplicates.quarantine_survey(identity)["total"] == 0
+
+
+# --- the loop that made resolving look broken -----------------------------
+# The quarantine sits inside the library tree and is kept out of the scan by
+# an .ndignore marker. That marker has to be EMPTY: Navidrome reads a
+# non-empty one as a list of glob patterns and skips only what matches. Ours
+# carried three lines explaining itself, which matched nothing, so every
+# file set aside was scanned straight back into the library, found as a
+# duplicate of the copy it had just lost to, and moved one level deeper the
+# next time somebody resolved it. From the page it looked like the button
+# did nothing.
+
+def test_the_ignore_marker_is_empty(tmp_path):
+    """Not a style point. A non-empty marker skips only what its patterns
+    match, and prose matches nothing."""
+    path = duplicates._quarantine_root(tmp_path / "music")
+
+    marker = path / duplicates.NDIGNORE
+    assert marker.exists()
+    assert marker.read_bytes() == b"", (
+        "a non-empty .ndignore is a pattern list, not a skip")
+
+
+def test_an_old_explanatory_marker_is_repaired(tmp_path):
+    """The directories already on disk carry the text that did not work.
+    Creating the marker only when missing would leave them broken for ever."""
+    root = tmp_path / "music"
+    path = root / duplicates.QUARANTINE_NAME
+    path.mkdir(parents=True)
+    (path / duplicates.NDIGNORE).write_text(
+        "Copies set aside by Download Center as duplicates.\n", "utf-8")
+
+    duplicates._quarantine_root(root)
+
+    assert (path / duplicates.NDIGNORE).read_bytes() == b""
+
+
+def test_the_explanation_survives_somewhere_readable(tmp_path):
+    path = duplicates._quarantine_root(tmp_path / "music")
+    readme = (path / duplicates.QUARANTINE_README).read_text(encoding="utf-8")
+    assert "ndignore" in readme and "empty" in readme
+
+
+def test_a_copy_already_set_aside_is_not_buried_deeper(tmp_path, state_db,
+                                                        identity):
+    """The move that made duplicates-removed/duplicates-removed. Navidrome
+    lists the quarantined file, it pairs with the copy it lost to, and
+    resolving moves it one directory further down."""
+    root = tmp_path / "music"
+    keeper = _copy("keep", "Artist/Album/01 Song.mp3")
+    buried = _copy("buried",
+                   "duplicates-removed/Artist/Album/01 Song.mp3")
+    for copy in (keeper, buried):
+        (root / copy.path).parent.mkdir(parents=True, exist_ok=True)
+        (root / copy.path).write_bytes(b"x")
+
+    outcome = duplicates.resolve(_group([keeper, buried], keeper), "keep",
+                                 identity)
+
+    assert outcome["quarantined"] == []
+    assert "already set aside" in outcome["failed"][0]
+    assert (root / buried.path).exists(), "left where it was"
+    assert not (root / "duplicates-removed" / "duplicates-removed").exists()
+
+
+def test_a_resolved_copy_leaves_the_page_before_navidrome_notices(
+        tmp_path, state_db, identity, navidrome_db, monkeypatch):
+    """Navidrome does not know a file moved until it rescans. Until then it
+    still lists both copies, and the group came straight back."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "navidrome_db", navidrome_db)
+    for track_id, path in (("keep", "Artist/Album/01 Song.mp3"),
+                           ("lose", "Artist/Other/01 Song.mp3")):
+        add_track(navidrome_db, track_id, path=path, title="Song",
+                  album="Album", artist="Artist", album_artist="Artist",
+                  mbz_recording_id="mbid-1", library_id=1)
+
+    connection = navidrome.open_db()
+    with connection:
+        assert len(duplicates.find(connection, identity)) == 1
+
+        store.record_quarantine(
+            group_key="k", copy=_copy("lose", "Artist/Other/01 Song.mp3"),
+            keeper=_copy("keep"), source="/music/Artist/Other/01 Song.mp3",
+            target="/music/duplicates-removed/Artist/Other/01 Song.mp3",
+            decided_by="alex")
+
+        assert duplicates.find(connection, identity) == [], (
+            "the resolved copy is still in Navidrome's index, but it is not "
+            "in the library any more and must not be offered again")

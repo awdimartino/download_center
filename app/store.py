@@ -246,6 +246,21 @@ def record_quarantine(group_key: str, copy: Any, keeper: Any,
         _conn.commit()
 
 
+def quarantined_track_ids() -> set[str]:
+    """media_file ids whose file has been set aside and not put back.
+
+    Read by the duplicates page so a resolved group disappears at once.
+    Navidrome does not know a file has moved until it rescans, so without
+    this the group it was just asked to resolve comes straight back - which
+    reads, from the outside, as the button not working.
+    """
+    assert _conn is not None, "state.db not connected"
+    with _lock:
+        return {row[0] for row in _conn.execute(
+            "SELECT track_id FROM duplicate_quarantined"
+            "  WHERE restored_at IS NULL")}
+
+
 def quarantined(limit: int = 200,
                 include_restored: bool = False) -> list[dict[str, Any]]:
     """Everything set aside, newest first. The list you undo from."""

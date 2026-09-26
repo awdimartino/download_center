@@ -989,10 +989,17 @@ async def resolve_duplicate(
     if group is None:
         raise HTTPException(status_code=404, detail="No such duplicate group.")
     try:
-        return await asyncio.to_thread(
+        outcome = await asyncio.to_thread(
             duplicates.resolve, group, request.keeper, session.identity)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # The file has moved; Navidrome still has it at the old path until it
+    # looks again. The page does not wait for that - it filters resolved
+    # copies out on its own - but without this the stale rows sit in
+    # Navidrome's index until whenever it next scans on its own.
+    if outcome.get("quarantined"):
+        await asyncio.to_thread(navidrome.notify)
+    return outcome
 
 
 @app.post("/api/duplicates/dismiss")
@@ -1030,9 +1037,14 @@ async def auto_resolve_duplicates(
                                            apply=apply)
 
     try:
-        return await asyncio.to_thread(run)
+        outcome = await asyncio.to_thread(run)
     except navidrome.Unavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    # Once for the whole run rather than once per group: a scan per
+    # resolved duplicate would be a hundred scans of the same library.
+    if outcome.get("resolved"):
+        await asyncio.to_thread(navidrome.notify)
+    return outcome
 
 
 # --- smart playlists -----------------------------------------------------

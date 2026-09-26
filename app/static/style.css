@@ -886,7 +886,10 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 }
 .section-note { font-size: var(--t-sm); font-weight: var(--w-normal); text-transform: none; letter-spacing: 0; color: var(--faint); }
 
-/* --- staging -------------------------------------------------------------- */
+/* --- the shared panel frame ------------------------------------------------
+   Library, Duplicates and Health are all a bordered list of rows in a
+   rounded box. Only the row contents differ, and those live with the
+   sections that own them. */
 
 #library, #dupes, #health { margin-top: var(--s-4); }
 
@@ -897,33 +900,6 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   overflow: hidden;
 }
 #library:empty { display: none; }
-
-.staging-item {
-  display: grid;
-  grid-template-columns: 4.5rem 1fr auto auto;
-  gap: var(--s-3);
-  align-items: baseline;
-  padding: var(--s-3) var(--s-4);
-  border-bottom: 1px solid var(--line-soft);
-}
-.staging-item:last-child { border-bottom: 0; }
-.staging-item.unsettled { background: var(--tint-warn); }
-
-.staging-kind { font-size: var(--t-xs); font-weight: var(--w-medium); letter-spacing: .07em; color: var(--faint); text-transform: uppercase; }
-.staging-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-md); }
-.staging-meta { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
-.staging-note { font-size: var(--t-xs); font-weight: var(--w-medium); color: var(--warn); }
-
-/* The fourth column the grid above already allows for: why it is still here,
-   and the one thing to do about it. */
-.staging-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--s-3);
-  min-width: 0;
-}
-.staging-actions .staging-note { text-align: right; }
 
 /* --- health --------------------------------------------------------------- */
 
@@ -1310,21 +1286,8 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   .pl-actions button { flex: 1 1 8rem; min-height: 42px; }
   .playlist-rule { overflow-wrap: anywhere; }
 
-  .staging-item { grid-template-columns: 1fr auto; gap: var(--s-1) var(--s-3); padding: var(--s-3); }
-  .staging-name { grid-column: 1 / -1; }
-  /* Two columns are not enough for a reason and a button as well, so they
-     take a row of their own rather than squeezing the name off screen. */
-  .staging-actions {
-    grid-column: 1 / -1;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: var(--s-2);
-    margin-top: var(--s-1);
-  }
-  .staging-actions button { min-height: 38px; }
-
   /* Long words - paths, album names, URLs - must not push the page wide. */
-  .check-detail, .dupe-path, .dupe-album, .staging-name,
+  .check-detail, .dupe-path, .dupe-album, .album-name,
   .job-title, .track-name { overflow-wrap: anywhere; }
 }
 
@@ -1504,15 +1467,6 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   white-space: nowrap;
 }
 
-/* An album row that has been opened. Indented under its own row so the
-   tracks read as belonging to it rather than as more albums. */
-.album-tracks {
-  grid-column: 1 / -1;
-  margin: var(--s-2) 0 var(--s-1) var(--s-4);
-  border-left: 1px solid var(--line);
-  padding-left: var(--s-3);
-}
-
 .album-track {
   display: flex;
   align-items: baseline;
@@ -1554,7 +1508,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 .album-edit { border-bottom: 1px solid var(--line-soft); margin-bottom: var(--s-2); }
 
 .edit-field { display: flex; flex-direction: column; gap: var(--s-0); }
-.edit-field span { color: var(--muted); }
+.edit-label { color: var(--muted); }
 .edit-field input { min-width: 9rem; }
 .edit-field input[type="number"] { max-width: 5rem; }
 
@@ -1591,6 +1545,19 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 .album-head:hover { background: var(--tint-accent); }
 .album-caret { color: var(--muted); width: 1rem; }
 
+.album-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-md); }
+.album-meta { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.album-library { font-size: var(--t-xs); font-weight: var(--w-medium); letter-spacing: .07em; color: var(--faint); text-transform: uppercase; }
+
+/* The last column of the head: the one thing to do to a whole album. */
+.album-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
 .album-body { padding: 0 var(--s-2) var(--s-3) var(--s-5); }
 
 .album-track {
@@ -1610,7 +1577,19 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 @media (max-width: 720px) {
   main:has(#view-library:not([hidden])) { max-width: 100%; }
   .album-head { grid-template-columns: auto auto 1fr auto; gap: var(--s-2); }
-  .album-head .staging-kind { display: none; }
+  .album-head .album-library { display: none; }
+  .album-name { grid-column: 1 / -1; }
+  /* Four columns are not enough for a name and a button as well, so the
+     actions take a row of their own rather than squeezing the name off
+     screen. */
+  .album-actions {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    margin-top: var(--s-1);
+  }
+  .album-actions button { min-height: 38px; }
   .album-body { padding-left: var(--s-2); }
   .album-track { grid-template-columns: 2rem auto 1fr auto; }
   .album-track .track-meta { display: none; }

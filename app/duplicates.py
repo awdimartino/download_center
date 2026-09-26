@@ -230,6 +230,13 @@ def find(connection: sqlite3.Connection,
          identity: navidrome.Identity) -> list[Group]:
     """Every group of copies that look like the same recording."""
     copies = _load(connection, identity)
+    # Copies whose file this app has already moved. Navidrome still lists
+    # them - it does not know until it rescans - and leaving them in would
+    # put a group straight back on the page after it was resolved, looking
+    # for all the world like the resolve had failed.
+    set_aside = store.quarantined_track_ids()
+    if set_aside:
+        copies = [c for c in copies if c.id not in set_aside]
     dismissed = store.dismissed_duplicates()
     groups: list[Group] = []
     # The same pair is often found twice - once by MusicBrainz id and once by
@@ -304,8 +311,19 @@ def find(connection: sqlite3.Connection,
 # --- acting on a group ----------------------------------------------------
 
 # A directory set aside is still inside the library tree, so the scanner has
-# to be told to skip it. Navidrome ignores any directory holding this file.
+# to be told to skip it.
+#
+# The marker MUST be empty. Since 0.54 Navidrome reads a non-empty .ndignore
+# as a gitignore-style list of patterns and skips only what matches; only an
+# empty one means "skip this whole directory". This file used to carry three
+# lines explaining itself, which Navidrome read as three patterns matching
+# nothing - so the quarantine was scanned, every file set aside came back
+# into the library, was found as a duplicate of the copy it had just lost
+# to, and resolving it again moved it one level deeper. That is why the
+# library grew paths like duplicates-removed/duplicates-removed. The
+# explanation now lives in README.txt beside it, where nothing parses it.
 NDIGNORE = ".ndignore"
+QUARANTINE_README = "README.txt"
 
 QUARANTINE_NAME = "duplicates-removed"
 
@@ -328,14 +346,50 @@ def _quarantine_root(root: Path) -> Path:
     """
     path = root / QUARANTINE_NAME
     path.mkdir(parents=True, exist_ok=True)
+
+    # Rewritten whenever it is not empty, not only when it is missing: the
+    # directories already on disk carry the old explanatory text, and a
+    # marker that does not work is worse than no marker - it looks handled.
     marker = path / NDIGNORE
-    if not marker.exists():
-        marker.write_text(
+    if not marker.exists() or marker.stat().st_size:
+        marker.write_text("", encoding="utf-8")
+
+    readme = path / QUARANTINE_README
+    if not readme.exists():
+        readme.write_text(
             "Copies set aside by Download Center as duplicates.\n"
-            "Navidrome skips any directory holding a .ndignore file, so these\n"
-            "stay out of the library without being deleted.\n",
+            "\n"
+            "Nothing here has been deleted. Each file kept the path it had\n"
+            "inside the library, and the quarantine ledger in state.db\n"
+            "records where every one came from, so it can be put back.\n"
+            "\n"
+            "The empty .ndignore beside this file is what keeps Navidrome\n"
+            "out, and it has to stay empty: a non-empty one is read as a\n"
+            "list of glob patterns and skips only what matches, so writing\n"
+            "this explanation into it would let the whole directory be\n"
+            "scanned back into the library.\n",
             encoding="utf-8")
     return path
+
+
+def already_quarantined(copy: Copy, root: Path) -> bool:
+    """Whether this copy is a file that has already been set aside.
+
+    It should be impossible - the quarantine is outside the library as far
+    as the scanner is concerned - but it was not, for as long as the
+    .ndignore marker was written with explanatory text in it. Moving such a
+    file "aside" again just buries it one directory deeper and leaves the
+    duplicate on the page, which is exactly what it looked like from the
+    outside: resolving the same group over and over with nothing changing.
+
+    Kept as a guard even though the marker is fixed, because the failure is
+    silent, self-repeating, and moves files every time it happens.
+    """
+    try:
+        inside = _relative(copy, root)
+    except Exception:
+        return False
+    return QUARANTINE_NAME in inside.parts
 
 
 def _relative(copy: Copy, root: Path) -> Path:
@@ -415,6 +469,13 @@ def resolve(group: Group, keeper_id: str,
     moved, failed = [], []
     for loser in losers:
         root = _library_root(loser, identity)
+        if already_quarantined(loser, root):
+            # Not an error the person can act on, and not something to do
+            # again: this copy is already set aside and Navidrome has simply
+            # not noticed yet.
+            failed.append(f"{loser.path}: already set aside; "
+                          "Navidrome has not rescanned yet")
+            continue
         source = root / loser.path
         if not source.exists():
             failed.append(f"{loser.path}: already gone")
@@ -486,7 +547,10 @@ def quarantine_survey(identity: navidrome.Identity,
             if len(entries) >= limit:
                 truncated = True
                 break
-            if not path.is_file() or path.name == NDIGNORE:
+            # The two files this app puts there itself are not quarantined
+            # music and must not be counted as any.
+            if not path.is_file() or path.name in (NDIGNORE,
+                                                   QUARANTINE_README):
                 continue
             seen.add(str(path))
             row = recorded.get(str(path))
