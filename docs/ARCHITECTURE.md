@@ -213,6 +213,26 @@ record.
 so Alex's copy and Kelly's copy of one album are different files with
 different UUIDs, and an album key is only meaningful inside one library.
 
+**Two passes fill it in for music that predates it.** `backfill.py` records
+the albums whose files already agree about their album UUID, and nothing
+else: no tag is written and an album whose files disagree is left alone,
+because a row written from a guess makes the guess permanent.
+`unfuse.py` is the other half - the albums it refuses. Those come in two
+shapes, both from before this table existed: several albums carrying one
+UUID (Navidrome's `PID.Album` resolves `navidrome_album_uuid` first, so five
+Kosu. albums collapsed into one record called *thirds. (VIP)*), and one
+album whose files carry several. It writes one tag per file, in place,
+changing no path and no track UUID.
+
+That last point is what makes it safe: `PID.Track` resolves `navidrome_uuid`
+first, so a track's plays, stars and ratings do not follow its album's
+identity. `unfuse.check` refuses to run at all if any affected file lacks a
+track UUID, because that is the assumption the operation rests on. The plan
+is saved as JSON with the UUID each file carried, so it can be applied
+backwards. `registry.reassign` exists for this and nothing else:
+`uuid_for_key` cannot overwrite a row by design, and here the recorded value
+is the thing that is wrong.
+
 `repoint(library_id, old_key, new_key)` follows a retag. Ordinarily the album
 keeps its UUID and only the key moves, so its Navidrome identity survives and
 album-level stars and play counts survive with it. If the new key is already

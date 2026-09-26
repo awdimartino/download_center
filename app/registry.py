@@ -273,6 +273,33 @@ def repoint(library_id: int, old_key: str, new_key: str) -> str:
         return settled
 
 
+def reassign(library_id: int, key: str, album_uuid: str) -> str:
+    """Point a key at a different album UUID, deliberately.
+
+    `uuid_for_key` cannot do this and must not: its whole contract is that
+    an existing row wins, so that two tracks of one album filed at the same
+    moment cannot end up with two identities. That contract is right for
+    filing and wrong for repair - when the recorded UUID is the thing that
+    is broken, something has to be able to overwrite it.
+
+    So this is the one door, named for what it does, used by the unfuse
+    pass and nothing else. Upserts, because a key that was never recorded
+    (the survey refuses to record an ambiguous one) still needs the answer
+    once the ambiguity is resolved.
+    """
+    store_ = _store()
+    with _lock:
+        store_.execute(
+            "INSERT INTO album_registry"
+            " (library_id, album_key, album_uuid, created_at)"
+            " VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(library_id, album_key) DO UPDATE SET"
+            "   album_uuid = excluded.album_uuid",
+            (library_id, key, album_uuid, time.time()))
+        store_.commit()
+    return album_uuid
+
+
 def forget(library_id: int, key: str) -> bool:
     """Drop one mapping. The next track of that album mints a fresh UUID."""
     store_ = _store()
