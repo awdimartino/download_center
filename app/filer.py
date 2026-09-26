@@ -200,12 +200,8 @@ def destination(space: workspace.Workspace, meta: Meta, suffix: str) -> Path:
 # The tags a person may change, and what they are called through mutagen's
 # easy interface - which is the same spelling for MP3, FLAC, MP4 and Vorbis,
 # and the only reason this does not need a branch per container format.
-_EASY = {"albumartist": "albumartist", "album": "album", "title": "title",
-         "track_no": "tracknumber", "disc_no": "discnumber"}
-
-# Changing either of these changes which album the file is on, which moves
-# it and touches the registry. Everything else only renames it.
-ALBUM_FIELDS = ("albumartist", "album")
+_EASY = {"albumartist": "albumartist", "album": "album", "artist": "artist",
+         "title": "title", "track_no": "tracknumber", "disc_no": "discnumber"}
 
 
 class NotEditable(Exception):
@@ -252,6 +248,12 @@ def write_tags(path: Path, **fields: Any) -> None:
         audio.save()
     except Exception as exc:
         raise NotEditable(f"{type(exc).__name__}: {exc}") from exc
+
+
+def _album_identity(path: Path) -> tuple[str, str, bool]:
+    """What this file currently says about which album it is on."""
+    meta = read_meta(path)
+    return (meta.albumartist, meta.album, meta.names_album)
 
 
 def _prune_upwards(folder: Path, stop_at: Path) -> None:
@@ -313,8 +315,14 @@ def retag_track(space: workspace.Workspace, path: Path,
     belongs to the album the track is leaving; registering it under the new
     name would fuse the two rather than move the one.
     """
-    moving = any(fields.get(name) is not None for name in ALBUM_FIELDS)
+    # Asked of the tags, before and after, rather than of which fields were
+    # passed. `read_meta` falls back to the track artist when there is no
+    # album artist, so setting the artist of a file in Unknown Album moves
+    # it - and a "did they pass album fields" test would miss that.
+    before = _album_identity(path)
     write_tags(path, **fields)
+    moving = _album_identity(path) != before
+
     was = path.parent
     filed = file_track(space, path, adopt_album=not moving)
     if filed.path.parent != was:

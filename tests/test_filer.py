@@ -682,3 +682,60 @@ def test_a_track_uuid_survives_every_edit(space):
     moved = filer.retag_track(space, renamed.path, albumartist="E", album="F")
 
     assert moved.track_uuid == before
+
+
+def test_setting_the_artist_of_an_untagged_track_moves_it(space):
+    """`read_meta` falls back to the track artist when there is no album
+    artist, so setting the artist decides the folder. A "did they pass an
+    album field" test would have missed this and kept the stale album UUID.
+
+    Genuinely untagged, not tagged with the words "Unknown Artist" - that
+    is why such a file lands in that folder, and the two behave
+    differently.
+    """
+    loose = filer.file_track(space, track(tmp_of(space), name="x.mp3",
+                                          title="Avril 14th"))
+    stale = loose.album_uuid
+    assert loose.path.parent.parent.name == "Unknown Artist"
+
+    moved = filer.retag_track(space, loose.path, artist="Aphex Twin")
+
+    assert moved.path.parent.parent.name == "Aphex Twin"
+    # Still its own record: it gained an artist, not an album, so it is the
+    # same loose track in a better-named folder and its identity holds.
+    assert moved.album_uuid == stale
+
+
+def test_setting_the_artist_of_a_real_album_does_not_move_it(space):
+    """A guest credited on one track is not a different album."""
+    filed = album_on_disk(space, "The Beatles", "Abbey Road", ["One", "Two"])
+    was = filed[0].path.parent
+
+    moved = filer.retag_track(space, filed[0].path,
+                              artist="The Beatles, Billy Preston")
+
+    assert moved.path.parent == was
+    assert moved.album_uuid == filed[0].album_uuid
+
+
+def test_a_track_can_become_its_own_single(space):
+    """What "As its own single" does: an album of one, which is how Spotify
+    presents a single and how the filer files it."""
+    pile = album_on_disk(space, "Unknown Artist", "Unknown Album",
+                         ["Avril 14th", "Other"])
+
+    moved = filer.retag_track(space, pile[0].path,
+                              albumartist="Aphex Twin", album="Avril 14th")
+
+    assert moved.path == (space.library_path / "Aphex Twin" / "Avril 14th"
+                          / "01 - Avril 14th.mp3")
+    assert pile[1].path.is_file()
+
+
+def test_the_track_artist_is_writable(space):
+    from mutagen.easyid3 import EasyID3
+
+    filed = album_on_disk(space, "A", "B", ["C"])
+    filer.write_tags(filed[0].path, artist="Someone Else")
+
+    assert EasyID3(filed[0].path)["artist"] == ["Someone Else"]

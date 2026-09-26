@@ -260,6 +260,11 @@ h1 { font-size: var(--t-xl); margin: 0; font-weight: var(--w-bold); letter-spaci
 
 main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
 
+/* Wider than the reading measure the other panels want. This one is a list
+   of a few thousand albums with an editor inside it, and at 940px most of a
+   desktop screen was gutter. */
+main:has(#view-library:not([hidden])) { max-width: 1400px; }
+
 /* --- navigation ----------------------------------------------------------
    One pattern at every width. The bottom bar this replaces needed a 6rem
    overhang to cover the iOS home indicator, short labels behind a
@@ -1559,3 +1564,65 @@ main { max-width: 940px; margin: 0 auto; padding: var(--s-5); }
   width: 100%;
   padding-top: var(--s-2);
 }
+
+
+/* An album row is a head you can click and a body that ignores clicks. The
+   toggle used to be on the whole row with the body inside it, so a click on
+   an input bubbled up and collapsed the album out from under whoever was
+   typing in it. */
+.album-row { border-bottom: 1px solid var(--line-soft); }
+.album-row:last-child { border-bottom: 0; }
+
+.album-head {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-2);
+  cursor: pointer;
+}
+
+.album-head:hover { background: var(--tint-accent); }
+.album-caret { color: var(--muted); width: 1rem; }
+
+.album-body { padding: 0 var(--s-2) var(--s-3) var(--s-5); }
+
+.album-track {
+  display: grid;
+  grid-template-columns: 2.5rem auto 1fr auto auto auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-1) 0;
+}
+
+.album-track .track-no { color: var(--muted); text-align: right; }
+.album-track .track-meta.dim { color: var(--muted); }
+
+.track-editor { padding: 0 0 var(--s-2) 2.5rem; }
+.edit-field input.wide { min-width: 16rem; }
+
+@media (max-width: 720px) {
+  main:has(#view-library:not([hidden])) { max-width: 100%; }
+  .album-head { grid-template-columns: auto auto 1fr auto; gap: var(--s-2); }
+  .album-head .staging-kind { display: none; }
+  .album-body { padding-left: var(--s-2); }
+  .album-track { grid-template-columns: 2rem auto 1fr auto; }
+  .album-track .track-meta { display: none; }
+  .track-editor { padding-left: 0; }
+  .edit-field input.wide { min-width: 0; width: 100%; }
+  .edit-field { flex: 1 1 100%; }
+}
+
+
+/* Cover art. The box holds its size whether or not a picture arrives, so a
+   missing cover leaves a gap rather than reflowing the row around it. */
+.art {
+  flex: none;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--line-soft);
+}
+
+.album-head .art { width: 48px; height: 48px; }
+.album-track .art { width: 32px; height: 32px; }
+.art img { display: block; width: 100%; height: 100%; object-fit: cover; }

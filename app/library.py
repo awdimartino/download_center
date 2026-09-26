@@ -78,6 +78,9 @@ class Album:
     added: str = ""
     tracks: int = 0
     untagged: int = 0
+    # Any one track in the album, so the row can ask Navidrome for its
+    # cover. Navidrome keys art on a track or album id, not on a folder.
+    art_id: str = ""
 
     @property
     def sort_name(self) -> str:
@@ -89,6 +92,7 @@ class Album:
             "artist": self.artist, "album": self.album,
             "folder": self.folder, "added": self.added,
             "tracks": self.tracks, "untagged": self.untagged,
+            "art_id": self.art_id,
             # Three states, not two: an album nobody has confirmed reads very
             # differently from one where a download joined a matched record.
             "matched": self.untagged == 0,
@@ -126,12 +130,13 @@ def _load(connection: sqlite3.Connection,
         select mf.path, coalesce(mf.album, ''),
                coalesce(mf.album_artist, ''), coalesce(mf.artist, ''),
                coalesce(mf.mbz_recording_id, ''), mf.library_id,
-               coalesce({added}, '')
+               coalesce({added}, ''), mf.id
           from media_file mf
          where {navidrome.live_clause(connection, allowed)}""").fetchall()
 
     albums: dict[tuple[int, str], Album] = {}
-    for path, album, album_artist, artist, mbid, library_id, when in rows:
+    for (path, album, album_artist, artist, mbid, library_id, when,
+         track_id) in rows:
         key = (library_id, _folder_of(path))
         found = albums.get(key)
         if found is None:
@@ -140,6 +145,8 @@ def _load(connection: sqlite3.Connection,
                 artist=album_artist or artist, album=album,
                 folder=_folder_of(path))
         found.tracks += 1
+        if not found.art_id:
+            found.art_id = track_id
         if not mbid:
             found.untagged += 1
         # The newest file in the folder. An album is "added" when the last of
@@ -273,6 +280,27 @@ def track_path(identity: navidrome.Identity, library_id: int,
     if not here.is_file():
         raise ValueError(f"{path} is not on disk.")
     return here
+
+
+def owns_track(identity: navidrome.Identity, track_id: str) -> bool:
+    """Whether a media_file id belongs to a library this account may see.
+
+    The id arrives from the browser on its way to Navidrome's cover-art
+    endpoint, which is called with *service* credentials - so without this
+    an id typed by hand would fetch art from somebody else's collection.
+    """
+    allowed = [lib["id"] for lib in identity.libraries]
+    if not allowed or not track_id:
+        return False
+    try:
+        connection = navidrome.open_db()
+        with connection:
+            row = connection.execute(
+                "select library_id from media_file where id = ?",
+                (track_id,)).fetchone()
+    except (navidrome.Unavailable, sqlite3.Error):
+        return False
+    return bool(row) and row[0] in allowed
 
 
 def album_dir(identity: navidrome.Identity, library_id: int,

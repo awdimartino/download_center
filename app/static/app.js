@@ -822,6 +822,27 @@ function albumKey(album) {
   return `${album.library_id}/${album.folder}`;
 }
 
+// Cover art, proxied from Navidrome at the size asked for - it resizes, and
+// the embedded images behind these are often a megabyte each.
+//
+// Lazy, so scrolling past two thousand albums does not fetch two thousand
+// covers, and it removes itself if there is none rather than leaving a
+// broken-image glyph in the row.
+function cover(trackId, size) {
+  const box = el("div", "art");
+  if (!trackId) return box;
+  const img = el("img");
+  img.loading = "lazy";
+  img.decoding = "async";
+  img.alt = "";
+  img.width = size;
+  img.height = size;
+  img.src = `/api/library/art?id=${encodeURIComponent(trackId)}&size=${size}`;
+  img.addEventListener("error", () => img.remove());
+  box.append(img);
+  return box;
+}
+
 /* --- choosing a match by hand ---------------------------------------------
    Beets refuses whenever it cannot tell two releases apart, which for a
    popular record means five near-identical pressings and no winner. It knows
@@ -967,7 +988,7 @@ function field(label, value, extra = {}) {
   input.type = extra.number ? "number" : "text";
   input.value = value ?? "";
   if (extra.number) input.min = "0";
-  if (extra.placeholder) input.placeholder = extra.placeholder;
+  if (extra.wide) input.classList.add("wide");
   wrap.append(input);
   wrap.input = input;
   return wrap;
@@ -978,8 +999,8 @@ function field(label, value, extra = {}) {
 // editing them on a single track is how a record becomes two.
 function albumEditor(album, reload) {
   const form = el("div", "album-edit");
-  const artist = field("Album artist", album.artist);
-  const name = field("Album", album.album);
+  const artist = field("Album artist", album.artist, { wide: true });
+  const name = field("Album", album.album, { wide: true });
   const save = el("button", "ghost primary", "Save album");
 
   save.addEventListener("click", async () => {
@@ -1014,35 +1035,65 @@ function albumEditor(album, reload) {
   return form;
 }
 
-// One track. Title and number rename it where it is; artist and album take
-// it out of this album and into another, which is how a misfiled track is
-// rescued and how one gets split off by mistake.
+// One track. Title, artist and the numbers rename it where it is; the move
+// panel takes it out of this album and into another, which is how a
+// misfiled track is rescued and how one gets split off by mistake.
 function trackEditor(album, track, reload) {
   const form = el("div", "track-edit");
-  const title = field("Title", track.title);
+  const title = field("Title", track.title, { wide: true });
+  const artist = field("Artist", track.artist, { wide: true });
   const number = field("Track", track.track_no || "", { number: true });
-  const save = el("button", "ghost", "Save");
+  const disc = field("Disc", track.disc_no || "", { number: true });
+  const save = el("button", "ghost primary", "Save");
 
   const moveWrap = el("div", "track-move");
   moveWrap.hidden = true;
-  const moveArtist = field("Move to artist", album.artist);
-  const moveAlbum = field("Move to album", album.album);
-  const moveSave = el("button", "ghost", "Move this track");
-  moveWrap.append(moveArtist, moveAlbum, moveSave);
+  const moveArtist = field("Album artist", album.artist, { wide: true });
+  const moveAlbum = field("Album", album.album, { wide: true });
+  const single = el("button", "ghost", "As its own single");
+  const moveSave = el("button", "ghost primary", "Move this track");
+
+  // A single is an album of one, which is how Spotify presents it and how
+  // the filer files it. Without this every track rescued from Unknown Album
+  // needs an album name invented for it by hand.
+  single.addEventListener("click", () => {
+    moveArtist.input.value = artist.input.value.trim()
+      || track.artist || album.artist;
+    moveAlbum.input.value = title.input.value.trim() || track.title;
+  });
 
   const reveal = el("button", "ghost", "Move to another album…");
-  reveal.addEventListener("click", () => { moveWrap.hidden = !moveWrap.hidden; });
+  reveal.addEventListener("click", () => {
+    moveWrap.hidden = !moveWrap.hidden;
+    reveal.textContent = moveWrap.hidden
+      ? "Move to another album…" : "Cancel move";
+  });
 
   save.addEventListener("click", async () => {
     const body = { library_id: album.library_id, path: track.path };
     if (title.input.value.trim() !== (track.title || "")) {
       body.title = title.input.value.trim();
     }
+    if (artist.input.value.trim() !== (track.artist || "")) {
+      body.artist = artist.input.value.trim();
+    }
     const n = parseInt(number.input.value, 10);
     if (!Number.isNaN(n) && n !== track.track_no) body.track_no = n;
-    if (body.title === undefined && body.track_no === undefined) return;
+    const d = parseInt(disc.input.value, 10);
+    if (!Number.isNaN(d) && d !== track.disc_no) body.disc_no = d;
+    if (Object.keys(body).length <= 2) return;
+
+    // Setting the artist of a track with no album artist changes which
+    // album the file is on, so the server may move it. Say so first.
+    if (body.artist !== undefined && !album.artist) {
+      if (!confirm(
+        `Set this track's artist to "${body.artist}"?\n\n`
+        + "It has no album artist, so this also decides which folder it "
+        + "lives in and the file will move.")) return;
+    }
     await saveEdit("/api/library/track/edit", body, save, () => {
       setNote("library-op", "Saved.", "notice");
+      libraryOpen.delete(albumKey(album));
       reload();
     });
   });
@@ -1057,7 +1108,7 @@ function trackEditor(album, track, reload) {
     if (!confirm(
       `Move "${track.title}" to "${wantArtist} — ${wantAlbum}"?\n\n`
       + "Only this track moves. It leaves this album and joins that one, "
-      + "taking its own stars with it.\n"
+      + "taking its own stars and play count with it.\n"
       + "Everything else in this album stays where it is.")) return;
 
     await saveEdit("/api/library/track/edit", {
@@ -1070,7 +1121,8 @@ function trackEditor(album, track, reload) {
     });
   });
 
-  form.append(title, number, save, reveal, moveWrap);
+  moveWrap.append(moveArtist, moveAlbum, single, moveSave);
+  form.append(title, artist, number, disc, save, reveal, moveWrap);
   return form;
 }
 
@@ -1095,15 +1147,19 @@ async function loadTracks(album, into) {
       editor.hidden = true;
       const edit = el("button", "ghost", "Edit");
       edit.addEventListener("click", () => {
-        if (editor.hidden && !editor.childElementCount) {
+        if (!editor.childElementCount) {
           editor.append(trackEditor(album, track, reload));
         }
         editor.hidden = !editor.hidden;
+        edit.textContent = editor.hidden ? "Edit" : "Done";
       });
       row.append(
         el("span", "track-no", track.track_no ? String(track.track_no) : "—"),
+        cover(track.id, 32),
         el("span", "track-title", track.title || "(untitled)"),
-        el("span", "track-meta", track.tagged ? "" : "no MusicBrainz match"),
+        el("span", "track-meta", track.artist || ""),
+        el("span", "track-meta dim",
+           track.tagged ? "" : "no MusicBrainz match"),
         edit
       );
       nodes.push(row, editor);
@@ -1116,7 +1172,12 @@ async function loadTracks(album, into) {
 }
 
 function albumRow(album) {
-  const row = el("div", "staging-item");
+  // A wrapper with a clickable head and a body that is not. The toggle used
+  // to sit on the whole row with the body inside it, so a click on an input
+  // bubbled up and collapsed the album out from under whoever was typing -
+  // which made the editor unusable rather than merely annoying.
+  const row = el("div", "album-row");
+  const head = el("div", "album-head");
   const actions = el("div", "staging-actions");
   const match = el("button", "ghost", "Find matches");
   match.addEventListener("click", (event) => {
@@ -1138,37 +1199,40 @@ function albumRow(album) {
             + "no MusicBrainz match";
   }
 
-  row.append(
-    el("span", "staging-kind", album.library || "library"),
+  const caret = el("span", "album-caret", "▸");
+  head.append(
+    caret,
+    cover(album.art_id, 48),
     el("span", "staging-name", albumName(album)),
     el("span", "staging-meta", counted),
+    el("span", "staging-kind", album.library || "library"),
     actions
   );
-  row.title = album.folder;
+  head.title = album.folder;
 
-  // Opening a row is how you see what is in it. Kept in `libraryOpen` so a
-  // re-render - a finished retag, another page - does not close it.
-  const tracks = el("div", "album-tracks");
-  tracks.hidden = true;
-  row.append(tracks);
-  const toggle = () => {
+  const body = el("div", "album-body");
+  body.hidden = true;
+  row.append(head, body);
+
+  head.addEventListener("click", (event) => {
+    if (event.target.closest("button")) return;
     const key = albumKey(album);
-    if (tracks.hidden) {
+    if (body.hidden) {
       libraryOpen.add(key);
-      tracks.hidden = false;
-      loadTracks(album, tracks);
+      body.hidden = false;
+      caret.textContent = "▾";
+      loadTracks(album, body);
     } else {
       libraryOpen.delete(key);
-      tracks.hidden = true;
+      body.hidden = true;
+      caret.textContent = "▸";
     }
-  };
-  row.addEventListener("click", (event) => {
-    if (event.target.closest("button")) return;
-    toggle();
   });
+
   if (libraryOpen.has(albumKey(album))) {
-    tracks.hidden = false;
-    loadTracks(album, tracks);
+    body.hidden = false;
+    caret.textContent = "▾";
+    loadTracks(album, body);
   }
   return row;
 }

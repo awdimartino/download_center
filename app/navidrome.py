@@ -344,6 +344,35 @@ def _service_call(endpoint: str, **extra: str) -> dict:
     return payload
 
 
+def cover_art(item_id: str, size: int = 96) -> tuple[bytes, str]:
+    """One track's cover, at the size asked for, as (bytes, content type).
+
+    Proxied from Navidrome rather than read out of the file, for two
+    reasons. It resizes - a library page shows fifty covers at a hundred
+    pixels, and the embedded images behind them are often a megabyte each,
+    which is the difference between a page and a download. And it already
+    knows where the art is when a file has none embedded but the folder has
+    a cover.jpg beside it.
+
+    Service credentials, not the person's: this is called for a track the
+    caller has already been shown, and the check that it is theirs happens
+    before we get here.
+    """
+    if not service_configured():
+        raise NotConfigured("navidrome_url, navidrome_user and "
+                            "navidrome_password are not all set")
+    response = requests.get(
+        f"{base_url()}/rest/getCoverArt.view", timeout=TIMEOUT,
+        params={**_service_params(), "id": item_id, "size": str(int(size))})
+    response.raise_for_status()
+    kind = response.headers.get("content-type", "")
+    if not kind.startswith("image/"):
+        # Subsonic reports a miss as a JSON error with a 200, so the content
+        # type is the only honest signal that this is not a picture.
+        raise RuntimeError("Navidrome has no cover for that track")
+    return response.content, kind
+
+
 def trigger_scan(full: bool = False) -> dict:
     """Ask Navidrome to scan.
 

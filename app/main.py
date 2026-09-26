@@ -1168,6 +1168,7 @@ class TrackEdit(BaseModel):
     library_id: int
     path: str
     title: str | None = None
+    artist: str | None = None
     track_no: int | None = None
     disc_no: int | None = None
     album_artist: str | None = None
@@ -1245,7 +1246,7 @@ async def library_track_edit(
     """
     _named(body.album_artist, body.album)
     if all(value is None for value in
-           (body.title, body.track_no, body.disc_no,
+           (body.title, body.artist, body.track_no, body.disc_no,
             body.album_artist, body.album)):
         raise HTTPException(status_code=400, detail="Nothing to change.")
     try:
@@ -1262,7 +1263,8 @@ async def library_track_edit(
     def run() -> dict[str, Any]:
         filed = filer.retag_track(
             space, path, albumartist=body.album_artist, album=body.album,
-            title=body.title, track_no=body.track_no, disc_no=body.disc_no)
+            artist=body.artist, title=body.title,
+            track_no=body.track_no, disc_no=body.disc_no)
         navidrome.notify()
         return {"ran": True,
                 "path": str(filed.path.relative_to(space.library_path)),
@@ -1273,6 +1275,34 @@ async def library_track_edit(
         return await asyncio.to_thread(run)
     except filer.NotEditable as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# Long, because a cover does not change without the file changing, and the
+# id is derived from the file. A page of fifty of these is otherwise fifty
+# round trips every time somebody scrolls back up.
+ART_CACHE = "public, max-age=604800"
+
+
+@app.get("/api/library/art")
+async def library_art(
+    id: str,
+    size: int = 96,
+    session: auth.Session = Depends(current_session),
+) -> Response:
+    """One track's cover, proxied from Navidrome at the size asked for."""
+    size = max(32, min(int(size), 600))
+    if not await asyncio.to_thread(library.owns_track, session.identity, id):
+        raise HTTPException(status_code=404, detail="No such track.")
+    try:
+        body, kind = await asyncio.to_thread(navidrome.cover_art, id, size)
+    except navidrome.NotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        # A missing cover is the ordinary case, not a fault. The browser
+        # hides the image and the row reads fine without it.
+        raise HTTPException(status_code=404, detail=str(exc)[:200]) from exc
+    return Response(content=body, media_type=kind,
+                    headers={"Cache-Control": ART_CACHE})
 
 
 @app.post("/api/library/rescan")
