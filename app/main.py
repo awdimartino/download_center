@@ -22,7 +22,8 @@ from pydantic import BaseModel
 from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
-from . import filer, inbox, library, registry, spotify, worker, workspace
+from . import filer, inbox, library, overview, registry, spotify
+from . import worker, workspace
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -1121,6 +1122,19 @@ def _navidrome_error(exc: Exception) -> str:
 
 
 # --- library ---------------------------------------------------------------
+
+
+@app.get("/api/overview")
+async def overview_page(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """What the landing page shows, in one request.
+
+    One request rather than four, because the panels it summarises each walk
+    Navidrome's whole index and a landing page calling all of them would be
+    the slowest screen in the application.
+    """
+    return await asyncio.to_thread(overview.overview, session.identity)
 
 
 @app.get("/api/library")

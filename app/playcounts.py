@@ -355,7 +355,7 @@ def plays_between(start: str, end: str,
     return out
 
 
-def _titles(uuids: list[str]) -> dict[str, dict[str, str]]:
+def _titles(uuids: list[str]) -> dict[str, dict[str, Any]]:
     """Track UUID -> what it is called, from Navidrome's index.
 
     Snapshots are keyed by UUID and nothing else, which is the point - the
@@ -366,7 +366,7 @@ def _titles(uuids: list[str]) -> dict[str, dict[str, str]]:
     """
     if not uuids:
         return {}
-    found: dict[str, dict[str, str]] = {}
+    found: dict[str, dict[str, Any]] = {}
     try:
         connection = navidrome.open_db()
     except navidrome.Unavailable as exc:
@@ -380,13 +380,16 @@ def _titles(uuids: list[str]) -> dict[str, dict[str, str]]:
             holes = ",".join("?" * len(chunk))
             rows = connection.execute(f"""
                 select json_extract(mf.tags, '{UUID_TAG}') as uuid,
-                       mf.title, mf.artist, mf.album
+                       mf.title, mf.artist, mf.album, mf.duration
                   from media_file mf
                  where json_extract(mf.tags, '{UUID_TAG}') in ({holes})
             """, chunk).fetchall()
-            for uuid, title, artist, album in rows:
+            for uuid, title, artist, album, duration in rows:
                 found[uuid] = {"title": title or "", "artist": artist or "",
-                               "album": album or ""}
+                               "album": album or "",
+                               # Carried for the one caller that turns plays
+                               # into hours; the rest ignore it.
+                               "duration": duration or 0.0}
     return found
 
 

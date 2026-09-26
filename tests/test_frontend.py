@@ -201,7 +201,11 @@ RULE_BODY = re.sub(r'/\*.*?\*/', '', RULES, flags=re.S)
 
 
 def test_every_font_size_comes_from_the_scale():
-    loose = re.findall(r'font-size:\s*([\d.]+px)', RULE_BODY)
+    """Anywhere in the value, not just at the front of it: a size inside a
+    clamp() or a calc() is still a size nothing else can reuse."""
+    loose = [match.group(0).strip()
+             for match in re.finditer(r'font-size:[^;}]*;', RULE_BODY)
+             if re.search(r'(?<![-\w])[\d.]+px', match.group(0))]
     assert loose == [], "use var(--t-*), or add a step to the scale"
 
 

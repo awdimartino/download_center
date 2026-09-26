@@ -538,6 +538,7 @@ function showView(view) {
   if (view === "browse" && matchMedia("(hover: hover) and (pointer: fine)").matches) {
     queryInput.focus();
   }
+  if (view === "home") loadHome();
   if (view === "library") loadLibrary();
   if (view === "health") loadHealth();
   if (view === "dupes") loadDupes();
@@ -1444,6 +1445,260 @@ document.getElementById("library-rescan").addEventListener("click", async () => 
   }
 });
 
+/* --- home ----------------------------------------------------------------
+   The landing panel. It answers one question - what have you been listening
+   to - because that is the question the thing this sits beside cannot
+   answer at all: Navidrome keeps a cumulative total per track and the single
+   most recent play date, so "how much did I listen to in March" has no home
+   anywhere else.
+
+   Everything drawn here is a door into a section that holds the real
+   detail. Nothing on this page is a control, and nothing is edited here. */
+
+const homeGreeting = document.getElementById("home-greeting");
+const homeHero = document.getElementById("home-hero");
+const homeStats = document.getElementById("home-stats");
+const homeMonths = document.getElementById("home-months");
+const homeArtists = document.getElementById("home-artists");
+const homeSnapshots = document.getElementById("home-snapshots");
+const homeEmpty = document.getElementById("home-empty");
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svg(tag, attrs) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    node.setAttribute(key, String(value));
+  }
+  return node;
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 5) return "Still up";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function monthLabel(month) {
+  // Read off the string rather than through a Date: new Date("2026-09") is
+  // UTC midnight, which reads as August everywhere west of Greenwich.
+  return MONTH_NAMES[Number(String(month).slice(5, 7)) - 1] || "";
+}
+
+// The chart is drawn in its own coordinate space and scaled to fit by CSS,
+// so these are ratios rather than pixels. Strokes opt out of the scaling.
+const PLOT = { w: 720, h: 170, top: 14, bottom: 24, side: 6 };
+
+function monthlyChart(months) {
+  const wrap = el("div", "chart-wrap");
+  if (!months.length) return wrap;
+
+  const most = Math.max(1, ...months.map((m) => m.plays));
+  const inner = PLOT.w - PLOT.side * 2;
+  const floor = PLOT.h - PLOT.bottom;
+  const step = months.length > 1 ? inner / (months.length - 1) : 0;
+  const x = (i) => PLOT.side + step * i;
+  const y = (plays) => floor - (plays / most) * (floor - PLOT.top);
+
+  const chart = svg("svg", {
+    viewBox: "0 0 " + PLOT.w + " " + PLOT.h,
+    class: "chart", preserveAspectRatio: "none", role: "img",
+    "aria-label": "Plays by month over " + months.length
+      + " months, peaking at " + most,
+  });
+
+  // Hairline and recessive. Three lines, so the eye has something to
+  // measure against without the grid becoming the picture.
+  for (const fraction of [0, 0.5, 1]) {
+    const at = floor - fraction * (floor - PLOT.top);
+    chart.append(svg("line", {
+      x1: PLOT.side, x2: PLOT.w - PLOT.side, y1: at, y2: at,
+      class: fraction ? "chart-grid" : "chart-base",
+    }));
+  }
+
+  const spine = months.map((m, i) => x(i) + "," + y(m.plays)).join(" ");
+  chart.append(svg("polygon", {
+    class: "chart-fill",
+    points: PLOT.side + "," + floor + " " + spine + " "
+            + x(months.length - 1) + "," + floor,
+  }));
+  chart.append(svg("polyline", { class: "chart-line", points: spine }));
+
+  // The peak, marked where it happened. One mark rather than twenty-four
+  // numbers: the shape carries the rest, and the hover layer has the exact
+  // figure for any month somebody actually wants.
+  // Placed over the chart rather than inside it: the plot is stretched to
+  // the panel width, and a circle drawn in that coordinate space comes out
+  // an ellipse at every width but one.
+  const peak = months.findIndex((m) => m.plays === most);
+  const dot = el("span", "chart-peak");
+  dot.hidden = !(months[peak] && months[peak].plays > 0);
+  dot.style.left = (x(peak) / PLOT.w) * 100 + "%";
+  dot.style.top = (y(most) / PLOT.h) * 100 + "%";
+
+  const crosshair = svg("line", {
+    class: "chart-crosshair", x1: 0, x2: 0, y1: PLOT.top - 8, y2: floor,
+  });
+  crosshair.style.opacity = "0";
+  chart.append(crosshair);
+
+  const tip = el("div", "chart-tip");
+  tip.hidden = true;
+
+  // One hit target per month, the full height of the plot. The line itself
+  // is 2px and nobody can hover 2px on a trackpad.
+  months.forEach((month, i) => {
+    const width = Math.max(1, step || inner);
+    const band = svg("rect", {
+      class: "chart-hit", y: 0, height: PLOT.h, tabindex: 0,
+      x: Math.max(0, x(i) - width / 2), width,
+    });
+    const show = () => {
+      crosshair.setAttribute("x1", x(i));
+      crosshair.setAttribute("x2", x(i));
+      crosshair.style.opacity = "1";
+      tip.hidden = false;
+      tip.textContent = monthLabel(month.month) + " "
+        + String(month.month).slice(0, 4) + " · "
+        + month.plays.toLocaleString()
+        + (month.plays === 1 ? " play" : " plays");
+      // Kept inside the box at both ends, or the first and last months
+      // push their own tooltip off the edge of the panel.
+      const across = x(i) / PLOT.w;
+      tip.style.left = Math.min(0.92, Math.max(0.08, across)) * 100 + "%";
+    };
+    band.addEventListener("pointerenter", show);
+    band.addEventListener("focus", show);
+    chart.append(band);
+  });
+
+  const hide = () => {
+    crosshair.style.opacity = "0";
+    tip.hidden = true;
+  };
+  chart.addEventListener("pointerleave", hide);
+  chart.addEventListener("focusout", hide);
+
+  const axis = el("div", "chart-axis");
+  // First, last, and each January between them: enough to place the shape
+  // in time without twenty-four labels fighting over the same inch.
+  months.forEach((month, i) => {
+    const last = i === months.length - 1;
+    const january = String(month.month).endsWith("-01");
+    if (i !== 0 && !last && !january) return;
+    const label = el("span", "chart-axis-label",
+      january && !last ? String(month.month).slice(0, 4)
+                       : monthLabel(month.month));
+    label.style.left = (x(i) / PLOT.w) * 100 + "%";
+    axis.append(label);
+  });
+
+  // Everything positioned as a percentage of the plot goes inside the plot
+  // - the wrapper is taller by the height of the axis strip, and a dot
+  // placed against that lands below the line it is meant to sit on.
+  const plot = el("div", "chart-plot");
+  plot.append(chart, dot,
+              el("span", "chart-peak-label", most.toLocaleString()), tip);
+  wrap.append(plot, axis);
+  return wrap;
+}
+
+function artistBars(artists) {
+  if (!artists.length) {
+    return [el("p", "empty", "Nothing played in the last year yet.")];
+  }
+  const most = Math.max(1, ...artists.map((a) => a.plays));
+  return artists.map((artist) => {
+    const row = el("div", "home-bar-row");
+    const track = el("div", "home-bar");
+    const fill = el("div", "home-bar-fill");
+    fill.style.width = Math.max(1.5, (artist.plays / most) * 100) + "%";
+    track.append(fill);
+    row.append(el("span", "home-bar-name", artist.artist), track,
+               el("span", "home-bar-value", artist.plays.toLocaleString()));
+    return row;
+  });
+}
+
+function heroFact(facts) {
+  homeHero.hidden = !facts.length;
+  if (!facts.length) return;
+  // Picked here rather than on the server, so the headline changes on every
+  // visit without another request, and the server stays cacheable.
+  const fact = facts[Math.floor(Math.random() * facts.length)];
+  homeHero.querySelector(".home-hero-lead").textContent = fact.lead;
+  homeHero.querySelector(".home-hero-value").textContent = fact.value;
+  homeHero.querySelector(".home-hero-tail").textContent = fact.tail;
+}
+
+function homeTiles(data) {
+  const heard = data.listening || {};
+  const year = heard.year || {};
+  const held = data.collection || {};
+  const hours = Math.round((year.seconds || 0) / 3600);
+
+  // Against last month rather than an average: it is the comparison anyone
+  // makes on their own anyway, and the average of a series this short is
+  // mostly noise.
+  const change = (heard.this_month || 0) - (heard.last_month || 0);
+  const versus = heard.last_month
+    ? (change >= 0 ? "+" : "−") + Math.abs(change).toLocaleString()
+      + " on last month"
+    : "no month before this one";
+
+  const tiles = [
+    stat("This month", (heard.this_month || 0).toLocaleString(), versus),
+    stat("In " + (year.year || new Date().getFullYear()),
+         (year.tracks || 0).toLocaleString(),
+         "different tracks, about " + hours.toLocaleString() + " hours"),
+  ];
+  if (held.available) {
+    tiles.push(stat("Your library", (held.tracks || 0).toLocaleString(),
+                    (held.albums || 0).toLocaleString() + " albums"));
+  }
+  homeStats.replaceChildren(...tiles);
+}
+
+async function loadHome() {
+  try {
+    const data = await fetch("/api/overview").then((r) => r.json());
+    if (data.detail) {
+      homeEmpty.hidden = false;
+      homeEmpty.textContent = data.detail;
+      return;
+    }
+    const heard = data.listening || {};
+    homeEmpty.hidden = true;
+    homeGreeting.textContent = greeting() + ", " + data.username + ".";
+    heroFact(data.highlights || []);
+    homeTiles(data);
+    homeMonths.replaceChildren(monthlyChart(heard.months || []));
+    homeArtists.replaceChildren(...artistBars(heard.top_artists || []));
+
+    // Only when it is wrong. A tick saying the nightly job ran is noise on
+    // a page whose job is to look calm; a job that stopped three weeks ago
+    // is the one thing here worth interrupting for, because every day it
+    // does not run is a day of listening nobody can recover.
+    const snaps = data.snapshots || {};
+    setBanner(homeSnapshots, snaps.up_to_date === false
+      ? "No play snapshot since " + (snaps.last_run || "ever")
+        + " — listening from " + snaps.awaiting
+        + " onwards is not being recorded."
+      : "", "warn");
+  } catch (err) {
+    homeEmpty.hidden = false;
+    homeEmpty.textContent = "Could not load: " + err.message;
+  }
+}
+
+homeHero.addEventListener("click", () => showView("listening"));
+
 /* --- listening -----------------------------------------------------------
    The snapshots have been running since before there was anywhere to read
    them, which made four years of imported history and a nightly job look
@@ -2302,6 +2557,9 @@ function start() {
   if (started) return;
   started = true;
   connect();
+  // The panel the page opens on, so it is not blank until somebody
+  // navigates away and back.
+  loadHome();
   loadHealth();
   loadLibrary();
   checkSpotify();

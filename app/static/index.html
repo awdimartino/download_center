@@ -27,7 +27,7 @@
     <span id="menu-dot" class="menu-dot" hidden></span>
   </button>
   <!-- With the tabs gone this is the only thing saying where you are. -->
-  <h1 id="current-view">Queue</h1>
+  <h1 id="current-view">Home</h1>
   <span id="conn" class="conn offline">connecting</span>
 </header>
 
@@ -42,7 +42,10 @@
          close button, which meant opening the menu swapped one header for a
          different one in the same place - the jarring part. The real header
          stays put above this, and the burger is already the close control. -->
-    <button class="nav-item active" data-view="queue" type="button">
+    <button class="nav-item active" data-view="home" type="button">
+      <span class="nav-label">Home</span>
+    </button>
+    <button class="nav-item" data-view="queue" type="button">
       <span class="nav-label">Queue</span>
     </button>
     <button class="nav-item" data-view="browse" type="button">
@@ -87,7 +90,41 @@
   <p id="error" class="error" hidden></p>
   <p id="warn" class="warn" hidden></p>
 
-  <section id="view-queue">
+  <!-- The landing panel. Deliberately thin: a greeting, one fact in large
+       type, three numbers and two charts. Everything here is a door to a
+       section that holds the real detail, and nothing here is a control. -->
+  <section id="view-home">
+    <p id="home-greeting" class="home-greeting"></p>
+
+    <!-- One fact, chosen at random by the browser from the several the
+         server sends, so the page is not the same page every morning. -->
+    <button id="home-hero" class="home-hero" type="button" hidden>
+      <span class="home-hero-lead"></span>
+      <span class="home-hero-value"></span>
+      <span class="home-hero-tail"></span>
+      <span class="home-hero-more">See the detail &rsaquo;</span>
+    </button>
+
+    <p id="home-snapshots" class="warn" hidden></p>
+    <div id="home-stats" class="stats"></div>
+
+    <section class="home-figure">
+      <h2 class="home-figure-title">Plays by month</h2>
+      <p class="home-figure-note">Last two years. Counted from the nightly
+        snapshots, which Navidrome does not keep.</p>
+      <div id="home-months" class="home-chart"></div>
+    </section>
+
+    <section class="home-figure">
+      <h2 class="home-figure-title">Most played artists</h2>
+      <p class="home-figure-note">Last twelve months.</p>
+      <div id="home-artists" class="home-bars"></div>
+    </section>
+
+    <p id="home-empty" class="empty" hidden></p>
+  </section>
+
+  <section id="view-queue" hidden>
     <form id="add-form" autocomplete="off">
       <input id="url" type="text" spellcheck="false"
              placeholder="Paste a Spotify link, or a YouTube / SoundCloud / Bandcamp URL">

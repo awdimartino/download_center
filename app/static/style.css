@@ -74,6 +74,12 @@
   --t-2xl: 21px;
   --t-field: 16px;
 
+  /* The landing headline, and the only size above the scale. The scale tops
+     out at a heading; this is one fact meant to read from across a room.
+     Fluid, because at a fixed 40px a long artist name wraps to three lines
+     on a phone. */
+  --t-hero: clamp(26px, 6vw, 40px);
+
   /* Three weights, from six. 400/500/550/600/650/700 were doing the work of
      "quiet", "normal" and "this is the number you came for". */
   --w-normal: 500;
@@ -1626,3 +1632,236 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 .album-head .art { width: 48px; height: 48px; }
 .album-track .art { width: 32px; height: 32px; }
 .art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* --- home ----------------------------------------------------------------
+   The landing panel: a greeting, one fact in large type, three numbers and
+   two figures. Every colour here is a token; the only place the accent is
+   allowed to carry meaning is inside a plot, and no text wears it. */
+
+.home-greeting {
+  font-size: var(--t-xl);
+  font-weight: var(--w-medium);
+  color: var(--text);
+  margin: var(--s-2) 0 var(--s-4);
+}
+
+/* The headline. A button, because it goes somewhere - but it should read as
+   a sentence somebody wrote, not as a control, so it borrows the panel
+   rather than a button's chrome. */
+.home-hero {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  padding: var(--s-5);
+  margin-bottom: var(--s-5);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color .15s ease, background .15s ease;
+}
+
+.home-hero:hover { background: var(--panel-2); border-color: var(--line); }
+.home-hero:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.home-hero-lead,
+.home-hero-tail {
+  display: block;
+  font-size: var(--t-md);
+  color: var(--muted);
+}
+
+.home-hero-value {
+  display: block;
+  font-size: var(--t-hero);
+  font-weight: var(--w-bold);
+  line-height: 1.15;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin: var(--s-1) 0;
+  overflow-wrap: anywhere;
+}
+
+.home-hero-more {
+  display: block;
+  margin-top: var(--s-3);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  color: var(--accent);
+}
+
+/* --- figures -------------------------------------------------------------- */
+
+.home-figure { margin-top: var(--s-6); }
+
+.home-figure-title {
+  font-size: var(--t-lg);
+  font-weight: var(--w-medium);
+  margin: 0;
+}
+
+.home-figure-note {
+  font-size: var(--t-sm);
+  color: var(--faint);
+  margin: var(--s-1) 0 var(--s-4);
+  max-width: 60ch;
+}
+
+/* --- the monthly plot ----------------------------------------------------- */
+
+.chart-wrap { position: relative; }
+
+/* The plot alone, so a percentage offset inside it means what it says.
+   The wrapper is taller by the axis strip underneath. */
+.chart-plot { position: relative; }
+
+/* Stretched to the panel, because the shape of two years of listening is
+   what this is for and a fixed width would either overflow a phone or
+   waste half a desktop. Strokes opt out of the stretch below. */
+.chart {
+  display: block;
+  width: 100%;
+  height: 170px;
+  overflow: visible;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-fill { fill: var(--accent); opacity: .1; stroke: none; }
+
+/* Recessive by design. The grid is a thing you measure against when you
+   choose to, not a thing you read. */
+.chart-grid,
+.chart-base {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-base { stroke: var(--line); }
+
+.chart-crosshair {
+  stroke: var(--faint);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  transition: opacity .1s ease;
+}
+
+.chart-hit { fill: transparent; }
+.chart-hit:focus-visible { outline: none; fill: var(--tint-accent); }
+
+/* Sits on the line at its highest point, ringed in the page's own colour so
+   it stays a distinct mark where the line passes under it. */
+.chart-peak {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+  pointer-events: none;
+}
+
+/* The only y-axis there is: the top of the scale, once. A full axis of
+   evenly spaced numbers would be four more labels saying what one says. */
+.chart-peak-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.chart-axis { position: relative; height: 1.2em; }
+
+.chart-axis-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: var(--t-xs);
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.chart-tip {
+  position: absolute;
+  top: -4px;
+  transform: translateX(-50%);
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--s-1) var(--s-2);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+  z-index: 2;
+}
+
+/* --- the artist bars ------------------------------------------------------ */
+
+.home-bars { display: flex; flex-direction: column; gap: var(--s-2); }
+
+.home-bar-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 11rem) 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.home-bar-name {
+  font-size: var(--t-md);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Capped rather than proportional to the row: a bar thicker than its own
+   label stops being a measurement and becomes a block of colour. */
+.home-bar {
+  height: 14px;
+  background: var(--panel-2);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+/* Square where it meets the baseline, rounded at the value end, so the
+   length still starts exactly at zero. */
+.home-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 var(--s-1) var(--s-1) 0;
+}
+
+.home-bar-value {
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 3.5ch;
+  text-align: right;
+}
+
+@media (max-width: 520px) {
+  .home-bar-row { grid-template-columns: minmax(5rem, 8rem) 1fr auto; }
+  .chart { height: 140px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-hero, .chart-crosshair { transition: none; }
+}
