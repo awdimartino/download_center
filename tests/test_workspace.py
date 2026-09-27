@@ -128,10 +128,11 @@ def test_prepare_makes_every_directory_the_pipeline_writes_into(staging_root):
                       space.beets_dir):
         assert directory.is_dir()
 
-    # Not albums/ or singles/. Nothing writes to them any more, and creating
-    # them on every start made an empty staging tree look like a live one.
-    assert not space.albums_dir.exists()
-    assert not space.singles_dir.exists()
+    # Not albums/ or singles/ - the two directories staging used to file
+    # into. They held the last un-migrated music until it went through the
+    # inbox like everything else, and nothing names them now.
+    assert not (space.staging / "albums").exists()
+    assert not (space.staging / "singles").exists()
 
 
 def test_a_download_is_built_inside_the_inbox(staging_root):

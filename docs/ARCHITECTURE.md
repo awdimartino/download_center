@@ -1,13 +1,15 @@
 # Download Center — how the code works
 
-A reference for the codebase as it stands on 2026-09-25, after the
+A reference for the codebase as it stands on 2026-09-26, after the
 direct-to-library redesign. For what it is *for* and where it is going, see
 [PLAN.md](PLAN.md); to pick up work, see [HANDOFF.md](HANDOFF.md).
 
-**Step 6 of that redesign is not done** - the one cleanup pass over Alex's
-three piles of music. Step 5 is: `staging.py`, `stamp.py`, the download
-ledger, the nightly sweep, `tools/ensure_uuid.py` and beets' auto-import path
-are gone from the tree, about 2,900 lines of it.
+**The redesign is finished.** Step 5 removed `staging.py`, `stamp.py`, the
+download ledger, the nightly sweep, `tools/ensure_uuid.py` and beets'
+auto-import path - about 2,900 lines. Step 6 was the cleanup pass over the
+music left outside the library: the last 560 files went through the inbox
+on 2026-09-26 like everything else, and `Workspace.albums_dir`,
+`singles_dir` and `adopt_legacy` went with them.
 
 ---
 
@@ -160,8 +162,9 @@ non-admins rather than over-sharing.
   because a renamed library must not abandon its index.
 - `staging/<key>/` holds `inbox/` (with `.incomplete/` inside it) and a
   four-line `.owner` marker naming the user, library name, library path and
-  library id. `albums/` and `singles/` still hold Alex's 877 un-migrated
-  files; nothing creates or writes to them any more.
+  library id. The name is historical: nothing is staged there any more, and
+  the `albums/` and `singles/` directories the old flow filed into are gone
+  along with the music that was stranded in them.
 - `config/beets/<key>/` holds that person's `config.yaml` and `library.db`.
 
 The `.owner` marker exists because the inbox is drained on a timer with
@@ -455,12 +458,12 @@ counts, every 5 minutes).
 health, duplicates, playlists, listening, settings. It still wants splitting
 (FIXES item 29).
 
-The Library panel is the old Staging panel's markup and CSS classes with a
-different question behind it — `staging-item`, `staging-name` and friends are
-still the layout class names, and renaming them is cosmetic work nobody has
-done. The ids were renamed (`#review`, `#review-op`, `#review-badge`)
-because `test_frontend.py` fails the build on an id the stylesheet styles
-that the markup does not have.
+The Library panel began as the Staging panel's markup with a different
+question behind it. Its class names now say what they style - `album-name`,
+`album-meta`, `album-library`, `album-actions` - and the two that styled
+nothing at all went. `test_frontend.py` fails the build on an id the
+stylesheet styles that the markup does not have, and on a font size, weight
+or spacing that does not come from the scale.
 
 There is no JavaScript test runner — Node is not available here or in CI — so
 `tests/test_frontend.py` checks the *joins* instead: no duplicate ids, every

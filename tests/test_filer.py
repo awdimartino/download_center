@@ -739,3 +739,68 @@ def test_the_track_artist_is_writable(space):
     filer.write_tags(filed[0].path, artist="Someone Else")
 
     assert EasyID3(filed[0].path)["artist"] == ["Someone Else"]
+
+
+# --- folder art -------------------------------------------------------------
+# Filing moves audio and nothing else, so an album dropped in as a directory
+# arrived in the library with no art unless something was embedded. Navidrome
+# reads a folder cover, so this is a wall of album squares against grey ones.
+
+def test_a_folder_cover_follows_its_album(space):
+    source = track(tmp_of(space), name="01.mp3", albumartist="Boards",
+                   album="Geogaddi", title="Sixtyten")
+    (source.parent / "cover.jpg").write_bytes(b"\xff\xd8\xff not really")
+
+    filed = filer.file_track(space, source)
+
+    assert (filed.path.parent / "cover.jpg").read_bytes().startswith(b"\xff")
+
+
+def test_the_cover_is_copied_not_moved(space):
+    """The source folder may still hold tracks nobody has filed yet, and the
+    next one finding no cover is the same bug one file later."""
+    first = track(tmp_of(space), name="01.mp3", albumartist="Boards",
+                  album="Geogaddi", title="Sixtyten")
+    cover = first.parent / "cover.jpg"
+    cover.write_bytes(b"art")
+
+    filer.file_track(space, first)
+
+    assert cover.exists()
+
+
+def test_an_album_already_holding_art_keeps_it(space):
+    one = track(tmp_of(space), name="01.mp3", albumartist="Boards",
+                album="Geogaddi", title="Sixtyten")
+    (one.parent / "cover.jpg").write_bytes(b"first")
+    filed = filer.file_track(space, one)
+
+    two = track(tmp_of(space), name="02.mp3", albumartist="Boards",
+                album="Geogaddi", title="Julie and Candy")
+    (two.parent / "cover.jpg").write_bytes(b"second")
+    filer.file_track(space, two)
+
+    assert (filed.path.parent / "cover.jpg").read_bytes() == b"first"
+
+
+def test_a_missing_cover_is_not_a_problem(space):
+    source = track(tmp_of(space), name="01.mp3", albumartist="Boards",
+                   album="Geogaddi", title="Sixtyten")
+
+    filed = filer.file_track(space, source)
+
+    assert filed.path.exists()
+    assert not (filed.path.parent / "cover.jpg").exists()
+
+
+def test_other_files_in_the_folder_are_left_behind(space):
+    """Only art. Rip logs and cue sheets are residue, not part of the album."""
+    source = track(tmp_of(space), name="01.mp3", albumartist="Boards",
+                   album="Geogaddi", title="Sixtyten")
+    (source.parent / "rip.log").write_text("eac", encoding="utf-8")
+    (source.parent / "album.cue").write_text("cue", encoding="utf-8")
+
+    filed = filer.file_track(space, source)
+
+    assert not (filed.path.parent / "rip.log").exists()
+    assert not (filed.path.parent / "album.cue").exists()

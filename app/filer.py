@@ -401,6 +401,48 @@ def after_retag(space: workspace.Workspace, paths: list[Path],
     return settled
 
 
+# What a folder cover is called, in the order Navidrome looks for one.
+COVER_NAMES = ("cover", "folder", "front", "album", "albumart")
+COVER_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _carry_cover(source_dir: Path, target_dir: Path) -> None:
+    """Copy a folder cover across with the first track that moves.
+
+    Filing moves audio and nothing else, so an album dropped in as a
+    directory used to leave its cover.jpg behind and arrive in the library
+    with no art unless something was embedded in the files. Navidrome reads
+    a folder cover, so this is the difference between a wall of album
+    squares and a wall of grey ones.
+
+    Copied rather than moved: the source folder may still hold tracks that
+    have not been filed yet, and the second of them finding no cover would
+    be the same bug one file later. Skipped entirely once the destination
+    has one, so it happens once per album however many tracks arrive.
+
+    Never worth failing a file for - the music is what matters, and the art
+    can be added later.
+    """
+    try:
+        if not source_dir.is_dir():
+            return
+        for name in COVER_NAMES:
+            for suffix in COVER_SUFFIXES:
+                found = source_dir / f"{name}{suffix}"
+                if not found.is_file():
+                    continue
+                target_dir.mkdir(parents=True, exist_ok=True)
+                landing = target_dir / found.name
+                if landing.exists():
+                    return
+                shutil.copy2(found, landing)
+                log.info("carried %s across to %s", found.name, target_dir)
+                return
+    except Exception as exc:
+        log.warning("could not carry the cover from %s: %s: %s",
+                    source_dir, type(exc).__name__, exc)
+
+
 def _write_identity(path: Path, track_uuid: str | None,
                     album_uuid: str | None) -> bool:
     """Write whichever UUIDs are not already right. True if the file has them.
@@ -536,6 +578,7 @@ def file_track(space: workspace.Workspace, source: Path,
 
     target = destination(space, meta, source.suffix.lower())
     if source.resolve() != target.resolve():
+        _carry_cover(source.parent, target.parent)
         target = _move_into_place(source, target)
 
     return Filed(path=target, track_uuid=track_uuid, album_uuid=album_uuid,

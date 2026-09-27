@@ -15,8 +15,8 @@ Download Center is a Navidrome companion running on a Raspberry Pi. It does
 what Navidrome cannot — download music, edit smart playlist rules, audit
 library health, resolve duplicate copies, and keep the listening history
 Navidrome throws away — for any number of Navidrome accounts, each with
-their own library, staging area and beets index. It is deployed, healthy,
-and has 254 tests behind a CI gate.
+their own library, working directory and beets index. It is deployed,
+healthy, and has a test suite behind a CI gate.
 
 ---
 
@@ -63,7 +63,9 @@ that.
 
 ## Where things stand
 
-**Deployed:** commit `dc2742a`, container healthy. Verified after the pull:
+**Deployed:** see `git log` - the Pi runs the GHCR image built from `main`
+(`docker compose pull download-center && docker compose up -d
+download-center`). Container healthy. Verified after the pull:
 the shell is `no-store` and stamps `?v=<hash>` onto its assets, `/static`
 answers `no-cache`, and the served `app.js` contains the *Import as-is*
 button. Sessions are in memory, so a restart signs everyone out — a
@@ -87,6 +89,11 @@ the container and lost it on the next pull.
 **Library:** ~6,270 live tracks, 100% UUID-stamped. 125 `media_file` rows
 whose files are gone (deleted during the migration) sit in folders Navidrome
 has flagged missing — harmless, and excluded from every query that matters.
+
+**Library, 2026-09-26:** 7,807 tracks. Album identity is clean - `python -m
+app.survey` reports 0 split and 0 fused, and every album has a registry
+row. `app/unfuse.py` is what got it there; `app/backfill.py` records the
+albums whose files already agree.
 
 **Play history:** 41,203 plays imported from Last.fm covering 2022-09-18 to
 2026-09-05, plus snapshots from 2026-09-06 onward. Snapshots were nightly
@@ -117,16 +124,35 @@ so a restart clears them until it runs again).
 
 ## What to do next
 
-1. **Bug testing on the test account.** The user is doing this now, against
-   everything built recently. Expect reports rather than a task list.
-2. **The candidate picker.** The other half of the staging refusal work.
-   *Import as-is* shipped, so nothing is stuck any more, but there is still
-   no way to see the five candidate recordings beets would not choose
-   between and point at one. Wanted where the seeded tags are wrong rather
-   than merely unconfirmed. See PLAN.md, "Pull from MusicBrainz on request".
-3. **Wrapped-style stats.** Now unblocked — four years of history exist.
-4. **`app/static/app.js` split** (FIXES item 29) and **`app/main.py` into
+As of 2026-09-26 nothing is broken. What is left is judgement, polish and
+one thing only the user can supply.
+
+1. **~296 duplicate groups to review.** The only health warning, and it
+   cannot be automated away: `confident` requires a shared MusicBrainz id
+   and none of these have one. The last survey of 240 broke down as 183
+   same-album with no clearly better copy, **49 that are a single beside
+   its album and not duplicates at all**, 5 whose lengths differ enough to
+   be different mixes, and 3 genuinely resolvable. Do not bulk-resolve
+   while music is being filed - importing is what creates duplicates, so a
+   survey taken beforehand is stale by the time it finishes.
+2. **`config/cookies.txt`.** Downloads 403 without it. `yt-dlp` is already
+   pinned to the current release, so bumping fixes nothing; the file has to
+   be exported from a browser and dropped in, and
+   [downloader.py](../app/downloader.py) picks it up automatically.
+3. **The candidate picker.** The other half of the beets refusal work.
+   *Import as-is* shipped, so nothing is stuck, but there is still no way
+   to see the candidate recordings beets would not choose between and point
+   at one. See PLAN.md, "Pull from MusicBrainz on request".
+4. **A sessions view.** The data exists since play counts began being read
+   every five minutes - 4,080 sessions, the longest 8h14m - and nothing
+   displays it. Belongs in the Listening panel; Home is deliberately thin.
+5. **5,572 imported plays are still day-granular**, because those tracks'
+   artist tags changed since the September import so the scrobble text no
+   longer matches. `python -m app.lastfm <user> --times` after any tag
+   cleanup picks up more; it skips rows that already have a time.
+6. **`app/static/app.js` split** (FIXES item 29) and **`app/main.py` into
    routers** (item 28). Refactors, not bugs.
+7. **Beets vs Picard**, still open from the design doc.
 
 ---
 

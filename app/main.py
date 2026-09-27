@@ -578,10 +578,6 @@ async def create_job(
     _evict_old_jobs(session.identity.username)
 
     def prepare() -> None:
-        # A single-user installation predates accounts; the first person to
-        # queue something inherits it rather than starting an empty index
-        # beside a full one.
-        workspace.adopt_legacy(space)
         beets_runner.ensure_config(space)
 
     await asyncio.to_thread(prepare)

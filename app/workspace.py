@@ -74,18 +74,6 @@ class Workspace:
     def staging(self) -> Path:
         return settings.output_dir / self.key
 
-    # What staging used to be. Nothing writes to these any more and nothing
-    # creates them; they are still named because Alex's 877 un-migrated files
-    # are in them, and the cleanup pass has to be able to find them. They go
-    # with that pass.
-    @property
-    def albums_dir(self) -> Path:
-        return self.staging / "albums"
-
-    @property
-    def singles_dir(self) -> Path:
-        return self.staging / "singles"
-
     @property
     def inbox_dir(self) -> Path:
         """Where hand-added music is dropped, and never stays.
@@ -250,61 +238,6 @@ def existing() -> list[Workspace]:
         found.append(Workspace(username, int(library_id), library_name,
                                Path(recorded)))
     return found
-
-
-def adopt_legacy(space: Workspace) -> bool:
-    """Move a single-user beets installation into its owner's workspace.
-
-    Before there were accounts, one beets configuration and one library
-    database sat directly in the config directory. Leaving them there would
-    strand an index of the whole library while the first person to sign in
-    started an empty one and re-imported everything.
-
-    Moved rather than copied, and only when the destination is empty, so this
-    can run on every start and do nothing the second time. The database is
-    portable as-is: beets stores item paths relative to `directory`, and the
-    directory has not changed.
-    """
-    legacy = CONFIG_DIR / "beets"
-    legacy_config, legacy_db = legacy / "config.yaml", legacy / "library.db"
-    if not legacy_db.exists() and not legacy_config.exists():
-        return False
-    if space.beets_config.exists() or space.beets_library.exists():
-        return False
-
-    space.prepare()
-    moved = []
-    for source, target in ((legacy_config, space.beets_config),
-                           (legacy_db, space.beets_library),
-                           (legacy / "import.log", space.beets_dir / "import.log")):
-        if source.exists():
-            source.rename(target)
-            moved.append(target.name)
-
-    # The configuration names its database and log by absolute path, so
-    # moving the files without rewriting it leaves beets building a fresh,
-    # empty index at the old location while the real one sits unread beside
-    # it - and nothing that depends on knowing what was just filed works.
-    if space.beets_config.exists():
-        text = space.beets_config.read_text(encoding="utf-8")
-        for old, new in ((legacy / "library.db", space.beets_library),
-                         (legacy / "import.log", space.beets_dir / "import.log")):
-            text = text.replace(str(old), str(new))
-            text = text.replace(old.as_posix(), new.as_posix())
-        # `directory` too. An adopted config naming a destination other than
-        # this workspace's would have beets file music somewhere the stamper
-        # then fails to find, because it resolves relative paths against the
-        # workspace's own root.
-        # A function, not a string: backslashes in a replacement template are
-        # escapes, so a Windows path raises on \U and silently substitutes a
-        # newline for \n.
-        text = re.sub(r"(?m)^directory:.*$",
-                      lambda _: f"directory: {space.library_path}", text)
-        space.beets_config.write_text(text, encoding="utf-8")
-
-    log.info("adopted the previous beets installation for %s: %s",
-             space.username, ", ".join(moved))
-    return True
 
 
 def _owner_of(marker: Path) -> tuple[str, Path] | None:
