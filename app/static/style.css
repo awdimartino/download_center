@@ -1769,6 +1769,15 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   max-width: 60ch;
 }
 
+/* A smaller heading for one chart among several sharing a figure's range
+   switch, rather than a full home-figure-title each. */
+.home-figure-subtitle {
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  color: var(--muted);
+  margin: var(--s-5) 0 var(--s-2);
+}
+
 /* --- the monthly plot ----------------------------------------------------- */
 
 .chart-wrap { position: relative; }
@@ -1920,6 +1929,38 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 @media (max-width: 520px) {
   .home-bar-row { grid-template-columns: minmax(5rem, 8rem) 1fr auto; }
   .chart { height: 140px; }
+}
+
+/* --- the hourly chart ------------------------------------------------------ */
+
+.hour-chart {
+  display: flex;
+  align-items: flex-end;
+  height: 80px;
+  gap: var(--s-0);
+}
+
+.hour-col {
+  flex: 1 1 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  position: relative;
+}
+
+.hour-bar {
+  width: 60%;
+  min-height: 2px;
+  background: var(--accent);
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+
+.hour-label {
+  position: absolute;
+  bottom: -1.3em;
+  font-size: var(--t-xs);
+  color: var(--faint);
 }
 
 @media (prefers-reduced-motion: reduce) {

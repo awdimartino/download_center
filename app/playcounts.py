@@ -52,6 +52,10 @@ log = logging.getLogger("download_center.playcounts")
 # media_file.tags, so it can be read in the same query.
 UUID_TAG = "$.navidrome_uuid[0].value"
 
+# A track can carry more than one genre; only the first is read, the same
+# choice already made for every other multi-valued tag this app reads.
+GENRE_TAG = "$.genre[0].value"
+
 
 
 def zone() -> tzinfo:
@@ -513,16 +517,21 @@ def _titles(uuids: list[str]) -> dict[str, dict[str, Any]]:
             holes = ",".join("?" * len(chunk))
             rows = connection.execute(f"""
                 select json_extract(mf.tags, '{UUID_TAG}') as uuid,
-                       mf.title, mf.artist, mf.album, mf.duration
+                       mf.title, mf.artist, mf.album, mf.duration,
+                       coalesce(nullif(mf.album_artist, ''), mf.artist)
                   from media_file mf
                  where json_extract(mf.tags, '{UUID_TAG}') in ({holes})
             """, chunk).fetchall()
-            for uuid, title, artist, album, duration in rows:
+            for uuid, title, artist, album, duration, album_artist in rows:
                 found[uuid] = {"title": title or "", "artist": artist or "",
                                "album": album or "",
                                # Carried for the one caller that turns plays
                                # into hours; the rest ignore it.
-                               "duration": duration or 0.0}
+                               "duration": duration or 0.0,
+                               # Whose album this is, not who is credited on
+                               # this particular track - a compilation's
+                               # tracks should still group under one album.
+                               "album_artist": album_artist or ""}
     return found
 
 
@@ -538,6 +547,79 @@ def top_tracks(start: str, end: str, user_id: str,
         row["album"] = known["album"] if known else ""
         row["known"] = known is not None
     return rows
+
+
+def top_albums(start: str, end: str, user_id: str,
+               limit: int = 10) -> list[dict[str, Any]]:
+    """The most played albums over a range, plays summed across their tracks.
+
+    Grouped by artist and album together, not album alone - two different
+    artists' "Greatest Hits" are not the same record.
+    """
+    rows = plays_between(start, end, user_id)
+    names = _titles([row["track_uuid"] for row in rows])
+
+    totals: dict[tuple[str, str], int] = {}
+    for row in rows:
+        known = names.get(row["track_uuid"])
+        if not known or not known["album"]:
+            # A track that left the library, or was never tagged with an
+            # album, has nothing to group it with - it is in top_tracks
+            # already, and a row here would say "by nobody, called nothing".
+            continue
+        key = (known["album_artist"], known["album"])
+        totals[key] = totals.get(key, 0) + row["plays"]
+
+    ranked = sorted(totals.items(), key=lambda item: item[1], reverse=True)
+    return [{"artist": artist, "album": album, "plays": plays}
+            for (artist, album), plays in ranked[:limit]]
+
+
+def _genres(uuids: list[str]) -> dict[str, str]:
+    """Track UUID -> its first genre tag, from Navidrome's index.
+
+    Mirrors `_titles`: chunked for SQLite's parameter limit, and a UUID with
+    no row here is a track that has since left the library.
+    """
+    if not uuids:
+        return {}
+    found: dict[str, str] = {}
+    try:
+        connection = navidrome.open_db()
+    except navidrome.Unavailable as exc:
+        log.warning("cannot read genres: %s", exc)
+        return found
+    with connection:
+        for start in range(0, len(uuids), 500):
+            chunk = uuids[start:start + 500]
+            holes = ",".join("?" * len(chunk))
+            rows = connection.execute(f"""
+                select json_extract(mf.tags, '{UUID_TAG}') as uuid,
+                       json_extract(mf.tags, '{GENRE_TAG}') as genre
+                  from media_file mf
+                 where json_extract(mf.tags, '{UUID_TAG}') in ({holes})
+            """, chunk).fetchall()
+            for uuid, genre in rows:
+                if genre:
+                    found[uuid] = genre
+    return found
+
+
+def top_genres(start: str, end: str, user_id: str,
+               limit: int = 10) -> list[dict[str, Any]]:
+    """The most played genres over a range. Untagged tracks are left out,
+    the same choice `top_albums` makes for untagged albums."""
+    rows = plays_between(start, end, user_id)
+    genres = _genres([row["track_uuid"] for row in rows])
+
+    totals: dict[str, int] = {}
+    for row in rows:
+        genre = genres.get(row["track_uuid"])
+        if genre:
+            totals[genre] = totals.get(genre, 0) + row["plays"]
+
+    ranked = sorted(totals.items(), key=lambda item: item[1], reverse=True)
+    return [{"genre": genre, "plays": plays} for genre, plays in ranked[:limit]]
 
 
 def coverage(user_id: str) -> dict[str, Any]:

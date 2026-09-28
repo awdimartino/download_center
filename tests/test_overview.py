@@ -444,3 +444,116 @@ def test_an_evening_play_counts_in_the_local_month_not_the_utc_one(
 
     assert when.startswith("2026-09-30T22:00:00"), when
     assert when[:7] == "2026-09"
+
+
+# --- hourly distribution ------------------------------------------------
+
+def test_plays_are_bucketed_by_the_hour_they_happened(state_db):
+    snapshot("2026-09-25T09:05:00+00:00", "t1", 1)
+    snapshot("2026-09-25T09:10:00+00:00", "t1", 2,
+             played_at="2026-09-25 09:07:00+00:00")
+    snapshot("2026-09-25T21:05:00+00:00", "t2", 4)
+    snapshot("2026-09-25T21:10:00+00:00", "t2", 5,
+             played_at="2026-09-25 21:08:00+00:00")
+
+    hourly = overview.hourly_distribution(ALEX, "2026-09-25", "2026-09-25")
+
+    assert len(hourly) == 24
+    assert [h["hour"] for h in hourly] == list(range(24))
+    assert hourly[9]["plays"] == 1
+    assert hourly[21]["plays"] == 1
+    assert sum(h["plays"] for h in hourly) == 2
+
+
+def test_a_play_with_no_known_time_is_not_bucketed(state_db):
+    """A bare-date row has a day but no hour - it cannot be placed on this
+    chart, so it is left out rather than guessed at."""
+    snapshot("2026-09-24", "t1", 3)
+    snapshot("2026-09-25", "t1", 6)
+
+    hourly = overview.hourly_distribution(ALEX, "2026-09-25", "2026-09-25")
+
+    assert sum(h["plays"] for h in hourly) == 0
+
+
+def test_hourly_distribution_is_scoped_to_the_range(state_db):
+    snapshot("2026-08-01T10:00:00+00:00", "t1", 1)
+    snapshot("2026-08-02T10:00:00+00:00", "t1", 2,
+             played_at="2026-08-02 10:00:00+00:00")
+
+    hourly = overview.hourly_distribution(ALEX, "2026-09-01", "2026-09-30")
+
+    assert sum(h["plays"] for h in hourly) == 0
+
+
+# --- sessions -------------------------------------------------------------
+
+def test_consecutive_plays_form_one_session(state_db, identity_with_db,
+                                            navidrome_db):
+    add_track(navidrome_db, "m1", duration=180.0, tags=tagged("t1"))
+    snapshot("2026-09-25T20:00:00+00:00", "t1", 1)
+    snapshot("2026-09-25T20:05:00+00:00", "t1", 2,
+             played_at="2026-09-25 20:04:00+00:00")
+    snapshot("2026-09-25T20:10:00+00:00", "t1", 3,
+             played_at="2026-09-25 20:07:00+00:00")
+
+    session = overview.longest_session(ALEX, "2026-09-25", "2026-09-25")
+
+    assert session["count"] == 1
+    assert session["tracks"] == 1, "one song, played twice"
+    assert session["plays"] == 2
+    # 20:04 to 20:07 is 180 seconds, plus the last track's own 180 seconds.
+    assert session["seconds"] == 360
+
+
+def test_a_long_gap_starts_a_new_session(state_db):
+    snapshot("2026-09-25T09:00:00+00:00", "t1", 1)
+    snapshot("2026-09-25T09:05:00+00:00", "t1", 2,
+             played_at="2026-09-25 09:01:00+00:00")
+    snapshot("2026-09-25T21:00:00+00:00", "t1", 3,
+             played_at="2026-09-25 21:00:00+00:00")
+
+    session = overview.longest_session(ALEX, "2026-09-25", "2026-09-25")
+
+    assert session["count"] == 2
+
+
+def test_the_longest_session_is_reported(state_db):
+    # A short session at 09:00, two minutes end to end...
+    snapshot("2026-09-25T09:00:00+00:00", "t1", 1)
+    snapshot("2026-09-25T09:05:00+00:00", "t1", 2,
+             played_at="2026-09-25 09:01:00+00:00")
+    snapshot("2026-09-25T09:10:00+00:00", "t1", 3,
+             played_at="2026-09-25 09:03:00+00:00")
+    # ...and a longer one at 21:00, twenty minutes end to end.
+    snapshot("2026-09-25T21:00:00+00:00", "t2", 1)
+    snapshot("2026-09-25T21:15:00+00:00", "t2", 2,
+             played_at="2026-09-25 21:05:00+00:00")
+    snapshot("2026-09-25T21:30:00+00:00", "t2", 3,
+             played_at="2026-09-25 21:25:00+00:00")
+
+    session = overview.longest_session(ALEX, "2026-09-25", "2026-09-25")
+
+    assert session["count"] == 2
+    assert session["start"].startswith("2026-09-25T21:05:00")
+
+
+def test_sessions_with_no_plays_report_nothing(state_db):
+    assert overview.longest_session(ALEX, "2026-09-25", "2026-09-25") == {
+        "seconds": 0, "tracks": 0, "plays": 0,
+        "start": "", "end": "", "count": 0}
+
+
+def test_sessions_are_scoped_to_where_they_started(state_db):
+    """Built once over the whole history and filtered afterwards - cutting
+    the timeline to the range first would split a session that straddles a
+    boundary and report a shorter one on each side."""
+    snapshot("2026-08-31T23:50:00+00:00", "t1", 1)
+    snapshot("2026-09-01T00:05:00+00:00", "t1", 2,
+             played_at="2026-08-31 23:55:00+00:00")
+
+    august = overview.longest_session(ALEX, "2026-08-01", "2026-08-31")
+    september = overview.longest_session(ALEX, "2026-09-01", "2026-09-30")
+
+    assert august["count"] == 1
+    assert september["count"] == 0

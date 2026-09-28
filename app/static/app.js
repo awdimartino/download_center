@@ -2014,21 +2014,79 @@ function monthlyChart(months) {
   return wrap;
 }
 
-function artistBars(artists) {
-  if (!artists.length) {
-    return [el("p", "empty", "Nothing played in the last year yet.")];
-  }
-  const most = Math.max(1, ...artists.map((a) => a.plays));
-  return artists.map((artist) => {
+// Shared by every "name against a plays count" list: the artist bars above,
+// and top albums / top genres below - same shape, different label.
+function barRows(items, name, value, emptyText) {
+  if (!items.length) return [el("p", "empty", emptyText)];
+  const most = Math.max(1, ...items.map(value));
+  return items.map((item) => {
     const row = el("div", "home-bar-row");
     const track = el("div", "home-bar");
     const fill = el("div", "home-bar-fill");
-    fill.style.width = Math.max(1.5, (artist.plays / most) * 100) + "%";
+    fill.style.width = Math.max(1.5, (value(item) / most) * 100) + "%";
     track.append(fill);
-    row.append(el("span", "home-bar-name", artist.artist), track,
-               el("span", "home-bar-value", artist.plays.toLocaleString()));
+    row.append(el("span", "home-bar-name", name(item)), track,
+               el("span", "home-bar-value", value(item).toLocaleString()));
     return row;
   });
+}
+
+function artistBars(artists) {
+  return barRows(artists, (a) => a.artist, (a) => a.plays,
+                 "Nothing played in the last year yet.");
+}
+
+function albumBars(albums) {
+  return barRows(albums,
+                 (a) => a.artist ? `${a.album} — ${a.artist}` : a.album,
+                 (a) => a.plays, "Nothing played in this window yet.");
+}
+
+function genreBars(genres) {
+  return barRows(genres, (g) => g.genre, (g) => g.plays,
+                 "Nothing tagged with a genre in this window yet.");
+}
+
+function hourlyBars(hourly) {
+  const wrap = el("div");
+  if (!hourly.some((h) => h.plays > 0)) {
+    return el("p", "empty", "Nothing played in this window yet.");
+  }
+  const most = Math.max(1, ...hourly.map((h) => h.plays));
+  hourly.forEach((h) => {
+    const col = el("div", "hour-col");
+    const bar = el("div", "hour-bar");
+    bar.style.height = Math.max(2, Math.round(100 * h.plays / most)) + "%";
+    col.title = `${String(h.hour).padStart(2, "0")}:00 · `
+      + `${h.plays.toLocaleString()} play${h.plays === 1 ? "" : "s"}`;
+    col.append(bar);
+    if (h.hour % 6 === 0) {
+      col.append(el("span", "hour-label", String(h.hour).padStart(2, "0")));
+    }
+    wrap.append(col);
+  });
+  return wrap;
+}
+
+function formatDuration(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.round((seconds % 3600) / 60);
+  if (hours && minutes) return `${hours}h ${minutes}m`;
+  if (hours) return `${hours}h`;
+  return `${minutes}m`;
+}
+
+function sessionStats(longest) {
+  if (!longest.count) {
+    return [el("p", "empty", "Nothing played in this window yet.")];
+  }
+  return [
+    stat("Longest session", formatDuration(longest.seconds),
+         `${longest.tracks} track${longest.tracks === 1 ? "" : "s"}, `
+         + `starting ${longest.start.replace("T", " ").slice(0, 16)}`),
+    stat("Sessions in view", longest.count.toLocaleString(),
+         "a gap of 30 minutes or more starts a new one"),
+  ];
 }
 
 function heroFact(facts) {
@@ -2124,6 +2182,10 @@ const listeningEl = document.getElementById("listening");
 const listeningEmpty = document.getElementById("listening-empty");
 const listeningError = document.getElementById("listening-error");
 const listeningCoverage = document.getElementById("listening-coverage");
+const listeningAlbums = document.getElementById("listening-albums");
+const listeningGenres = document.getElementById("listening-genres");
+const listeningHourly = document.getElementById("listening-hourly");
+const listeningSession = document.getElementById("listening-session");
 let listeningDays = 3650;
 
 // A stat with somewhere to go is a button styled like the plain ones;
@@ -2205,6 +2267,11 @@ async function loadListening() {
     listeningEmpty.textContent = tracks.length
       ? "" : "Nothing played in this window yet.";
     listeningEmpty.hidden = tracks.length > 0;
+
+    listeningSession.replaceChildren(...sessionStats(data.longest_session || {}));
+    listeningHourly.replaceChildren(hourlyBars(data.hourly || []));
+    listeningAlbums.replaceChildren(...albumBars(data.albums || []));
+    listeningGenres.replaceChildren(...genreBars(data.genres || []));
   } catch (err) {
     listeningEmpty.hidden = false;
     listeningEmpty.textContent = `Could not read play counts: ${err.message}`;

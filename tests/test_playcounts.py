@@ -8,6 +8,7 @@ no "run it again tomorrow" for yesterday.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
@@ -575,6 +576,86 @@ def test_the_limit_is_honoured(wired):
     playcounts.take("2026-03-02")
 
     assert len(playcounts.top_tracks("2026-03-02", "2026-03-02", ALEX, 1)) == 1
+
+
+# --- top albums --------------------------------------------------------------
+
+def test_album_plays_are_summed_across_their_tracks(wired):
+    add_track(wired, "t1", tags=UUID_A, album="Kid A", album_artist="Radiohead")
+    add_track(wired, "t2", tags=UUID_B, path="b.mp3",
+              album="Kid A", album_artist="Radiohead")
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 3)
+    played(wired, "t2", ALEX, 2)
+    playcounts.take("2026-03-02")
+
+    albums = playcounts.top_albums("2026-03-02", "2026-03-02", ALEX)
+    assert albums == [{"artist": "Radiohead", "album": "Kid A", "plays": 5}]
+
+
+def test_same_named_albums_by_different_artists_are_kept_apart(wired):
+    add_track(wired, "t1", tags=UUID_A, album="Greatest Hits",
+              album_artist="Queen")
+    add_track(wired, "t2", tags=UUID_B, path="b.mp3",
+              album="Greatest Hits", album_artist="Abba")
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 4)
+    played(wired, "t2", ALEX, 1)
+    playcounts.take("2026-03-02")
+
+    albums = playcounts.top_albums("2026-03-02", "2026-03-02", ALEX)
+    assert {(a["artist"], a["plays"]) for a in albums} == {
+        ("Queen", 4), ("Abba", 1)}
+
+
+def test_a_track_with_no_album_is_not_grouped_into_one(wired):
+    add_track(wired, "t1", tags=UUID_A, album="")
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 5)
+    playcounts.take("2026-03-02")
+
+    assert playcounts.top_albums("2026-03-02", "2026-03-02", ALEX) == []
+
+
+def test_the_album_list_is_capped(wired):
+    for n in range(3):
+        add_track(wired, f"t{n}", tags=json.dumps(
+            {"navidrome_uuid": [{"value": f"uuid-{n}"}]}),
+            path=f"{n}.mp3", album=f"Album {n}", album_artist="Artist")
+    playcounts.take("2026-03-01")
+    for n in range(3):
+        played(wired, f"t{n}", ALEX, n + 1)
+    playcounts.take("2026-03-02")
+
+    assert len(playcounts.top_albums(
+        "2026-03-02", "2026-03-02", ALEX, limit=2)) == 2
+
+
+# --- top genres ----------------------------------------------------------
+
+def test_genre_plays_are_summed_across_their_tracks(wired):
+    add_track(wired, "t1", tags=json.dumps(
+        {"navidrome_uuid": [{"value": "uuid-a"}],
+         "genre": [{"value": "Ambient"}]}))
+    add_track(wired, "t2", path="b.mp3", tags=json.dumps(
+        {"navidrome_uuid": [{"value": "uuid-b"}],
+         "genre": [{"value": "Ambient"}]}))
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 3)
+    played(wired, "t2", ALEX, 2)
+    playcounts.take("2026-03-02")
+
+    genres = playcounts.top_genres("2026-03-02", "2026-03-02", ALEX)
+    assert genres == [{"genre": "Ambient", "plays": 5}]
+
+
+def test_an_untagged_genre_is_left_out(wired):
+    add_track(wired, "t1", tags=UUID_A)
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 5)
+    playcounts.take("2026-03-02")
+
+    assert playcounts.top_genres("2026-03-02", "2026-03-02", ALEX) == []
 
 
 def test_coverage_is_one_persons_own_history(wired):

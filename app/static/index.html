@@ -119,9 +119,10 @@
     </section>
 
     <!-- The detail the tiles and the hero fact above are doors into: the
-         same snapshots and imported Last.fm history, at track level. -->
+         same snapshots and imported Last.fm history, broken down several
+         ways. One range switch governs every chart in here. -->
     <section id="home-listening" class="home-figure">
-      <h2 class="home-figure-title">Every track</h2>
+      <h2 class="home-figure-title">Listening</h2>
       <div class="panel-note">
         <p>
           Your play counts, kept where Navidrome does not keep them: a
@@ -130,13 +131,28 @@
           so they survive re-tagging, moving and a rebuilt database.
         </p>
         <div class="listen-range">
-          <button class="range ghost" data-days="30" type="button">30 days</button>
+          <button class="range ghost" data-days="1" type="button">Today</button>
+          <button class="range ghost" data-days="30" type="button">Month</button>
           <button class="range ghost" data-days="365" type="button">Year</button>
           <button class="range ghost active" data-days="3650" type="button">All time</button>
         </div>
       </div>
       <p id="listening-error" class="warn" hidden></p>
       <div id="listening-coverage" class="stats"></div>
+
+      <h3 class="home-figure-subtitle">Longest session</h3>
+      <div id="listening-session" class="stats"></div>
+
+      <h3 class="home-figure-subtitle">By hour of day</h3>
+      <div id="listening-hourly" class="hour-chart"></div>
+
+      <h3 class="home-figure-subtitle">Top albums</h3>
+      <div id="listening-albums" class="home-bars"></div>
+
+      <h3 class="home-figure-subtitle">Top genres</h3>
+      <div id="listening-genres" class="home-bars"></div>
+
+      <h3 class="home-figure-subtitle">Every track</h3>
       <div id="listening"></div>
       <p id="listening-empty" class="empty">Loading…</p>
     </section>

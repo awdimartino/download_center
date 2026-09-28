@@ -1714,7 +1714,9 @@ async def playcount_top(
     limit: int = 25,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """The signed-in person's most played tracks over a window.
+    """Everything the Listening panel shows for one window: the signed-in
+    person's most played tracks, albums and genres, their listening by hour
+    of day, and their longest session - all over the same range.
 
     Theirs alone. Play counts are per Navidrome account, and one person's
     listening is not another's to read - the same rule the rest of this
@@ -1731,16 +1733,20 @@ async def playcount_top(
         end = playcounts.today()
         start = (datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
                  - timedelta(days=days - 1)).strftime("%Y-%m-%d")
-        tracks = playcounts.top_tracks(start, end, session.identity.user_id,
-                                       limit)
+        user_id = session.identity.user_id
+        tracks = playcounts.top_tracks(start, end, user_id, limit)
         return {
             "start": start, "end": end, "days": days,
             "tracks": tracks,
             "plays": sum(track["plays"] for track in tracks),
+            "albums": playcounts.top_albums(start, end, user_id, 10),
+            "genres": playcounts.top_genres(start, end, user_id, 10),
+            "hourly": overview.hourly_distribution(user_id, start, end),
+            "longest_session": overview.longest_session(user_id, start, end),
             # Theirs, not the installation's. status() counts every account's
             # imported history together, which shown to someone who has never
             # played anything is both baffling and none of their business.
-            "coverage": playcounts.coverage(session.identity.user_id),
+            "coverage": playcounts.coverage(user_id),
         }
 
     return await asyncio.to_thread(collect)

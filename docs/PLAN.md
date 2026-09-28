@@ -97,9 +97,18 @@ Tick items as they land.
       number's breakdown; "Your library" opens the Library view. All four
       were candidates to drop rather than link — each found a genuine
       target instead.
-- [ ] **Session 5 — more stats.** Top albums, top genres, hourly
-      distribution, longest session; a day / month / year / all-time
-      switch on every chart.
+- [x] **Session 5 — more stats.** Done 2026-09-28. Top albums, top genres
+      (from the track's first genre tag - Navidrome's genre tables are
+      untouched, left for Session 8), hourly distribution and longest
+      session (a gap of 30+ minutes starts a new one; sessions are found
+      over the whole history first, then filtered to the ones that started
+      in range, so a range boundary can't split one and shorten both
+      halves) join the existing "Every track" list under one `/api/playcounts/top`
+      response. The range switch - now Today / Month / Year / All time - was
+      already shared by every chart in the Listening section, since they all
+      render from that one fetch; the monthly trend and top-artist bars
+      above it stay on their own fixed windows (24 months, 12 months), which
+      the switch was never meant to shorten.
 - [ ] **Session 6 — library editing without dropdowns.** Inline editing;
       the album editor gets a search across every album in the library, to
       merge albums that were split by mistake.

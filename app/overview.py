@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import collections
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from . import navidrome, playcounts, store
@@ -40,6 +40,11 @@ MONTHS = 24
 
 # How many artists the list names. Past this it stops being a glance.
 TOP_ARTISTS = 6
+
+# A gap at least this long ends a session; the next play starts another one.
+# Long enough that turning an album over doesn't split one, short enough
+# that leaving the room does.
+SESSION_GAP = timedelta(minutes=30)
 
 
 def _increments(user_id: str) -> list[tuple[str, str, int]]:
@@ -86,6 +91,87 @@ def _increments(user_id: str) -> list[tuple[str, str, int]]:
 
     plays.extend((day, track_uuid, n) for day, track_uuid, n in imported if n)
     return plays
+
+
+def _timed_plays(user_id: str) -> list[tuple[datetime, str, int]]:
+    """This person's plays that carry an actual moment, oldest first.
+
+    `_increments` also returns plays whose only clock is the day the reading
+    was taken or the import ran on - a bare "2026-09-25" with no time in it.
+    Those cannot say which hour a play fell in or how far it sat from the
+    next one, so they are left out here rather than passed through with a
+    time that was never recorded.
+    """
+    out: list[tuple[datetime, str, int]] = []
+    for when, track_uuid, n in _increments(user_id):
+        if "T" not in when:
+            continue
+        try:
+            moment = datetime.fromisoformat(when)
+        except ValueError:
+            continue
+        out.append((moment.astimezone(playcounts.zone()), track_uuid, n))
+    out.sort(key=lambda row: row[0])
+    return out
+
+
+def hourly_distribution(user_id: str, start: str, end: str) -> list[dict[str, Any]]:
+    """Plays by hour of day, local time, for plays inside [start, end]."""
+    buckets: dict[int, int] = collections.Counter()
+    for moment, _track, n in _timed_plays(user_id):
+        if start <= moment.strftime("%Y-%m-%d") <= end:
+            buckets[moment.hour] += n
+    return [{"hour": hour, "plays": buckets.get(hour, 0)} for hour in range(24)]
+
+
+def _sessions(user_id: str) -> list[dict[str, Any]]:
+    """Every stretch of listening with no gap of SESSION_GAP or more in it.
+
+    Built once over the whole history rather than cut to a range first: a
+    range boundary that happened to fall in the middle of an evening would
+    otherwise split one session into two and report a shorter one of each.
+    """
+    plays = _timed_plays(user_id)
+    if not plays:
+        return []
+
+    runs: list[list[tuple[datetime, str, int]]] = [[plays[0]]]
+    for entry in plays[1:]:
+        if entry[0] - runs[-1][-1][0] < SESSION_GAP:
+            runs[-1].append(entry)
+        else:
+            runs.append([entry])
+
+    named = playcounts._titles(list({track_uuid for _, track_uuid, _ in plays}))
+    sessions = []
+    for run in runs:
+        first_when, last_when = run[0][0], run[-1][0]
+        last_track = named.get(run[-1][1])
+        # The gap between the first and last play understates the session -
+        # the last track was still playing when its own play was logged, the
+        # same estimate `listening()` makes for a year's total.
+        tail = (last_track.get("duration") or 0.0) if last_track else 0.0
+        sessions.append({
+            "start": first_when.isoformat(timespec="seconds"),
+            "end": last_when.isoformat(timespec="seconds"),
+            # Distinct songs, the same meaning `listening()`'s "year.tracks"
+            # already gives that word - "plays" is the count of streams,
+            # which for a short session on repeat can be the bigger number.
+            "tracks": len({track_uuid for _, track_uuid, _ in run}),
+            "plays": sum(n for _, _, n in run),
+            "seconds": round((last_when - first_when).total_seconds() + tail),
+        })
+    return sessions
+
+
+def longest_session(user_id: str, start: str, end: str) -> dict[str, Any]:
+    """The longest unbroken stretch of listening that started in [start, end]."""
+    in_range = [s for s in _sessions(user_id) if start <= s["start"][:10] <= end]
+    if not in_range:
+        return {"seconds": 0, "tracks": 0, "plays": 0,
+                "start": "", "end": "", "count": 0}
+    longest = max(in_range, key=lambda s: s["seconds"])
+    return {**longest, "count": len(in_range)}
 
 
 def _months_back(count: int) -> list[str]:

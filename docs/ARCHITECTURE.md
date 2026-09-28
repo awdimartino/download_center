@@ -451,6 +451,12 @@ quality mechanism.
   is not another's to read. Keyed by track
   UUID, storing only what changed, with a run log so a quiet day still
   counts as captured. `play_imported` holds the Last.fm backfill beside it.
+  `top_albums`/`top_genres` group the same range-scoped plays by tag; genre
+  reads only the track's first genre tag, since Navidrome's own genre
+  tables are untouched here (Session 8 is where those get built out).
+  Hourly distribution and longest-session live in `overview.py` instead,
+  because both need each play's exact moment (`overview._timed_plays`),
+  which this module's day-bucketed queries do not carry.
 - **`operations.py`** — long work that is not a download: a candidate
   lookup, a retag, a disk audit. One at a time per name, off the request,
   with a status the browser can ask for; starting one already running reports
