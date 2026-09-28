@@ -413,6 +413,16 @@ existing artist and title exactly right; one typo made a new album instead
 of joining the one you meant. The search does not add a merge codepath, it
 just finds you a name that is known to exist.
 
+**Genre tally** (`GET /api/library/genres`, `library.genre_tally`) counts
+tracks per genre string, read the same way `playcounts.top_genres` reads
+one - `json_extract` on the first `genre` tag in `media_file.tags` -  but
+across the whole library rather than a played window, and library-scoped
+the same way the album listing is. Counted exactly as tagged, with no
+casefolding or merging: the point is to surface spelling and case variants
+as a list, not hide them. Fetched fresh on every open rather than cached,
+since it is one grouped aggregate query rather than the Duplicates panel's
+full scan. Merging and renaming genres is not built yet.
+
 **"Needs review" is the part of that filter that can empty.** An album
 needs review when a track has no MusicBrainz id *and* nobody has dealt with
 it here: applied a match, edited it, or pressed *Mark reviewed*. That is
@@ -471,8 +481,9 @@ quality mechanism.
   UUID, storing only what changed, with a run log so a quiet day still
   counts as captured. `play_imported` holds the Last.fm backfill beside it.
   `top_albums`/`top_genres` group the same range-scoped plays by tag; genre
-  reads only the track's first genre tag, since Navidrome's own genre
-  tables are untouched here (Session 8 is where those get built out).
+  reads only the track's first genre tag, the same read `library.genre_tally`
+  uses across the whole library rather than a played window (see
+  `library.py` above). Navidrome's own genre tables are untouched by either.
   Hourly distribution and longest-session live in `overview.py` instead,
   because both need each play's exact moment (`overview._timed_plays`),
   which this module's day-bucketed queries do not carry.

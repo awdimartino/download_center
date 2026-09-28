@@ -213,7 +213,12 @@
         MusicBrainz has never confirmed.
       </p>
       <button id="library-rescan" class="ghost" type="button">Rescan</button>
+      <button id="library-genres-toggle" class="ghost" type="button">Genres</button>
     </div>
+    <!-- Every genre string exactly as tagged, unmerged - case and spelling
+         variants stay separate on purpose, as a list of what a later merge
+         step would need to fold together. -->
+    <section id="library-genres" class="home-bars" hidden></section>
     <div class="library-controls">
       <label class="field-inline">
         <span class="sr-only">Search your library</span>

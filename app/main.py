@@ -1278,6 +1278,14 @@ async def library_list(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/library/genres")
+async def library_genres(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """How many tracks carry each genre string, exactly as tagged."""
+    return await asyncio.to_thread(library.genre_tally, session.identity)
+
+
 @app.get("/api/library/album")
 async def library_album(
     library_id: int,

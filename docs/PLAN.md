@@ -135,8 +135,21 @@ Tick items as they land.
       drift apart. Unlike the original per-group duplicate button (Code
       quality, item 1), this one confirms before moving anything, from the
       start.
-- [ ] **Session 8 — genres.** A genre tally in the library, then merge and
-      rename.
+- [x] **Session 8 — genre tally.** Done 2026-09-28. A "Genres" toggle in
+      the Library panel's header, next to Rescan, opens `GET
+      /api/library/genres` (`library.genre_tally`): every genre string a
+      track carries, exactly as tagged and counted across the whole
+      library - deliberately not merged or casefolded, since the point is
+      to surface spelling and case variants ("Electronic" next to
+      "electronic") for a later merge step, not hide them. Reads the same
+      first-genre-tag JSON path Session 5's `top_genres` already reads, but
+      library-scoped rather than play-scoped. Untagged tracks are counted
+      separately rather than folded into the list. Renders with the same
+      `barRows` helper the Listening section's artist/album/genre bars
+      already use. Fetched fresh on every open - one grouped aggregate
+      query, cheap enough not to need the Duplicates panel's cache-on-first-
+      open treatment. Merge and rename moved to the `### Last` section
+      below, at the user's steer - a tally was worth landing on its own.
 - [ ] **Session 9 — rename and setup docs.** Rename to Navidrome Companion
       (image, compose, README; needs a Pi redeploy), then a from-scratch
       setup guide: container, mounts, Navidrome PID config, beets config,
@@ -154,6 +167,14 @@ Tick items as they land.
       release" button that opens MusicBrainz's add-release form pre-filled,
       using its existing seeding format. Only if the genre and ReplayGain
       cleanup shows enough releases need it.
+- [ ] **Sessions 16+ — genre merge and rename.** Split out of Session 8,
+      which shipped the tally alone. Reuse the album editor's merge-search
+      pattern (Session 6): a debounced search across the genre tally,
+      picking a target folds the source genre's tracks into it. Needs a
+      write path first - `genre` is not in `filer._EASY`, so `write_tags`
+      silently drops it today; every track carrying the source genre has to
+      be retagged and rescanned, which is a bigger write than the album
+      editor's one-folder retag.
 - [ ] **Later, not vital — folders holding more than one album.** Found
       2026-09-28: 57 of Alex's folders carry more than one album UUID
       (e.g. `Aiden Williams/Believe` holds *Believe*, *Breakup* and

@@ -1044,6 +1044,8 @@ const librarySearch = document.getElementById("library-search");
 const libraryShow = document.getElementById("library-show");
 const libraryGainAll = document.getElementById("library-gain-all");
 const libraryProgress = document.getElementById("library-progress");
+const libraryGenresToggle = document.getElementById("library-genres-toggle");
+const libraryGenresSection = document.getElementById("library-genres");
 
 // How much of the list is on screen.
 //
@@ -1755,6 +1757,35 @@ libraryGainAll.addEventListener("click", () => {
     + "and its files are rewritten with the new tags. On the Pi this can "
     + "take a long while; it can be stopped between albums.")) return;
   startOperation("replaygain", "/api/library/replaygain", {});
+});
+
+// A cheap grouped count, unlike the Duplicates panel's full scan - fetched
+// fresh on every open rather than cached, and closed again on a second tap.
+libraryGenresToggle.addEventListener("click", async () => {
+  if (!libraryGenresSection.hidden) {
+    libraryGenresSection.hidden = true;
+    return;
+  }
+  libraryGenresSection.hidden = false;
+  libraryGenresSection.replaceChildren(el("p", "empty", "Loading…"));
+  try {
+    const response = await fetch("/api/library/genres");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.available === false) {
+      throw new Error(data.reason || data.detail
+                      || `the server answered ${response.status}`);
+    }
+    const rows = barRows(data.genres || [], (g) => g.genre, (g) => g.tracks,
+                         "No genres tagged yet.");
+    if (data.untagged) {
+      rows.push(el("p", "panel-sub",
+        `${plural(data.untagged, "track")} with no genre tag.`));
+    }
+    libraryGenresSection.replaceChildren(...rows);
+  } catch (err) {
+    libraryGenresSection.replaceChildren(
+      el("p", "empty", `Could not read genres: ${err.message}`));
+  }
 });
 
 // Debounced: one request per pause, not one per keystroke. Each costs a walk

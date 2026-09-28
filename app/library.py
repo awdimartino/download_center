@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from . import navidrome, store
+from .playcounts import GENRE_TAG
 
 log = logging.getLogger("download_center.library")
 
@@ -264,6 +265,38 @@ def listing(identity: navidrome.Identity, limit: int = PAGE, offset: int = 0,
         "limit": limit,
         "offset": offset,
     }
+
+
+def genre_tally(identity: navidrome.Identity) -> dict[str, Any]:
+    """How many tracks carry each genre string, exactly as tagged.
+
+    Deliberately not merged or casefolded: the point is to surface variant
+    spellings ("Electronic" next to "electronic") as a maintenance list, not
+    to hide them. Merging them is a later step.
+    """
+    allowed = [lib["id"] for lib in identity.libraries]
+    if not allowed:
+        return {"available": True, "genres": [], "untagged": 0}
+
+    try:
+        connection = navidrome.open_db()
+        with connection:
+            rows = connection.execute(f"""
+                select json_extract(mf.tags, '{GENRE_TAG}'), count(*)
+                  from media_file mf
+                 where {navidrome.live_clause(connection, allowed)}
+                 group by 1
+            """).fetchall()
+    except (navidrome.Unavailable, sqlite3.Error) as exc:
+        log.warning("cannot read genres: %s", exc)
+        return {"available": False, "reason": str(exc), "genres": [],
+                "untagged": 0}
+
+    genres = [{"genre": genre, "tracks": count} for genre, count in rows
+              if genre]
+    untagged = sum(count for genre, count in rows if not genre)
+    genres.sort(key=lambda g: (-g["tracks"], g["genre"].casefold()))
+    return {"available": True, "genres": genres, "untagged": untagged}
 
 
 def _albums_or_raise(identity: navidrome.Identity) -> list[Album]:

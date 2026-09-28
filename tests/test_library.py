@@ -8,6 +8,8 @@ everything and the narrowing is a filter.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app import library, navidrome
@@ -659,3 +661,51 @@ def test_a_track_that_is_not_on_disk_is_refused(tmp_path, identity):
     (tmp_path / "music").mkdir(exist_ok=True)
     with pytest.raises(ValueError):
         library.track_path(identity, 1, "Nobody/Nothing/gone.mp3")
+
+
+# --- genre tally --------------------------------------------------------
+
+def genre_tag(genre: str) -> str:
+    return json.dumps({"genre": [{"value": genre}]})
+
+
+def test_genre_tally_counts_tracks_per_genre(db, identity):
+    add_track(db, "t1", tags=genre_tag("Ambient"))
+    add_track(db, "t2", path="b.mp3", tags=genre_tag("Ambient"))
+    add_track(db, "t3", path="c.mp3", tags=genre_tag("Rock"))
+
+    tally = library.genre_tally(identity)
+
+    assert tally["genres"] == [
+        {"genre": "Ambient", "tracks": 2}, {"genre": "Rock", "tracks": 1}]
+
+
+def test_genre_tally_keeps_case_variants_separate(db, identity):
+    """The point is to surface "Electronic" vs "electronic" for a later
+    merge, not to paper over them here."""
+    add_track(db, "t1", tags=genre_tag("Electronic"))
+    add_track(db, "t2", path="b.mp3", tags=genre_tag("electronic"))
+
+    genres = library.genre_tally(identity)["genres"]
+
+    assert {g["genre"] for g in genres} == {"Electronic", "electronic"}
+
+
+def test_tracks_with_no_genre_are_counted_separately(db, identity):
+    add_track(db, "t1", tags=genre_tag("Ambient"))
+    add_track(db, "t2", path="b.mp3", tags=None)
+
+    tally = library.genre_tally(identity)
+
+    assert tally["genres"] == [{"genre": "Ambient", "tracks": 1}]
+    assert tally["untagged"] == 1
+
+
+def test_genre_tally_is_private_to_the_account(db, identity, kelly):
+    add_track(db, "t1", tags=genre_tag("Ambient"), library_id=1)
+    add_track(db, "t2", path="b.mp3", tags=genre_tag("Rock"), library_id=2)
+
+    assert library.genre_tally(identity)["genres"] == [
+        {"genre": "Ambient", "tracks": 1}]
+    assert library.genre_tally(kelly)["genres"] == [
+        {"genre": "Rock", "tracks": 1}]
