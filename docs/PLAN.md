@@ -81,8 +81,13 @@ Tick items as they land.
       what lets a dragged album's cover art be carried onto its tracks
       without two different albums uploaded around the same time being able
       to hand each other's cover to the wrong one.
-- [ ] **Session 3 — merge Queue and Browse.** One input; a URL queues, a
-      search term browses.
+- [x] **Session 3 — merge Queue and Browse.** Done 2026-09-28. One nav
+      item ("Browse"), one input and one submit button. `looksLikeUrl()`
+      (the same `^https?://` test `generic.looks_like_url` uses server-side)
+      decides: a URL posts to `/api/jobs` as before, anything else runs the
+      existing Spotify search. The jobs list, its empty state, the crumb and
+      the results grid now all live in `#view-browse`; switching the kind
+      filter re-searches only when the field does not hold a URL.
 - [ ] **Session 4 — merge Home and Listening.** Dashboard on top, detail
       below. Every header stat links to its breakdown or is dropped.
 - [ ] **Session 5 — more stats.** Top albums, top genres, hourly

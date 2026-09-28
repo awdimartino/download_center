@@ -45,9 +45,6 @@
     <button class="nav-item active" data-view="home" type="button">
       <span class="nav-label">Home</span>
     </button>
-    <button class="nav-item" data-view="queue" type="button">
-      <span class="nav-label">Queue</span>
-    </button>
     <button class="nav-item" data-view="drop" type="button">
       <span class="nav-label">Drop</span>
     </button>
@@ -127,16 +124,6 @@
     <p id="home-empty" class="empty" hidden></p>
   </section>
 
-  <section id="view-queue" hidden>
-    <form id="add-form" autocomplete="off">
-      <input id="url" type="text" spellcheck="false"
-             placeholder="Paste a Spotify link, or a YouTube / SoundCloud / Bandcamp URL">
-      <button type="submit">Add</button>
-    </form>
-    <section id="jobs"></section>
-    <p id="empty" class="empty">Nothing queued yet.</p>
-  </section>
-
   <!-- The third way music arrives, beside a download and a folder dragged
        onto the network share: picked or dropped here. Filed by its own
        tags the moment the upload finishes - the inbox does the filing,
@@ -160,13 +147,17 @@
 
   <section id="view-browse" hidden>
     <form id="search-form" autocomplete="off">
-      <input id="query" type="text" spellcheck="false" placeholder="Search Spotify">
+      <input id="query" type="text" spellcheck="false"
+             placeholder="Search Spotify, or paste a link to queue a download">
+      <button type="submit">Go</button>
       <div class="kinds">
         <button class="kind active" data-kind="album" type="button">Albums</button>
         <button class="kind" data-kind="track" type="button">Tracks</button>
         <button class="kind" data-kind="artist" type="button">Artists</button>
       </div>
     </form>
+    <section id="jobs"></section>
+    <p id="empty" class="empty">Nothing queued yet.</p>
     <p id="crumb" class="crumb" hidden></p>
     <div id="results" class="grid"></div>
     <p id="browse-empty" class="empty">Search for an artist, album, or track.</p>

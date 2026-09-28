@@ -5,8 +5,8 @@ const emptyEl = document.getElementById("empty");
 const errorEl = document.getElementById("error");
 const warnEl = document.getElementById("warn");
 const connEl = document.getElementById("conn");
-const form = document.getElementById("add-form");
-const urlInput = document.getElementById("url");
+const form = document.getElementById("search-form");
+const urlInput = document.getElementById("query");
 
 // Job id -> job. The server is authoritative; this is only a render cache.
 const jobs = new Map();
@@ -306,10 +306,20 @@ function connect() {
   });
 }
 
+// A URL queues a download; anything else is a Spotify search. Same input,
+// same submit button - matches the server's own test in main.py's validate().
+function looksLikeUrl(text) {
+  return /^https?:\/\//i.test(text);
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const url = urlInput.value.trim();
   if (!url) return;
+  if (!looksLikeUrl(url)) {
+    runSearch();
+    return;
+  }
 
   showError("");
   const button = form.querySelector("button");
@@ -660,8 +670,6 @@ dropInput.addEventListener("change", () => {
 const resultsEl = document.getElementById("results");
 const browseEmpty = document.getElementById("browse-empty");
 const crumbEl = document.getElementById("crumb");
-const queryInput = document.getElementById("query");
-const searchForm = document.getElementById("search-form");
 
 let kind = "album";
 let searchToken = 0;
@@ -770,7 +778,7 @@ function showView(view) {
   // wide window is still a touch device, and a laptop in a narrow one still
   // has a real keyboard.
   if (view === "browse" && matchMedia("(hover: hover) and (pointer: fine)").matches) {
-    queryInput.focus();
+    urlInput.focus();
   }
   if (view === "home") loadHome();
   if (view === "library") loadLibrary();
@@ -806,7 +814,8 @@ document.querySelectorAll(".kind").forEach((button) => {
   button.addEventListener("click", () => {
     document.querySelectorAll(".kind").forEach((k) => k.classList.toggle("active", k === button));
     kind = button.dataset.kind;
-    if (queryInput.value.trim()) runSearch();
+    const value = urlInput.value.trim();
+    if (value && !looksLikeUrl(value)) runSearch();
   });
 });
 
@@ -933,7 +942,7 @@ function artistCard(card) {
 const RENDERERS = { album: albumCard, track: trackCard, artist: artistCard };
 
 async function runSearch() {
-  const q = queryInput.value.trim();
+  const q = urlInput.value.trim();
   if (!q) return;
   // Guards against a slow earlier request landing after a newer one.
   const token = ++searchToken;
@@ -1015,11 +1024,6 @@ async function openArtist(id) {
   resultsEl.classList.add("grid");
   setBrowse(data.albums.map(albumCard), "No albums found.");
 }
-
-searchForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  runSearch();
-});
 
 /* --- library --------------------------------------------------------------
    Every album you own, one row per folder, newest first. The filter narrows

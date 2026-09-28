@@ -599,9 +599,6 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 /* --- queue ---------------------------------------------------------------- */
 
-#add-form { display: flex; gap: var(--s-2); }
-#url { flex: 1; }
-
 .job {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -1274,8 +1271,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 
   /* One thing per row, full width, thumb-sized. */
-  #add-form, #search-form { flex-direction: column; align-items: stretch; }
-  #add-form input, #add-form button,
+  #search-form { flex-direction: column; align-items: stretch; }
   #search-form input, #search-form button { width: 100%; min-height: 44px; }
   #query { min-width: 0; }
   .kinds { width: 100%; }
