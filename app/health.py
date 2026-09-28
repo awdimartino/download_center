@@ -258,8 +258,9 @@ def _metadata_section(connection: sqlite3.Connection, live: str) -> Section:
             "no_replaygain", "Tracks with no ReplayGain", total - gained,
             OK if total == gained else INFO,
             f"{gained} of {total} measured",
-            "beet replaygain backfills these. Navidrome also needs ReplayGain "
-            "mode set to Track in personal settings before it applies them.",
+            "The Library panel measures these, one album or all at once. "
+            "Navidrome also needs ReplayGain mode set to Track in personal "
+            "settings before it applies them.",
         ))
 
     if "mbz_recording_id" in columns:

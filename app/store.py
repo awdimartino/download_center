@@ -13,6 +13,8 @@ nowhere else.
   anything not captured here is gone for good. This is the only copy.
 - `duplicate_dismissed`, `duplicate_quarantined` - decisions a person made
   about duplicate copies, and where the losing files were put.
+- `album_reviewed` - albums a person has dealt with, so "needs review" is a
+  list that can empty even for music MusicBrainz will never know.
 
 This module owns the connection; each of those owns its own SQL, because the
 queries belong with the code that understands them.
@@ -141,6 +143,20 @@ CREATE TABLE IF NOT EXISTS play_snapshot_run (
     anomalies  INTEGER NOT NULL
 );
 
+-- Albums a person has dealt with, whether or not MusicBrainz knows them. A
+-- hand-tagged bootleg never gains a MusicBrainz id, so "no match" cannot be
+-- the to-do list; this is the other half of it. Keyed on Navidrome's album
+-- id, which PID.Album derives from the album UUID, so a rename keeps it.
+-- `how` is what made it count: a match applied, an edit, or a button.
+CREATE TABLE IF NOT EXISTS album_reviewed (
+    library_id   INTEGER NOT NULL,
+    album_id     TEXT NOT NULL,
+    how          TEXT NOT NULL,
+    reviewed_by  TEXT,
+    reviewed_at  TEXT NOT NULL,
+    PRIMARY KEY (library_id, album_id)
+);
+
 CREATE TABLE IF NOT EXISTS play_anomaly (
     noticed_on  TEXT NOT NULL,
     track_uuid  TEXT NOT NULL,
@@ -218,6 +234,43 @@ def dismissed_duplicates() -> set[str]:
     with _lock:
         return {row[0] for row in
                 _conn.execute("SELECT group_key FROM duplicate_dismissed")}
+
+
+# --- albums somebody has dealt with ---------------------------------------
+
+def mark_reviewed(library_id: int, album_ids: set[str], how: str,
+                  by: str | None = None) -> None:
+    """Record that these albums have been looked at. Later marks win."""
+    assert _conn is not None, "state.db not connected"
+    stamp = datetime.now(UTC).isoformat(timespec="seconds")
+    with _lock:
+        _conn.executemany(
+            "INSERT OR REPLACE INTO album_reviewed"
+            " (library_id, album_id, how, reviewed_by, reviewed_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [(library_id, one, how, by, stamp) for one in album_ids])
+        _conn.commit()
+
+
+def unmark_reviewed(library_id: int, album_ids: set[str]) -> None:
+    assert _conn is not None, "state.db not connected"
+    with _lock:
+        _conn.executemany(
+            "DELETE FROM album_reviewed WHERE library_id = ? AND album_id = ?",
+            [(library_id, one) for one in album_ids])
+        _conn.commit()
+
+
+def reviewed_albums(library_ids: list[int]) -> set[tuple[int, str]]:
+    """(library_id, album_id) for every reviewed album in these libraries."""
+    assert _conn is not None, "state.db not connected"
+    if not library_ids:
+        return set()
+    marks = ", ".join("?" * len(library_ids))
+    with _lock:
+        return {(row[0], row[1]) for row in _conn.execute(
+            f"SELECT library_id, album_id FROM album_reviewed"
+            f" WHERE library_id IN ({marks})", library_ids)}
 
 
 # --- what was set aside ---------------------------------------------------

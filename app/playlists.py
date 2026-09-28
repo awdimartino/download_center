@@ -85,12 +85,6 @@ OPERATORS: dict[str, list[dict[str, str]]] = {
         {"name": "before", "label": "before"},
         {"name": "after", "label": "after"},
     ],
-    # Proven by the playlists already on this server, which say
-    # {"contains": {"library_id": "1"}}. Offered as "is" because that is
-    # what it means; a library id has nothing to be a substring of.
-    "library": [
-        {"name": "contains", "label": "is"},
-    ],
 }
 
 
@@ -119,11 +113,19 @@ FIELDS: list[Field] = [
     Field("dateadded", "Date added", "date"),
     Field("lastplayed", "Last played", "date"),
     Field("dateloved", "Date starred", "date"),
-
-    Field("library_id", "Library", "library"),
 ]
 
 _BY_NAME = {f.name: f for f in FIELDS}
+
+# Which libraries a playlist draws from is not a condition row. Navidrome
+# evaluates a smart playlist against every track on the server - it checks
+# who owns the playlist and never which libraries they may see - so Kelly's
+# "play count > -1" collected Alex's 7,000 tracks as well as her own 437.
+# Leaving that to a row somebody has to remember to add is how it happened,
+# so the scope is a property of the playlist instead, and every save writes
+# it. `is` rather than the `contains` the first hand-written playlists used:
+# `contains` is a LIKE, and "1" is a substring of 10, 11 and 21.
+LIBRARY_FIELD = "library_id"
 
 # `random` is a sort and nothing else - there is no such thing on a track to
 # compare against - so it lives here rather than in FIELDS.
@@ -153,9 +155,10 @@ def vocabulary(identity: navidrome.Identity) -> dict[str, Any]:
     return {
         "fields": [f.as_dict() for f in FIELDS],
         "sorts": SORTS,
-        # A person with one library never has to choose one, but the rule
-        # still has to name it, so the browser needs to know what they have.
-        "libraries": identity.libraries,
+        # Every rule is limited to these. A person with one library is never
+        # asked; one with several can narrow a playlist to some of them.
+        "libraries": [{"id": lib["id"], "name": lib["name"]}
+                      for lib in identity.libraries],
     }
 
 
@@ -177,8 +180,33 @@ def to_form(rules: dict[str, Any]) -> dict[str, Any]:
     if "all" in rules and "any" in rules:
         raise Unsupported("rules combine 'all' and 'any' at the top level")
 
+    entries = rules[match]
+    if not isinstance(entries, list):
+        raise Unsupported(f"the '{match}' block is not a list")
+
+    # The library scope sits beside the conditions in an `all`. An `any`
+    # playlist is saved as {"all": [{"any": [...]}, scope]}, because a scope
+    # inside the `any` would be one more way to match rather than a limit.
+    libraries = None
+    if match == "all":
+        rest = []
+        for entry in entries:
+            scope = _library_scope(entry)
+            if scope is None:
+                rest.append(entry)
+            elif libraries is not None:
+                raise Unsupported("it names its libraries twice")
+            else:
+                libraries = scope
+        if (libraries is not None and len(rest) == 1
+                and isinstance(rest[0], dict) and list(rest[0]) == ["any"]):
+            match, rest = "any", rest[0]["any"]
+            if not isinstance(rest, list):
+                raise Unsupported("the 'any' block is not a list")
+        entries = rest
+
     conditions = []
-    for entry in rules[match]:
+    for entry in entries:
         if not isinstance(entry, dict) or len(entry) != 1:
             raise Unsupported("a condition is not a single operator")
         operator, payload = next(iter(entry.items()))
@@ -187,6 +215,10 @@ def to_form(rules: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict) or len(payload) != 1:
             raise Unsupported(f"the '{operator}' condition names no field")
         name, value = next(iter(payload.items()))
+        if name == LIBRARY_FIELD:
+            # Only reachable inside an `any`, where it widens rather than
+            # limits, and the form has no way to say that.
+            raise Unsupported("a library is one of its 'any' conditions")
         spec = _BY_NAME.get(name)
         if spec is None:
             raise Unsupported(f"unknown field '{name}'")
@@ -211,15 +243,61 @@ def to_form(rules: dict[str, Any]) -> dict[str, Any]:
         "sort": sort,
         "direction": direction,
         "limit": rules.get("limit") or 0,
+        # None means the rules name no library, and so match every track on
+        # the server. Reported rather than filled in, so the card can say so.
+        "libraries": libraries,
     }
 
 
-def to_rules(form: dict[str, Any]) -> dict[str, Any]:
-    """The form, as Navidrome's rules.
+def _library_scope(entry: Any) -> list[int] | None:
+    """The library ids a top-level condition limits to, if it is one.
+
+    Accepts the `contains` form the first playlists were written with, and a
+    string id, because that is what those playlists hold. Saving one again
+    writes it back as `is`.
+    """
+    if not isinstance(entry, dict) or len(entry) != 1:
+        return None
+    operator, payload = next(iter(entry.items()))
+    if operator not in ("is", "contains") or not isinstance(payload, dict):
+        return None
+    if list(payload) != [LIBRARY_FIELD]:
+        return None
+    value = payload[LIBRARY_FIELD]
+    values = value if isinstance(value, list) else [value]
+    try:
+        return sorted({int(v) for v in values})
+    except (TypeError, ValueError):
+        raise Unsupported(f"the library {value!r} is not an id") from None
+
+
+def to_rules(form: dict[str, Any], allowed: list[int]) -> dict[str, Any]:
+    """The form, as Navidrome's rules, limited to libraries in `allowed`.
+
+    `allowed` is required, not defaulted: a rule saved without a library
+    scope matches every library on the server, and that was the bug.
+    The form may narrow it to some of them; it may not reach past it.
 
     Validated here rather than trusted: the browser builds these from
     dropdowns, but the endpoint is reachable without one.
     """
+    if not allowed:
+        raise ValueError(
+            "This account can see no libraries, so a playlist would have "
+            "nothing to draw from.")
+    chosen = form.get("libraries")
+    if not chosen:
+        libraries = sorted(set(allowed))
+    else:
+        try:
+            libraries = sorted({int(i) for i in chosen})
+        except (TypeError, ValueError):
+            raise ValueError("Libraries must be ids.") from None
+        stray = [i for i in libraries if i not in allowed]
+        if stray:
+            raise ValueError(
+                f"Library {stray[0]} is not one this account can see.")
+
     match = form.get("match", "all")
     if match not in ("all", "any"):
         raise ValueError("match must be 'all' or 'any'")
@@ -252,7 +330,14 @@ def to_rules(form: dict[str, Any]) -> dict[str, Any]:
                 "Fill it in or remove the condition.")
         built.append({operator: {name: value}})
 
-    rules: dict[str, Any] = {match: built}
+    # A list is `library_id IN (...)` to Navidrome; one id stays a plain
+    # value so the common case reads the way a hand-written rule would.
+    scope = {"is": {LIBRARY_FIELD: libraries[0] if len(libraries) == 1
+                    else libraries}}
+    if match == "all":
+        rules: dict[str, Any] = {"all": built + [scope]}
+    else:
+        rules = {"all": [{"any": built}, scope]}
 
     sort = form.get("sort") or ""
     if sort:
@@ -368,7 +453,7 @@ def save(identity: navidrome.Identity, name: str, form: dict[str, Any],
         "name": name,
         "comment": comment or "",
         "public": bool(public),
-        "rules": to_rules(form),
+        "rules": to_rules(form, [lib["id"] for lib in identity.libraries]),
     }
     saved = navidrome.save_playlist(identity, body, playlist_id)
 

@@ -1079,6 +1079,18 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 #pl-add-condition { margin-top: var(--s-1); }
 
+.pl-libraries {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+  font-size: var(--t-md);
+  color: var(--muted);
+}
+#pl-library-boxes { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.pl-library { display: flex; align-items: center; gap: var(--s-1); color: var(--text); }
+
 .pl-sort {
   display: flex;
   gap: var(--s-3);
@@ -1458,6 +1470,27 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 .library-controls .field-inline { flex: 1 1 14rem; }
 .library-controls input[type="search"] { width: 100%; }
+.library-controls .library-show { flex: 0 1 12rem; }
+.library-show select { width: 100%; }
+
+#library-gain-all { margin-top: var(--s-2); }
+
+/* Sticks under the header, whose height JS keeps in --header-h. Opaque, so
+   the list does not show through it; below the header and the menu. Its
+   children bring their own margins, so with all of them hidden it has no
+   height at all. The candidate list scrolls inside it rather than growing
+   to cover the phone. */
+.library-status {
+  position: sticky;
+  top: var(--header-h, 56px);
+  z-index: 10;
+  background: var(--bg);
+}
+.library-status:has(> :not([hidden])) { padding-bottom: var(--s-3); }
+.library-status .candidates { max-height: 60vh; overflow-y: auto; }
+
+#library-progress { align-items: center; }
+#library-progress .banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
 .check-inline {
   display: flex;

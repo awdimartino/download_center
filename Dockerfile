@@ -10,8 +10,9 @@ ENV PYTHONUNBUFFERED=1 \
 # volumes are prepared. libchromaprint-tools provides fpcalc, which beets'
 # optional chroma plugin uses to identify audio by acoustic fingerprint rather
 # than by tags; it is installed, but the plugin is left off by default.
+# rsgain measures ReplayGain from the Library panel (app/replaygain.py).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg gosu libchromaprint-tools \
+ && apt-get install -y --no-install-recommends ffmpeg gosu libchromaprint-tools rsgain \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

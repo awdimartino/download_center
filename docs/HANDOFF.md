@@ -63,6 +63,19 @@ that.
 
 ## Where things stand
 
+**2026-09-28: feedback-round Session 1 is committed but NOT deployed.**
+Next up is Session 2 in PLAN.md. Before deploying Session 1:
+- It needs a fresh image, not just a restart: the Dockerfile now installs
+  `rsgain`. Push to `main`, wait for CI, then pull on the Pi.
+- It adds the `album_reviewed` table to `state.db` (created automatically,
+  nothing existing changes); back up `state.db` anyway.
+- Nothing in it has been seen in a browser (Safari): the sticky
+  `.library-status` bar, the playlist library checkboxes, the Library
+  filter dropdown, and ReplayGain progress/Stop. Check those after the
+  deploy.
+- Existing smart playlists stay unscoped (drawing from every library)
+  until each is opened and saved; their cards say so.
+
 **Deployed:** see `git log` - the Pi runs the GHCR image built from `main`
 (`docker compose pull download-center && docker compose up -d
 download-center`). Container healthy. Verified after the pull:

@@ -47,7 +47,7 @@ CREATE TABLE media_file (
     path TEXT, title TEXT, album TEXT, artist TEXT, album_artist TEXT,
     suffix TEXT, bit_rate INTEGER, duration REAL, size INTEGER,
     mbz_recording_id TEXT, track_number INTEGER, disc_number INTEGER,
-    rg_track_gain REAL,
+    rg_track_gain REAL, album_id TEXT,
     tags TEXT, library_id INTEGER, folder_id TEXT, missing INTEGER DEFAULT 0,
     created_at TEXT
 );

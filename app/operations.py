@@ -42,7 +42,14 @@ class Operation:
     finished_at: float | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    # How far through a long run it is, as the work reports it. Only the
+    # work knows what a unit is - an album, a file - so it is free-form.
+    progress: dict[str, Any] | None = None
+    # Asked to stop. The work checks between units; nothing is interrupted
+    # midway through a file.
+    stop_requested: bool = False
     task: asyncio.Task | None = field(default=None, repr=False)
+    loop: asyncio.AbstractEventLoop | None = field(default=None, repr=False)
 
     @property
     def running(self) -> bool:
@@ -60,6 +67,8 @@ class Operation:
             if self.started_at else None,
             "result": self.result,
             "error": self.error,
+            "progress": self.progress,
+            "stopping": self.stop_requested,
         }
 
 
@@ -111,6 +120,9 @@ def start(name: str, owner: str | None,
     operation.finished_at = None
     operation.result = None
     operation.error = None
+    operation.progress = None
+    operation.stop_requested = False
+    operation.loop = asyncio.get_running_loop()
 
     async def run() -> None:
         try:
@@ -127,6 +139,31 @@ def start(name: str, owner: str | None,
 
     operation.task = asyncio.create_task(run())
     return operation, True
+
+
+def report(name: str, **progress: Any) -> None:
+    """Called from the work's thread: how far it has got. Announced at once.
+
+    Without this a run of an hour looks, from the browser, exactly like one
+    that has hung.
+    """
+    operation = get(name)
+    operation.progress = progress
+    if operation.loop is not None and not operation.loop.is_closed():
+        asyncio.run_coroutine_threadsafe(_announce(operation), operation.loop)
+
+
+def stop(name: str) -> Operation:
+    """Ask a running operation to finish after the unit it is on."""
+    operation = get(name)
+    if operation.running:
+        operation.stop_requested = True
+    return operation
+
+
+def stopping(name: str) -> bool:
+    """For the work to check between units."""
+    return get(name).stop_requested
 
 
 def reset() -> None:

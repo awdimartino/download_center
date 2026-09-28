@@ -377,6 +377,26 @@ retags the files **in place** - beets runs with `move: no` and `copy: no`, so
 it tags and nothing else - and then `filer.after_retag()` re-points the album
 UUID and the filer moves each file. One function decides where a track lives.
 
+**"Needs review" is the part of that filter that can empty.** An album
+needs review when a track has no MusicBrainz id *and* nobody has dealt with
+it here: applied a match, edited it, or pressed *Mark reviewed*. That is
+stored, because it cannot be observed - `album_reviewed` in state.db, keyed
+on Navidrome's `album_id`, which `PID.Album` derives from the album UUID and
+so survives a rename. The ids are read before an edit runs, since afterwards
+the folder may have moved and Navidrome has not rescanned. A folder holding
+two album ids (57 did, on 2026-09-28) is reviewed only when both are. The
+menu badge counts this, not "no match".
+
+The list also counts tracks with no ReplayGain (`rg_track_gain is null`,
+the same test the health check uses), filters to them, and offers a
+per-album button and an "all missing" one.
+
+Everything a row starts reports into `.library-status`, which is sticky
+under the header: the row is usually far down the list, and a status at the
+top of the panel was off screen when it spoke. Edits reload with `refresh`,
+which re-reads every row already shown and scrolls the edited album back to
+where it was; the old reset put you back on page one.
+
 On day one the list is large and honest: 1,113 of Alex's 6,495 tracks have no
 MusicBrainz id. That was always the number - beets was keeping it outside the
 library rather than making it smaller.
@@ -421,7 +441,16 @@ quality mechanism.
   threads on a lock. Results arrive over the WebSocket.
 - **`playlists.py`** — smart playlist rules. Translates between Navidrome's
   nested operator shape and a flat form the browser can render. Rules it
-  cannot represent are marked unsupported rather than flattened.
+  cannot represent are marked unsupported rather than flattened. Every save
+  appends `{"is": {"library_id": ...}}` for the libraries the owner can see
+  (an `any` playlist is wrapped as `{"all": [{"any": [...]}, scope]}`),
+  because Navidrome evaluates rules against every track on the server - see
+  the gotcha below. The scope is a form property, not a condition row.
+- **`replaygain.py`** — rsgain's easy mode, one album folder at a time, as
+  the `replaygain` operation with progress and a stop between albums. A
+  whole folder is always measured so album gain stays consistent. Checked
+  on copies of real MP3, M4A and FLAC files: UUID tags survive; the only
+  loss is Vorbis comments that were present and empty.
 
 ---
 
@@ -544,6 +573,11 @@ Each of these cost real time or caused a real bug.
   deleted Kelly's music.
 - Migrating a star as admin creates an invisible admin star and quarantines
   the real one. Act as the owning user.
+- **Smart playlists ignore library access.** `refreshSmartPlaylist` selects
+  from all of `media_file` and filters only by the rules; it checks who owns
+  the playlist, never which libraries they may see. Kelly's `play count >
+  -1` matched ~7,000 tracks against her 437. Scope in the rule itself, with
+  `is` - `contains` compiles to a `LIKE`, and `1` is a substring of `10`.
 
 **beets**
 - Item paths are stored **relative to `directory`**. Resolving them against

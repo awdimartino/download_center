@@ -47,9 +47,77 @@ sofa.
 
 ---
 
-## In flight
+## In flight — 2026-09-27 feedback round
 
-Nothing. The playlist editor shipped and is deployed.
+The playlist editor shipped and is deployed. Next is the 2026-09-27
+feedback round, batched into sessions below. Functionality and bugs come
+first; looks and MusicBrainz seeding come last. One session per `/clear`.
+Tick items as they land.
+
+### Functionality and bugs
+
+- [x] **Session 1 — bugs and quick wins.** Done 2026-09-28.
+  - [x] Smart playlists count every library's tracks, not the signed-in
+        user's (Kelly: `play count > -1` gives ~7,000 tracks). Every save
+        now writes `library_id` scoping to the libraries the owner can
+        see; existing unscoped playlists say so on their card until saved.
+  - [x] Library: "Show more" fires again after a track edit and loses your
+        place. Edits re-read the rows on screen and keep the album put.
+  - [x] Library: MusicBrainz search status in a sticky bar, not at the top
+        of the page.
+  - [x] Library: an "untouched / needs review" filter. Unmatched and not
+        yet matched, edited or marked reviewed here (`album_reviewed`).
+  - [x] Library: a ReplayGain button (per album and "all missing"), with a
+        count of untagged tracks. rsgain, progress and Stop in the sticky
+        bar.
+- [ ] **Session 2 — file drop page.** Drag and drop or file picker, uploads
+      into the inbox.
+- [ ] **Session 3 — merge Queue and Browse.** One input; a URL queues, a
+      search term browses.
+- [ ] **Session 4 — merge Home and Listening.** Dashboard on top, detail
+      below. Every header stat links to its breakdown or is dropped.
+- [ ] **Session 5 — more stats.** Top albums, top genres, hourly
+      distribution, longest session; a day / month / year / all-time
+      switch on every chart.
+- [ ] **Session 6 — library editing without dropdowns.** Inline editing;
+      the album editor gets a search across every album in the library, to
+      merge albums that were split by mistake.
+- [ ] **Session 7 — a page per track / album UUID**, like Browse, with
+      manual quarantine on it (same quarantine and ledger path as
+      duplicates).
+- [ ] **Session 8 — genres.** A genre tally in the library, then merge and
+      rename.
+- [ ] **Session 9 — rename and setup docs.** Rename to Navidrome Companion
+      (image, compose, README; needs a Pi redeploy), then a from-scratch
+      setup guide: container, mounts, Navidrome PID config, beets config,
+      Pi deploy.
+
+### Last
+
+- [ ] **Session 10 — split `app.js` into ES modules** (no bundler).
+      Optional; worth it only if the aesthetic work below goes ahead.
+- [ ] **Session 11 — code review** of everything above.
+- [ ] **Sessions 12–14 — aesthetics.** Use desktop width (grid / multiple
+      columns), an HTML and CSS polish pass, a top-tracks cover collage on
+      Home. Open-ended: set a scope per session.
+- [ ] **Sessions 15+ — MusicBrainz seeding from Spotify data.** A "seed a
+      release" button that opens MusicBrainz's add-release form pre-filled,
+      using its existing seeding format. Only if the genre and ReplayGain
+      cleanup shows enough releases need it.
+- [ ] **Later, not vital — folders holding more than one album.** Found
+      2026-09-28: 57 of Alex's folders carry more than one album UUID
+      (e.g. `Aiden Williams/Believe` holds *Believe*, *Breakup* and
+      *Continuum EP*; several `Artist/Unknown Album` folders hold two).
+      Kelly's library was not checked. The Library treats a folder as one
+      album, so **Save album** and **Find matches → Use this** on such a row
+      retag every file in it as one record, merging them; ReplayGain gives
+      them one album gain. Likely cause, unverified: `unfuse.py` split
+      fused albums by tag without moving files. Plan: (1) a guard - flag
+      those rows and refuse folder-wide rename/match on them; (2) a
+      throwaway script re-filing those tracks by their own tags, with the
+      move list reviewed before it runs. UUIDs do not change, so stars and
+      plays are unaffected. Until then, avoid renaming or matching a row
+      whose tracks show different albums.
 
 See also [ARCHITECTURE.md](ARCHITECTURE.md) for how the code works and
 [HANDOFF.md](HANDOFF.md) for picking this up in a new conversation.

@@ -804,7 +804,9 @@ const libraryBadge = document.getElementById("library-badge");
 const libraryCount = document.getElementById("library-count");
 const libraryMore = document.getElementById("library-more");
 const librarySearch = document.getElementById("library-search");
-const libraryUnmatched = document.getElementById("library-unmatched");
+const libraryShow = document.getElementById("library-show");
+const libraryGainAll = document.getElementById("library-gain-all");
+const libraryProgress = document.getElementById("library-progress");
 
 // How much of the list is on screen.
 //
@@ -929,7 +931,7 @@ async function askForCandidates(album, button) {
     { library_id: album.library_id, folder: album.folder });
   if (!payload || payload.detail) {
     closeCandidates();
-    loadLibrary();
+    refreshLibrary(album);
   }
 }
 
@@ -1094,6 +1096,8 @@ function trackEditor(album, track, reload) {
     }
     await saveEdit("/api/library/track/edit", body, save, () => {
       setNote("library-op", "Saved.", "notice");
+      // Closed rather than re-read: Navidrome has not rescanned yet, and the
+      // tracks it would list are the ones from before the save.
       libraryOpen.delete(albumKey(album));
       reload();
     });
@@ -1128,7 +1132,7 @@ function trackEditor(album, track, reload) {
 }
 
 async function loadTracks(album, into) {
-  const reload = () => loadLibrary();
+  const reload = () => refreshLibrary(album);
   into.replaceChildren(el("div", "album-track", "Reading…"));
   try {
     const response = await fetch(
@@ -1178,6 +1182,7 @@ function albumRow(album) {
   // bubbled up and collapsed the album out from under whoever was typing -
   // which made the editor unusable rather than merely annoying.
   const row = el("div", "album-row");
+  row.dataset.key = albumKey(album);
   const head = el("div", "album-head");
   const actions = el("div", "album-actions");
   const match = el("button", "ghost", "Find matches");
@@ -1187,18 +1192,50 @@ function albumRow(album) {
   });
   actions.append(match);
 
+  // Only offered where there is something to decide: a matched album is
+  // done by definition. Undoable, because a tap on the wrong row should not
+  // lose an album from the list for good.
+  if (!album.matched) {
+    const review = el("button", "ghost",
+                      album.reviewed ? "Needs review" : "Mark reviewed");
+    review.title = album.reviewed
+      ? "Put this album back on the review list"
+      : "Tagged the way you want it, MusicBrainz or not";
+    review.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await saveEdit("/api/library/reviewed", {
+        library_id: album.library_id, folder: album.folder,
+        reviewed: !album.reviewed,
+      }, review, () => refreshLibrary(album));
+    });
+    actions.append(review);
+  }
+
+  if (album.no_gain) {
+    const gain = el("button", "ghost", "ReplayGain");
+    gain.title = `${plural(album.no_gain, "track")} with no ReplayGain. `
+               + "The whole album is measured, so album gain stays consistent.";
+    gain.addEventListener("click", (event) => {
+      event.stopPropagation();
+      startOperation("replaygain", "/api/library/replaygain",
+                     { library_id: album.library_id, folder: album.folder });
+    });
+    actions.append(gain);
+  }
+
   // Three states, not two. An album where a few tracks are unconfirmed is
   // usually a download that joined a matched record; one where none are is
   // a record nobody has looked at; and a matched one is simply done.
   let counted;
   if (album.matched) {
-    counted = `${album.tracks} track${album.tracks === 1 ? "" : "s"}`;
+    counted = plural(album.tracks, "track");
   } else if (album.partial) {
     counted = `${album.untagged} of ${album.tracks} unmatched`;
   } else {
-    counted = `${album.tracks} track${album.tracks === 1 ? "" : "s"}, `
-            + "no MusicBrainz match";
+    counted = `${plural(album.tracks, "track")}, no MusicBrainz match`;
   }
+  if (album.reviewed) counted += " · reviewed";
+  if (album.no_gain) counted += " · no ReplayGain";
 
   const caret = el("span", "album-caret", "▸");
   head.append(
@@ -1238,36 +1275,69 @@ function albumRow(album) {
   return row;
 }
 
-async function loadLibrary(append = false) {
-  const offset = append ? libraryShownCount : 0;
+// The server's own cap on one page. Refreshing more than this many rows
+// takes several requests.
+const LIBRARY_MAX_PAGE = 200;
+
+function plural(n, word) {
+  return `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+}
+
+async function fetchLibraryPage(offset, limit) {
   const query = new URLSearchParams({
-    limit: String(LIBRARY_PAGE),
+    limit: String(limit),
     offset: String(offset),
-    unmatched: libraryUnmatched.checked ? "true" : "false",
+    show: libraryShow.value,
     q: librarySearch.value.trim(),
   });
+  const response = await fetch(`/api/library?${query}`);
+  // fetch does not throw on 4xx or 5xx, and the body of an error is a
+  // {detail} with no `available` key - which fell through to the empty
+  // state and reported an empty library, the most alarming possible way to
+  // be wrong.
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.available === false) {
+    throw new Error(data.reason || data.detail
+                    || `the server answered ${response.status}`);
+  }
+  return data;
+}
+
+// Three ways to load, because they differ in what they keep:
+//   "reset"   - a new filter or search: the first page, from the top.
+//   "more"    - the next page, appended.
+//   "refresh" - after something changed a row: every row already on screen
+//               read again, and the page kept where it was.
+// Every edit used to reload with "reset", so fixing album 180 put you back
+// at album 50 with "Show more" under your thumb - and tapping it re-read the
+// page you had just been on.
+async function loadLibrary(mode = "reset", anchor = null) {
+  const keepScroll = mode === "refresh";
+  // Where the row being worked on sits on screen, so it can be put back in
+  // the same place however much the rows above it changed.
+  const anchorRow = anchor
+    ? libraryEl.querySelector(`[data-key="${CSS.escape(anchor)}"]`) : null;
+  const anchorTop = anchorRow ? anchorRow.getBoundingClientRect().top : null;
+  const scrollY = window.scrollY;
+
   try {
-    const response = await fetch(`/api/library?${query}`);
-    // fetch does not throw on 4xx or 5xx, and the body of an error is a
-    // {detail} with no `available` key - which fell through to the empty
-    // state and reported an empty library, the most alarming possible way
-    // to be wrong.
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.available === false) {
-      libraryEl.replaceChildren();
-      libraryShownCount = 0;
-      libraryCount.hidden = true;
-      libraryMore.hidden = true;
-      libraryEmpty.textContent =
-        `Could not read your library: ${data.reason || data.detail
-         || `the server answered ${response.status}`}`;
-      libraryEmpty.hidden = false;
-      return;
+    let albums = [];
+    let data;
+    if (mode === "more") {
+      data = await fetchLibraryPage(libraryShownCount, LIBRARY_PAGE);
+      albums = data.albums || [];
+    } else {
+      const want = keepScroll ? Math.max(libraryShownCount, LIBRARY_PAGE) : LIBRARY_PAGE;
+      do {
+        data = await fetchLibraryPage(albums.length,
+                                      Math.min(want - albums.length, LIBRARY_MAX_PAGE));
+        albums = albums.concat(data.albums || []);
+      } while (albums.length < want && albums.length < data.total
+               && (data.albums || []).length);
     }
 
-    const albums = data.albums || [];
     const rows = albums.map(albumRow);
-    if (append) {
+    if (mode === "more") {
       libraryEl.append(...rows);
       libraryShownCount += albums.length;
     } else {
@@ -1275,16 +1345,34 @@ async function loadLibrary(append = false) {
       libraryShownCount = albums.length;
     }
 
+    if (keepScroll) {
+      const again = anchor
+        ? libraryEl.querySelector(`[data-key="${CSS.escape(anchor)}"]`) : null;
+      if (again && anchorTop !== null) {
+        window.scrollBy(0, again.getBoundingClientRect().top - anchorTop);
+      } else {
+        window.scrollTo(0, scrollY);
+      }
+    }
+
     // About the whole library, not the filtered page - so the numbers do not
     // move when the filter does.
-    libraryCount.textContent =
-      `${data.albums_total} album${data.albums_total === 1 ? "" : "s"}, `
-      + `${data.tracks} track${data.tracks === 1 ? "" : "s"}. `
-      + `${data.unmatched_albums} album`
-      + `${data.unmatched_albums === 1 ? "" : "s"} have no MusicBrainz match.`;
+    const parts = [
+      `${plural(data.albums_total, "album")}, ${plural(data.tracks, "track")}.`,
+      `${plural(data.review_albums, "album")} need${data.review_albums === 1 ? "s" : ""} review;`,
+      `${plural(data.unmatched_albums, "album")} with no MusicBrainz match.`,
+    ];
+    if (data.no_gain) {
+      parts.push(`${plural(data.no_gain, "track")} with no ReplayGain.`);
+    }
+    libraryCount.textContent = parts.join(" ");
     libraryCount.hidden = !data.tracks;
 
-    const filtered = libraryUnmatched.checked || librarySearch.value.trim();
+    libraryGainAll.hidden = !data.no_gain_albums;
+    libraryGainAll.textContent =
+      `Measure ReplayGain for ${plural(data.no_gain_albums, "album")}`;
+
+    const filtered = libraryShow.value !== "all" || librarySearch.value.trim();
     libraryEmpty.textContent = libraryShownCount
       ? ""
       : filtered ? "Nothing matches that." : "Nothing in your library yet.";
@@ -1292,20 +1380,42 @@ async function loadLibrary(append = false) {
     // A page that came back short means there is no more, however the total
     // compares - the list can change under you while you read it.
     libraryMore.hidden = libraryShownCount >= data.total || !albums.length;
-    // The badge counts what wants attention, not what exists.
-    setBadge(libraryBadge, data.unmatched_albums);
+    // The badge counts what wants attention, not what exists - and "needs
+    // review" is the count that can reach zero.
+    setBadge(libraryBadge, data.review_albums);
   } catch (err) {
+    if (mode !== "more") {
+      libraryEl.replaceChildren();
+      libraryShownCount = 0;
+      libraryCount.hidden = true;
+      libraryMore.hidden = true;
+    }
     libraryEmpty.textContent = `Could not read your library: ${err.message}`;
     libraryEmpty.hidden = false;
   }
 }
 
+// After a change to one album: re-read what is on screen, keep that album
+// where it was.
+function refreshLibrary(album) {
+  return loadLibrary("refresh", album ? albumKey(album) : null);
+}
+
 libraryMore.addEventListener("click", () => {
   libraryMore.disabled = true;
-  loadLibrary(true).finally(() => { libraryMore.disabled = false; });
+  loadLibrary("more").finally(() => { libraryMore.disabled = false; });
 });
 
-libraryUnmatched.addEventListener("change", () => loadLibrary());
+libraryShow.addEventListener("change", () => loadLibrary());
+
+libraryGainAll.addEventListener("click", () => {
+  if (!confirm(
+    `${libraryGainAll.textContent}?\n\n`
+    + "Each album is measured as a whole, so album gain stays consistent, "
+    + "and its files are rewritten with the new tags. On the Pi this can "
+    + "take a long while; it can be stopped between albums.")) return;
+  startOperation("replaygain", "/api/library/replaygain", {});
+});
 
 // Debounced: one request per pause, not one per keystroke. Each costs a walk
 // of every row in Navidrome's index.
@@ -1328,7 +1438,54 @@ const OPERATION_LABELS = {
   // No button of its own: it is started from a row, and its result is a
   // list rather than a message.
   candidates: { note: "library-op" },
+  // Started from a row or from "all missing"; progress goes in the sticky
+  // bar, since a run over the whole library is long.
+  replaygain: { note: "library-op" },
 };
+
+function showGainProgress(operation) {
+  if (operation.status !== "running") {
+    libraryProgress.replaceChildren();
+    libraryProgress.hidden = true;
+    return;
+  }
+  const p = operation.progress;
+  const text = p
+    ? `ReplayGain: ${p.done + 1} of ${p.total} — ${p.album}`
+    : "ReplayGain: starting…";
+  const stop = el("button", "ghost", operation.stopping ? "Stopping…" : "Stop");
+  stop.type = "button";
+  stop.disabled = !!operation.stopping;
+  stop.addEventListener("click", async () => {
+    stop.disabled = true;
+    stop.textContent = "Stopping…";
+    const response = await fetch("/api/library/replaygain/stop", { method: "POST" })
+      .catch(() => null);
+    if (!response || !response.ok) {
+      const data = response ? await response.json().catch(() => ({})) : {};
+      setNote("library-op", data.detail || "Could not ask it to stop.", "warn");
+      stop.disabled = false;
+      stop.textContent = "Stop";
+    }
+  });
+  libraryProgress.replaceChildren(el("span", "banner-text", text), stop);
+  libraryProgress.hidden = false;
+}
+
+function gainSummary(result) {
+  const parts = [`ReplayGain measured for ${plural(result.measured, "album")}`
+                 + (result.total > 1 ? ` of ${result.total}` : "") + "."];
+  if (result.stopped) parts.push("Stopped on request.");
+  if (result.failures) {
+    parts.push(`${result.failures} failed: ${result.failed.join("; ")}`);
+  }
+  if (result.skipped && result.skipped.length) {
+    parts.push(`Skipped: ${result.skipped.join("; ")}`);
+  }
+  // Navidrome shows the new values after the scan it has been asked for.
+  if (result.measured) parts.push("Navidrome picks it up on its next scan.");
+  return [parts.join(" "), result.failures ? "warn" : "notice"];
+}
 
 // An operation's outcome belongs to the panel that started it. The banner at
 // the top of the page is outside every section, so anything left there
@@ -1368,6 +1525,10 @@ function showOperation(operation) {
     // while a retag is in flight. A finished one re-renders them.
     libraryEl.querySelectorAll("button").forEach((b) => { b.disabled = running; });
   }
+  if (operation.name === "replaygain") {
+    showGainProgress(operation);
+    libraryGainAll.disabled = running;
+  }
   if (running) return;
 
   if (operation.status === "failed") {
@@ -1379,7 +1540,7 @@ function showOperation(operation) {
   if (operation.name === "candidates") {
     showCandidates(result);
     // The album rows re-render with their buttons live again.
-    loadLibrary();
+    refreshLibrary(candidatesFor);
     return;
   }
   if (operation.name === "import") {
@@ -1392,7 +1553,11 @@ function showOperation(operation) {
       const [message, tone] = importSummary(result);
       setNote(spec.note, message, tone);
     }
-    loadLibrary();
+    refreshLibrary();
+  } else if (operation.name === "replaygain") {
+    const [message, tone] = gainSummary(result);
+    setNote(spec.note, message, tone);
+    refreshLibrary();
   } else {
     setNote(spec.note, "");
     loadHealth();
@@ -1441,7 +1606,7 @@ document.getElementById("library-rescan").addEventListener("click", async () => 
   } finally {
     button.disabled = false;
     button.textContent = "Rescan";
-    loadLibrary();
+    refreshLibrary();
   }
 });
 
@@ -2239,6 +2404,8 @@ const playlistEditor = document.getElementById("playlist-editor");
 const conditionsEl = document.getElementById("pl-conditions");
 const plNote = document.getElementById("pl-note");
 const plDelete = document.getElementById("pl-delete");
+const plLibraries = document.getElementById("pl-libraries");
+const plLibraryBoxes = document.getElementById("pl-library-boxes");
 
 let vocabulary = null;
 // null while creating, a playlist id while editing an existing one.
@@ -2299,14 +2466,6 @@ function conditionRow(condition) {
         input.append(option);
       });
       input.value = (current === false || current === "false") ? "false" : "true";
-    } else if (spec.kind === "library") {
-      input = el("select", "pl-input");
-      (vocabulary.libraries || []).forEach((library) => {
-        const option = el("option", "", library.name);
-        option.value = String(library.id);
-        input.append(option);
-      });
-      if (current !== undefined && current !== null) input.value = String(current);
     } else if (spec.kind === "date" && operator.value.indexOf("InTheLast") >= 0) {
       // A date asked "in the last" wants a number of days; asked "before" it
       // wants a date. Same field, different box.
@@ -2386,6 +2545,22 @@ function openEditor(playlist) {
   conditionsEl.replaceChildren.apply(
     conditionsEl, rows.length ? rows : [conditionRow(null)]);
 
+  // One library needs no choosing; the server scopes to it regardless.
+  // An unscoped playlist opens with every box ticked, which is what saving
+  // it will write.
+  const libraries = vocabulary.libraries || [];
+  const chosen = (shape && shape.libraries) || libraries.map((l) => l.id);
+  plLibraries.hidden = libraries.length < 2;
+  plLibraryBoxes.replaceChildren.apply(plLibraryBoxes, libraries.map((library) => {
+    const label = el("label", "pl-library");
+    const box = el("input");
+    box.type = "checkbox";
+    box.value = String(library.id);
+    box.checked = chosen.includes(library.id);
+    label.append(box, ` ${library.name}`);
+    return label;
+  }));
+
   plDelete.hidden = !editingId;
   playlistEditor.hidden = false;
   playlistEditor.scrollIntoView({ block: "nearest" });
@@ -2403,11 +2578,6 @@ function describeRule(shape) {
     const op = spec.operators.find((o) => o.name === condition.operator);
     let value = condition.value;
     if (spec.kind === "boolean") value = value ? "yes" : "no";
-    if (spec.kind === "library") {
-      const library = (vocabulary.libraries || [])
-        .find((l) => String(l.id) === String(value));
-      if (library) value = library.name;
-    }
     // "in the last 7" is a number of days, and the sentence has to say so
     // - the operator label cannot, because the value box beside it is
     // sometimes a date instead.
@@ -2419,6 +2589,12 @@ function describeRule(shape) {
   const joined = spoken.join(shape.match === "all" ? ", and " : ", or ");
   const sort = vocabulary.sorts.find((s) => s.name === shape.sort);
   const tail = [];
+  // Only worth saying when there was a choice to make.
+  const mine = vocabulary.libraries || [];
+  if (shape.libraries && mine.length > 1) {
+    const names = mine.filter((l) => shape.libraries.includes(l.id)).map((l) => l.name);
+    if (names.length < mine.length) tail.push(`from ${names.join(" and ")}`);
+  }
   if (sort) tail.push(`sorted by ${sort.label.toLowerCase()}`);
   if (shape.limit) tail.push(`first ${shape.limit}`);
   return tail.length ? `${joined} — ${tail.join(", ")}` : joined;
@@ -2438,6 +2614,13 @@ function playlistCard(playlist) {
 
   if (playlist.form) {
     card.append(el("div", "playlist-rule", describeRule(playlist.form)));
+    // Navidrome evaluates rules against every library on the server, so a
+    // rule naming none collects other people's music too. Saving it here
+    // writes the limit in.
+    if (playlist.form.libraries === null) {
+      card.append(el("p", "warn",
+        "Draws from every library on the server, not just yours. Edit and save to fix."));
+    }
   } else {
     // Rules this form cannot represent are shown and left alone. Opening one
     // would drop the part the form has no row for, and a smart playlist
@@ -2503,8 +2686,15 @@ playlistEditor.addEventListener("submit", async (event) => {
       sort: document.getElementById("pl-sort").value,
       direction: document.getElementById("pl-direction").value,
       limit: Number(document.getElementById("pl-limit").value) || 0,
+      libraries: Array.from(plLibraryBoxes.querySelectorAll("input:checked"))
+        .map((box) => Number(box.value)),
     },
   };
+  if (!plLibraries.hidden && !body.form.libraries.length) {
+    showPlaylistError("Pick at least one library to draw from.");
+    button.disabled = false;
+    return;
+  }
 
   try {
     const response = await fetch(
@@ -2565,7 +2755,22 @@ function start() {
   loadHealth();
   loadLibrary();
   checkSpotify();
+  resumeOperations();
   healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
+}
+
+// A ReplayGain run can outlast the page that started it. Without this a
+// reload shows no progress and no Stop until the next album reports in.
+async function resumeOperations() {
+  try {
+    const data = await fetch("/api/operations").then((r) => r.json());
+    (data.operations || [])
+      .filter((op) => op.status === "running" && session
+                      && op.owner === session.username)
+      .forEach(showOperation);
+  } catch (err) {
+    // Only a head start on what the socket reports anyway.
+  }
 }
 
 checkSession().then((signedIn) => {

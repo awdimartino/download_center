@@ -166,20 +166,31 @@
         <input id="library-search" type="search" autocomplete="off"
                placeholder="Search artist or album">
       </label>
-      <label class="check-inline">
-        <input id="library-unmatched" type="checkbox">
-        <span>No MusicBrainz match only</span>
+      <label class="field-inline library-show">
+        <span class="sr-only">Show</span>
+        <select id="library-show">
+          <option value="all">All albums</option>
+          <option value="review">Needs review</option>
+          <option value="unmatched">No MusicBrainz match</option>
+          <option value="nogain">No ReplayGain</option>
+        </select>
       </label>
     </div>
     <p id="library-count" class="panel-sub" hidden></p>
-    <!-- How the last match went. In the panel that started it, not in the
-         banner at the top of the page: that one sits outside every section,
-         so a message left there followed you onto every other tab. -->
-    <p id="library-op" class="warn" hidden></p>
-    <!-- The releases beets found and would not choose between. Shown in the
-         panel rather than a dialog: a modal over a list on a phone is how
-         the last three layout bugs happened. -->
-    <section id="candidates" class="candidates" hidden></section>
+    <button id="library-gain-all" class="ghost" type="button" hidden></button>
+    <!-- Pinned under the header while the list scrolls. Everything here is
+         about something started from a row, and the row is usually a long
+         way down: a status written at the top of the panel was off screen
+         by the time it said anything. In the panel, not the page banner,
+         which sits outside every section and followed you onto every tab. -->
+    <div class="library-status">
+      <p id="library-op" class="warn" hidden></p>
+      <div id="library-progress" class="notice" hidden></div>
+      <!-- The releases beets found and would not choose between. Shown in
+           the panel rather than a dialog: a modal over a list on a phone is
+           how the last three layout bugs happened. -->
+      <section id="candidates" class="candidates" hidden></section>
+    </div>
     <div id="library"></div>
     <p id="library-empty" class="empty">Nothing here yet.</p>
     <button id="library-more" class="ghost" type="button" hidden>Show more</button>
@@ -254,6 +265,11 @@
       </div>
       <div id="pl-conditions"></div>
       <button id="pl-add-condition" class="ghost" type="button">Add condition</button>
+
+      <div id="pl-libraries" class="pl-libraries" hidden>
+        From
+        <span id="pl-library-boxes"></span>
+      </div>
 
       <div class="pl-sort">
         <label>Sort by<select id="pl-sort"></select></label>

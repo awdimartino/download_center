@@ -32,11 +32,11 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import navidrome
+from . import navidrome, store
 
 log = logging.getLogger("download_center.library")
 
@@ -78,9 +78,17 @@ class Album:
     added: str = ""
     tracks: int = 0
     untagged: int = 0
+    # Tracks Navidrome has no ReplayGain for. Read off the same column the
+    # health check counts, so the two cannot disagree.
+    no_gain: int = 0
     # Any one track in the album, so the row can ask Navidrome for its
     # cover. Navidrome keys art on a track or album id, not on a folder.
     art_id: str = ""
+    # Navidrome's album ids for the files in this folder - normally one.
+    # Derived from the album UUID through PID.Album, so it survives a rename
+    # and is what "somebody has reviewed this" is keyed on.
+    album_ids: set[str] = field(default_factory=set)
+    reviewed: bool = False
 
     @property
     def sort_name(self) -> str:
@@ -92,15 +100,28 @@ class Album:
             "artist": self.artist, "album": self.album,
             "folder": self.folder, "added": self.added,
             "tracks": self.tracks, "untagged": self.untagged,
+            "no_gain": self.no_gain,
             "art_id": self.art_id,
             # Three states, not two: an album nobody has confirmed reads very
             # differently from one where a download joined a matched record.
             "matched": self.untagged == 0,
             "partial": 0 < self.untagged < self.tracks,
+            "reviewed": self.reviewed,
+            "needs_review": self.needs_review,
         }
 
+    @property
+    def needs_review(self) -> bool:
+        """Unconfirmed by MusicBrainz and not yet looked at by a person.
 
-def _folder_of(path: str) -> str:
+        The narrower question the "no MusicBrainz match" filter cannot answer:
+        a hand-tagged bootleg sits in that filter for ever, and correctly, but
+        once somebody has dealt with it it is not work any more.
+        """
+        return bool(self.untagged) and not self.reviewed
+
+
+def folder_of(path: str) -> str:
     """The album directory, relative to its library root.
 
     Navidrome stores paths relative to the library that holds them, and the
@@ -126,29 +147,38 @@ def _load(connection: sqlite3.Connection,
 
     columns = navidrome.columns_of(connection, "media_file")
     added = "mf.created_at" if "created_at" in columns else "''"
+    album_id = "mf.album_id" if "album_id" in columns else "''"
+    # Null is "never measured"; 0.0 is a real answer. FIXES item 22.
+    gained = ("mf.rg_track_gain is not null" if "rg_track_gain" in columns
+              else "1")
     rows = connection.execute(f"""
         select mf.path, coalesce(mf.album, ''),
                coalesce(mf.album_artist, ''), coalesce(mf.artist, ''),
                coalesce(mf.mbz_recording_id, ''), mf.library_id,
-               coalesce({added}, ''), mf.id
+               coalesce({added}, ''), mf.id, coalesce({album_id}, ''),
+               {gained}
           from media_file mf
          where {navidrome.live_clause(connection, allowed)}""").fetchall()
 
     albums: dict[tuple[int, str], Album] = {}
     for (path, album, album_artist, artist, mbid, library_id, when,
-         track_id) in rows:
-        key = (library_id, _folder_of(path))
+         track_id, navidrome_album, has_gain) in rows:
+        key = (library_id, folder_of(path))
         found = albums.get(key)
         if found is None:
             found = albums[key] = Album(
                 library_id=library_id, library=names.get(library_id, ""),
                 artist=album_artist or artist, album=album,
-                folder=_folder_of(path))
+                folder=folder_of(path))
         found.tracks += 1
         if not found.art_id:
             found.art_id = track_id
         if not mbid:
             found.untagged += 1
+        if not has_gain:
+            found.no_gain += 1
+        if navidrome_album:
+            found.album_ids.add(navidrome_album)
         # The newest file in the folder. An album is "added" when the last of
         # it arrived, which is what puts a record you are still downloading
         # at the top rather than halfway down.
@@ -161,16 +191,28 @@ def _matches(album: Album, needle: str) -> bool:
     return needle in album.artist.casefold() or needle in album.album.casefold()
 
 
+# What the list can be narrowed to. "unmatched" is a statement about
+# MusicBrainz and never empties; "review" is the part of it nobody has dealt
+# with yet, which does.
+FILTERS = {
+    "all": lambda a: True,
+    "unmatched": lambda a: bool(a.untagged),
+    "review": lambda a: a.needs_review,
+    "nogain": lambda a: bool(a.no_gain),
+}
+
+
 def listing(identity: navidrome.Identity, limit: int = PAGE, offset: int = 0,
-            unmatched_only: bool = False, search: str = "",
+            show: str = "all", search: str = "",
             newest_first: bool = True) -> dict[str, Any]:
     """The albums this person owns, filtered and paged.
 
-    `unmatched_only` narrows to albums with at least one track MusicBrainz
-    has not confirmed. `search` is a plain substring of the artist or the
-    album - no ranking, because the answer to "where is Abbey Road" should
-    not depend on a scoring function.
+    `show` is one of FILTERS. `search` is a plain substring of the artist or
+    the album - no ranking, because the answer to "where is Abbey Road"
+    should not depend on a scoring function.
     """
+    if show not in FILTERS:
+        raise ValueError(f"There is no {show!r} filter.")
     limit = max(1, min(int(limit), MAX_PAGE))
     offset = max(0, int(offset))
     needle = (search or "").strip().casefold()
@@ -186,12 +228,21 @@ def listing(identity: navidrome.Identity, limit: int = PAGE, offset: int = 0,
         log.warning("cannot read the library: %s", exc)
         return {"available": False, "reason": str(exc), "albums": [],
                 "total": 0, "tracks": 0, "unmatched": 0,
-                "unmatched_albums": 0, "limit": limit, "offset": offset}
+                "unmatched_albums": 0, "review_albums": 0, "no_gain": 0,
+                "no_gain_albums": 0, "limit": limit, "offset": offset}
 
     every = list(albums.values())
+    reviewed = store.reviewed_albums([lib["id"] for lib in identity.libraries])
+    for album in every:
+        # Every Navidrome album in the folder, not any one of them: a folder
+        # holding two album ids is two records sharing a directory, and
+        # reviewing one says nothing about the other.
+        album.reviewed = bool(album.album_ids) and all(
+            (album.library_id, one) in reviewed for one in album.album_ids)
+
+    keep = FILTERS[show]
     shown = [a for a in every
-             if (not unmatched_only or a.untagged)
-             and (not needle or _matches(a, needle))]
+             if keep(a) and (not needle or _matches(a, needle))]
     if newest_first:
         shown.sort(key=lambda a: (a.added, a.sort_name), reverse=True)
     else:
@@ -207,9 +258,52 @@ def listing(identity: navidrome.Identity, limit: int = PAGE, offset: int = 0,
         "tracks": sum(a.tracks for a in every),
         "unmatched": sum(a.untagged for a in every),
         "unmatched_albums": sum(1 for a in every if a.untagged),
+        "review_albums": sum(1 for a in every if a.needs_review),
+        "no_gain": sum(a.no_gain for a in every),
+        "no_gain_albums": sum(1 for a in every if a.no_gain),
         "limit": limit,
         "offset": offset,
     }
+
+
+def _albums_or_raise(identity: navidrome.Identity) -> list[Album]:
+    try:
+        connection = navidrome.open_db()
+        with connection:
+            return list(_load(connection, identity).values())
+    except (navidrome.Unavailable, sqlite3.Error) as exc:
+        raise ValueError(f"Navidrome's database is unreadable: {exc}") from exc
+
+
+def album_ids(identity: navidrome.Identity, library_id: int,
+              folder: str) -> set[str]:
+    """Navidrome's album ids for one folder, as it stands right now.
+
+    Read *before* an edit, because afterwards Navidrome has not rescanned
+    and the folder may not exist. A rename keeps the album UUID, so the id
+    read here is still the album's id once the scan catches up.
+    """
+    found = next((a for a in _albums_or_raise(identity)
+                  if a.library_id == int(library_id) and a.folder == folder),
+                 None)
+    if found is None:
+        raise ValueError("That album is not in one of your libraries.")
+    if not found.album_ids:
+        raise ValueError(
+            "Navidrome has no album id for that folder yet; rescan and try "
+            "again.")
+    return found.album_ids
+
+
+def without_gain(identity: navidrome.Identity) -> list[tuple[int, str]]:
+    """(library_id, folder) for every album with a track lacking ReplayGain.
+
+    Newest first, so a long run does what was downloaded last before
+    working back through the archive.
+    """
+    albums = [a for a in _albums_or_raise(identity) if a.no_gain and a.folder]
+    albums.sort(key=lambda a: (a.added, a.sort_name), reverse=True)
+    return [(a.library_id, a.folder) for a in albums]
 
 
 def tracks(identity: navidrome.Identity, library_id: int,
@@ -246,7 +340,7 @@ def tracks(identity: navidrome.Identity, library_id: int,
     found = [
         Track(id=row[0], path=row[1], title=row[2], artist=row[3],
               track_no=row[4] or 0, disc_no=row[5] or 0, tagged=bool(row[6]))
-        for row in rows if _folder_of(row[1]) == folder
+        for row in rows if folder_of(row[1]) == folder
     ]
     if not found:
         raise ValueError("That album is not in one of your libraries.")

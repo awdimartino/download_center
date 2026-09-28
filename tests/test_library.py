@@ -15,7 +15,7 @@ from conftest import add_track
 
 
 @pytest.fixture
-def db(navidrome_db, monkeypatch):
+def db(navidrome_db, state_db, monkeypatch):
     from app.config import settings
     monkeypatch.setattr(settings, "navidrome_db", navidrome_db)
     return navidrome_db
@@ -32,6 +32,7 @@ def kelly(tmp_path):
 
 def make_album(db, folder, count, tagged=0, library_id=1, **fields):
     """`count` tracks in one folder, `tagged` of them with a MusicBrainz id."""
+    fields.setdefault("album_id", f"al-{folder}")
     for n in range(1, count + 1):
         add_track(db, f"{folder}-{n}".replace("/", "-"),
                   path=f"{folder}/{n:02d} - Track {n}.mp3",
@@ -70,7 +71,7 @@ def test_the_filter_narrows_to_albums_without_a_match(db, identity):
     make_album(db, "The Beatles/Abbey Road", 3, album="Abbey Road")
 
     every = library.listing(identity)["albums"]
-    narrowed = library.listing(identity, unmatched_only=True)["albums"]
+    narrowed = library.listing(identity, show="unmatched")["albums"]
 
     assert len(every) == 2
     assert [a["album"] for a in narrowed] == ["Abbey Road"]
@@ -94,7 +95,7 @@ def test_whether_a_match_exists_is_derived_not_stored(db, identity):
     ID and no flag ever has to be cleared - which is exactly how the refusal
     table fell out of step with reality."""
     make_album(db, "The Beatles/Abbey Road", 1, album="Abbey Road")
-    assert library.listing(identity, unmatched_only=True)["albums"]
+    assert library.listing(identity, show="unmatched")["albums"]
 
     import sqlite3
     connection = sqlite3.connect(db)
@@ -102,7 +103,7 @@ def test_whether_a_match_exists_is_derived_not_stored(db, identity):
         connection.execute("update media_file set mbz_recording_id = 'mb-1'")
     connection.close()
 
-    assert library.listing(identity, unmatched_only=True)["albums"] == []
+    assert library.listing(identity, show="unmatched")["albums"] == []
     assert len(library.listing(identity)["albums"]) == 1
 
 
@@ -202,12 +203,105 @@ def test_the_totals_describe_the_library_not_the_page(db, identity):
     make_album(db, "A/Todo", 2, album="Todo")
 
     for listed in (library.listing(identity),
-                   library.listing(identity, unmatched_only=True),
+                   library.listing(identity, show="unmatched"),
                    library.listing(identity, search="Todo")):
         assert listed["tracks"] == 5
         assert listed["albums_total"] == 2
         assert listed["unmatched"] == 2
         assert listed["unmatched_albums"] == 1
+
+
+# --- needs review -----------------------------------------------------------
+#
+# "No MusicBrainz match" never empties: a hand-tagged bootleg sits in it for
+# ever, correctly. "Needs review" is the part of it nobody has dealt with.
+
+def test_an_unmatched_album_needs_review_until_someone_deals_with_it(
+        db, identity):
+    from app import store
+    make_album(db, "A/Bootleg", 2, album="Bootleg")
+
+    assert [a["album"] for a in
+            library.listing(identity, show="review")["albums"]] == ["Bootleg"]
+
+    store.mark_reviewed(1, library.album_ids(identity, 1, "A/Bootleg"),
+                        "marked", "alex")
+
+    assert library.listing(identity, show="review")["albums"] == []
+    # Still no MusicBrainz match - that filter is about MusicBrainz.
+    assert len(library.listing(identity, show="unmatched")["albums"]) == 1
+    assert library.listing(identity)["review_albums"] == 0
+
+
+def test_a_matched_album_never_needs_review(db, identity):
+    make_album(db, "A/Done", 2, tagged=2, album="Done")
+    assert library.listing(identity, show="review")["albums"] == []
+
+
+def test_review_survives_a_rename(db, identity):
+    """Keyed on Navidrome's album id, which follows the album UUID, not on
+    the folder - a rename moves the folder and keeps the id."""
+    import sqlite3
+    from app import store
+    make_album(db, "A/Old Name", 1, album="Old Name", album_id="al-x")
+    store.mark_reviewed(1, {"al-x"}, "edited", "alex")
+
+    connection = sqlite3.connect(db)
+    with connection:
+        connection.execute("update media_file set path = 'A/New Name/01.mp3'")
+    connection.close()
+
+    assert library.listing(identity)["albums"][0]["reviewed"] is True
+
+
+def test_a_folder_holding_two_albums_is_reviewed_only_when_both_are(
+        db, identity):
+    from app import store
+    add_track(db, "a", path="A/Mixed/01.mp3", album_id="al-1")
+    add_track(db, "b", path="A/Mixed/02.mp3", album_id="al-2")
+    store.mark_reviewed(1, {"al-1"}, "marked", "alex")
+
+    assert library.listing(identity)["albums"][0]["needs_review"] is True
+
+
+def test_review_marks_are_per_library(db, identity):
+    from app import store
+    make_album(db, "A/Bootleg", 1, album="Bootleg", album_id="al-same")
+    store.mark_reviewed(2, {"al-same"}, "marked", "kelly")
+
+    assert library.listing(identity)["albums"][0]["reviewed"] is False
+
+
+def test_an_unknown_filter_is_refused(db, identity):
+    with pytest.raises(ValueError):
+        library.listing(identity, show="everything")
+
+
+# --- ReplayGain -------------------------------------------------------------
+
+def test_tracks_without_replaygain_are_counted(db, identity):
+    """Null is unmeasured; 0.0 dB is a measurement (FIXES item 22)."""
+    add_track(db, "a", path="A/X/01.mp3", rg_track_gain=None, album_id="x")
+    add_track(db, "b", path="A/X/02.mp3", rg_track_gain=0.0, album_id="x")
+    add_track(db, "c", path="A/Y/01.mp3", rg_track_gain=-6.1, album_id="y")
+
+    listed = library.listing(identity)
+    by_folder = {a["folder"]: a for a in listed["albums"]}
+
+    assert by_folder["A/X"]["no_gain"] == 1
+    assert by_folder["A/Y"]["no_gain"] == 0
+    assert listed["no_gain"] == 1
+    assert listed["no_gain_albums"] == 1
+    assert [a["folder"] for a in
+            library.listing(identity, show="nogain")["albums"]] == ["A/X"]
+
+
+def test_the_albums_to_measure_are_the_ones_missing_gain(db, identity):
+    add_track(db, "a", path="A/X/01.mp3", rg_track_gain=None, album_id="x")
+    add_track(db, "c", path="A/Y/01.mp3", rg_track_gain=-6.1, album_id="y")
+    add_track(db, "k", path="K/Z/01.mp3", rg_track_gain=None, library_id=2)
+
+    assert library.without_gain(identity) == [(1, "A/X")]
 
 
 # --- opening a row ----------------------------------------------------------
@@ -264,7 +358,7 @@ def test_an_unreadable_database_is_reported_not_raised(identity, monkeypatch,
 def test_a_file_at_the_library_root_has_no_album_folder(db, identity):
     add_track(db, "loose", path="loose.mp3", album="", album_artist="",
               mbz_recording_id="")
-    assert library._folder_of("loose.mp3") == ""
+    assert library.folder_of("loose.mp3") == ""
 
 
 @pytest.mark.parametrize("folder", ["", " ", "/", "\\"])
@@ -421,7 +515,7 @@ def test_search_and_the_filter_apply_together(db, identity):
     make_album(db, "The Beatles/Abbey Road Sessions", 1,
                album="Abbey Road Sessions")
 
-    found = library.listing(identity, unmatched_only=True,
+    found = library.listing(identity, show="unmatched",
                             search="abbey")["albums"]
 
     assert [a["album"] for a in found] == ["Abbey Road Sessions"]

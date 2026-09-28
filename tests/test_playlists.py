@@ -11,6 +11,12 @@ import pytest
 
 from app import playlists
 
+SCOPE = {"is": {"library_id": 1}}
+
+
+def _rules(form):
+    return playlists.to_rules(form, [1])
+
 
 def test_a_rule_survives_the_round_trip():
     rules = {
@@ -18,22 +24,90 @@ def test_a_rule_survives_the_round_trip():
             {"contains": {"artist": "Burial"}},
             {"gt": {"rating": 3}},
             {"is": {"loved": True}},
+            SCOPE,
         ],
         "sort": "-dateloved",
         "limit": 100,
     }
-    assert playlists.to_rules(playlists.to_form(rules)) == rules
+    assert _rules(playlists.to_form(rules)) == rules
 
 
 def test_an_ascending_sort_round_trips_without_a_sign():
-    rules = {"any": [{"is": {"year": 1997}}], "sort": "year"}
-    assert playlists.to_rules(playlists.to_form(rules)) == rules
+    rules = {"all": [{"any": [{"is": {"year": 1997}}]}, SCOPE], "sort": "year"}
+    assert _rules(playlists.to_form(rules)) == rules
 
 
 def test_no_limit_stays_absent_rather_than_becoming_zero():
     """`limit: 0` is not the same as no limit to Navidrome."""
     rules = {"all": [{"contains": {"album": "Untrue"}}]}
-    assert "limit" not in playlists.to_rules(playlists.to_form(rules))
+    assert "limit" not in _rules(playlists.to_form(rules))
+
+
+# --- which libraries it draws from -----------------------------------------
+#
+# Navidrome evaluates a smart playlist against every track on the server,
+# whoever owns it. Kelly's "play count > -1" matched ~7,000 tracks against
+# her library's 437.
+
+def test_every_saved_rule_is_limited_to_the_accounts_libraries():
+    rules = playlists.to_rules({"conditions": [
+        {"field": "playcount", "operator": "gt", "value": "-1"}]}, [2])
+    assert rules["all"] == [{"gt": {"playcount": -1}},
+                            {"is": {"library_id": 2}}]
+
+
+def test_an_any_rule_is_limited_from_outside_the_any():
+    """Inside the `any`, the library would be one more way to match."""
+    rules = playlists.to_rules({"match": "any", "conditions": [
+        {"field": "rating", "operator": "gt", "value": "4"},
+        {"field": "loved", "operator": "is", "value": "true"}]}, [2])
+    assert rules["all"] == [
+        {"any": [{"gt": {"rating": 4}}, {"is": {"loved": True}}]},
+        {"is": {"library_id": 2}}]
+    form = playlists.to_form(rules)
+    assert form["match"] == "any" and form["libraries"] == [2]
+    assert len(form["conditions"]) == 2
+
+
+def test_several_libraries_are_one_condition():
+    """A list is `library_id IN (...)` to Navidrome."""
+    rules = playlists.to_rules({"conditions": [
+        {"field": "rating", "operator": "gt", "value": "4"}]}, [5, 1])
+    assert rules["all"][-1] == {"is": {"library_id": [1, 5]}}
+
+
+def test_a_playlist_can_be_narrowed_to_some_of_them():
+    rules = playlists.to_rules({"libraries": ["5"], "conditions": [
+        {"field": "rating", "operator": "gt", "value": "4"}]}, [1, 5])
+    assert rules["all"][-1] == {"is": {"library_id": 5}}
+
+
+def test_a_library_the_account_cannot_see_is_refused():
+    with pytest.raises(ValueError, match="not one this account can see"):
+        playlists.to_rules({"libraries": [2], "conditions": [
+            {"field": "rating", "operator": "gt", "value": "4"}]}, [1])
+
+
+def test_an_account_with_no_libraries_cannot_save():
+    with pytest.raises(ValueError, match="no libraries"):
+        playlists.to_rules({"conditions": [
+            {"field": "rating", "operator": "gt", "value": "4"}]}, [])
+
+
+def test_an_unscoped_rule_says_so():
+    form = playlists.to_form({"all": [{"gt": {"rating": 4}}]})
+    assert form["libraries"] is None
+
+
+def test_the_hand_written_contains_form_is_read_as_a_scope():
+    """What the first playlists on this server hold. Saving writes `is`."""
+    rules = {"all": [{"gt": {"playcount": -1}},
+                     {"contains": {"library_id": "2"}}], "sort": "-artist"}
+    form = playlists.to_form(rules)
+    assert form["libraries"] == [2]
+    assert form["conditions"] == [
+        {"field": "playcount", "operator": "gt", "value": -1}]
+    assert playlists.to_rules(form, [2])["all"][-1] == {"is": {"library_id": 2}}
 
 
 # --- what it refuses to show ----------------------------------------------
@@ -45,6 +119,10 @@ def test_no_limit_stays_absent_rather_than_becoming_zero():
     ({"all": [{"contains": {"artist": "a", "album": "b"}}]}, "two fields"),
     ({"all": [{"contains": {"nosuchfield": "x"}}]}, "unknown field"),
     ({"all": [{"contains": {"playcount": 3}}]}, "operator the field cannot take"),
+    ({"any": [{"gt": {"rating": 4}}, {"is": {"library_id": 1}}]},
+     "a library that widens an any"),
+    ({"all": [{"is": {"library_id": 1}}, {"is": {"library_id": 2}}]},
+     "two library scopes"),
 ])
 def test_rules_it_cannot_represent_are_refused_not_flattened(rules, why):
     """Flattening would silently discard the part the form cannot show, and
@@ -66,46 +144,46 @@ def test_an_unshowable_rule_is_refused_on_the_way_in_too():
 def test_a_playlist_with_no_conditions_is_refused():
     """It would match the whole library."""
     with pytest.raises(ValueError, match="at least one condition"):
-        playlists.to_rules({"match": "all", "conditions": []})
+        _rules({"match": "all", "conditions": []})
 
 
 def test_an_empty_value_is_refused():
     """"Title contains ''" matches every track, which is the same accident
     as saving with no conditions at all."""
     with pytest.raises(ValueError, match="no value"):
-        playlists.to_rules({"conditions": [
+        _rules({"conditions": [
             {"field": "title", "operator": "contains", "value": ""}]})
 
 
 def test_an_unknown_field_is_refused():
     with pytest.raises(ValueError, match="no field called"):
-        playlists.to_rules({"conditions": [
+        _rules({"conditions": [
             {"field": "nope", "operator": "is", "value": "x"}]})
 
 
 def test_an_operator_a_field_cannot_take_is_refused():
     with pytest.raises(ValueError, match="cannot be asked"):
-        playlists.to_rules({"conditions": [
+        _rules({"conditions": [
             {"field": "rating", "operator": "contains", "value": "4"}]})
 
 
 def test_a_negative_limit_is_refused():
     with pytest.raises(ValueError, match="cannot be negative"):
-        playlists.to_rules({
+        _rules({
             "conditions": [{"field": "title", "operator": "is", "value": "x"}],
             "limit": -1})
 
 
 def test_an_unknown_sort_is_refused():
     with pytest.raises(ValueError, match="Cannot sort by"):
-        playlists.to_rules({
+        _rules({
             "conditions": [{"field": "title", "operator": "is", "value": "x"}],
             "sort": "loudness"})
 
 
 def test_a_bad_match_mode_is_refused():
     with pytest.raises(ValueError, match="must be 'all' or 'any'"):
-        playlists.to_rules({"match": "some", "conditions": [
+        _rules({"match": "some", "conditions": [
             {"field": "title", "operator": "is", "value": "x"}]})
 
 
@@ -114,28 +192,28 @@ def test_a_bad_match_mode_is_refused():
 def test_a_number_is_sent_as_a_number():
     """The browser sends strings for everything, and a rating compared
     against the string "4" matches nothing while looking correct."""
-    rules = playlists.to_rules({"conditions": [
+    rules = _rules({"conditions": [
         {"field": "rating", "operator": "gt", "value": "4"}]})
-    assert rules["all"] == [{"gt": {"rating": 4}}]
+    assert rules["all"][0] == {"gt": {"rating": 4}}
 
 
 def test_a_zero_is_a_value_not_an_empty_one():
     """`0 == ""` is False in Python, but this is worth pinning: a play count
     of zero is a real filter and must not trip the empty-value refusal."""
-    rules = playlists.to_rules({"conditions": [
+    rules = _rules({"conditions": [
         {"field": "playcount", "operator": "is", "value": "0"}]})
-    assert rules["all"] == [{"is": {"playcount": 0}}]
+    assert rules["all"][0] == {"is": {"playcount": 0}}
 
 
 def test_a_false_boolean_is_a_value_not_an_empty_one():
-    rules = playlists.to_rules({"conditions": [
+    rules = _rules({"conditions": [
         {"field": "loved", "operator": "is", "value": "false"}]})
-    assert rules["all"] == [{"is": {"loved": False}}]
+    assert rules["all"][0] == {"is": {"loved": False}}
 
 
 def test_a_non_numeric_value_for_a_number_field_says_so():
     with pytest.raises(ValueError, match="needs a number"):
-        playlists.to_rules({"conditions": [
+        _rules({"conditions": [
             {"field": "year", "operator": "is", "value": "nineteen"}]})
 
 

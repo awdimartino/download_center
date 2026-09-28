@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
-from . import filer, inbox, library, overview, registry, spotify
+from . import filer, inbox, library, overview, registry, replaygain, spotify
 from . import worker, workspace
 from . import config
 from . import health as health_checks
@@ -1159,20 +1159,23 @@ async def overview_page(
 async def library_list(
     limit: int = library.PAGE,
     offset: int = 0,
-    unmatched: bool = False,
+    show: str = "all",
     q: str = "",
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
     """Every album this person owns, newest first.
 
-    `unmatched` narrows to albums MusicBrainz has not confirmed, which is
-    derived from the files every time rather than stored. It is a filter,
-    not the definition of the list - an album can be tagged perfectly by
-    hand and still never have a MusicBrainz ID, and hiding the rest is what
-    made a matched album unreachable once it had been matched.
+    `show` narrows it: `unmatched` to albums MusicBrainz has not confirmed,
+    `review` to the ones of those nobody has dealt with yet, `nogain` to
+    albums with a track lacking ReplayGain. A filter, not the definition of
+    the list - hiding the rest is what made a matched album unreachable
+    once it had been matched.
     """
-    return await asyncio.to_thread(
-        library.listing, session.identity, limit, offset, unmatched, q)
+    try:
+        return await asyncio.to_thread(
+            library.listing, session.identity, limit, offset, show, q)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/library/album")
@@ -1222,6 +1225,57 @@ def _named(*values: str | None) -> None:
                        "them files the track under Unknown Artist.")
 
 
+def _before_edit(identity: navidrome.Identity, library_id: int,
+                 folder: str) -> set[str]:
+    """The album ids to mark reviewed once an edit succeeds.
+
+    Read first, because afterwards the folder may have moved and Navidrome
+    has not rescanned. An empty answer does not stop the edit - the edit is
+    what was asked for - but it is logged, because the album then stays on
+    the review list and somebody will wonder why.
+    """
+    try:
+        return library.album_ids(identity, library_id, folder)
+    except ValueError as exc:
+        log.warning("cannot mark %s reviewed: %s", folder, exc)
+        return set()
+
+
+def _reviewed(identity: navidrome.Identity, library_id: int,
+              ids: set[str], how: str) -> None:
+    if ids:
+        store.mark_reviewed(library_id, ids, how, identity.username)
+
+
+class ReviewMark(BaseModel):
+    library_id: int
+    folder: str
+    reviewed: bool = True
+
+
+@app.post("/api/library/reviewed")
+async def library_reviewed(
+    body: ReviewMark,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Say an album has been dealt with, or put it back on the list.
+
+    For the albums nothing else will ever mark: tagged correctly by hand,
+    and never going to be in MusicBrainz.
+    """
+    try:
+        ids = await asyncio.to_thread(
+            library.album_ids, session.identity, body.library_id, body.folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if body.reviewed:
+        store.mark_reviewed(body.library_id, ids, "marked",
+                            session.identity.username)
+    else:
+        store.unmark_reviewed(body.library_id, ids)
+    return {"reviewed": body.reviewed}
+
+
 @app.post("/api/library/album/edit")
 async def library_album_edit(
     body: AlbumEdit,
@@ -1249,9 +1303,11 @@ async def library_album_edit(
             detail=f"{folder.name} is still arriving; try again shortly.")
 
     def run() -> dict[str, Any]:
+        ids = _before_edit(session.identity, body.library_id, body.folder)
         filed = filer.retag_album(space, folder,
                                   albumartist=body.album_artist,
                                   album=body.album)
+        _reviewed(session.identity, body.library_id, ids, "edited")
         navidrome.notify()
         return {"ran": True, "moved": len(filed),
                 "folder": str(filed[0].path.parent.relative_to(
@@ -1293,10 +1349,14 @@ async def library_track_edit(
             detail=f"{path.name} is still arriving; try again shortly.")
 
     def run() -> dict[str, Any]:
+        ids = _before_edit(session.identity, body.library_id,
+                           library.folder_of(body.path))
         filed = filer.retag_track(
             space, path, albumartist=body.album_artist, album=body.album,
             artist=body.artist, title=body.title,
             track_no=body.track_no, disc_no=body.disc_no)
+        # The album it was in: that is the one somebody was going through.
+        _reviewed(session.identity, body.library_id, ids, "edited")
         navidrome.notify()
         return {"ran": True,
                 "path": str(filed.path.relative_to(space.library_path)),
@@ -1438,9 +1498,11 @@ async def library_match_apply(
         # Read before beets touches anything: once the tags are rewritten
         # there is nothing left to say which album this used to be.
         was = filer.album_key_of(path)
+        ids = _before_edit(session.identity, body.library_id, body.folder)
         result = beets_runner.import_chosen(space, path, body.release_id)
         if not result.get("imported"):
             return result
+        _reviewed(session.identity, body.library_id, ids, "matched")
 
         # Beets retagged in place, so the files are still where they were
         # and there is no need to ask its database where they went. Settle
@@ -1458,6 +1520,64 @@ async def library_match_apply(
     operation, started = operations.start(
         "import", session.identity.username, run)
     return {"started": started, "operation": operation.as_dict()}
+
+
+class GainTarget(BaseModel):
+    # Both absent: every album in this person's libraries with a track that
+    # has no ReplayGain.
+    library_id: int | None = None
+    folder: str | None = None
+
+
+@app.post("/api/library/replaygain")
+async def library_replaygain(
+    body: GainTarget,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Measure ReplayGain for one album, or for every album missing some.
+
+    An operation, reporting progress album by album: "all missing" was
+    about 3,400 tracks when this was written, which is a long time on a Pi
+    and indistinguishable from a hang without a count going up.
+    """
+    if not replaygain.available():
+        raise HTTPException(
+            status_code=503,
+            detail="rsgain is not installed in this container, so nothing "
+                   "can be measured.")
+    identity = session.identity
+    try:
+        if body.folder is not None:
+            if body.library_id is None:
+                raise ValueError("Say which library the album is in.")
+            library.album_dir(identity, body.library_id, body.folder)
+            targets = [(body.library_id, body.folder)]
+        else:
+            targets = await asyncio.to_thread(library.without_gain, identity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not targets:
+        raise HTTPException(status_code=400,
+                            detail="Every album already has ReplayGain.")
+
+    def run() -> dict[str, Any]:
+        return replaygain.measure_all(identity, targets)
+
+    operation, started = operations.start(
+        replaygain.NAME, identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
+@app.post("/api/library/replaygain/stop")
+async def library_replaygain_stop(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Finish the album in hand, then stop."""
+    operation = operations.get(replaygain.NAME)
+    if operation.owner != session.identity.username:
+        raise HTTPException(status_code=403,
+                            detail="That run is somebody else's.")
+    return {"operation": operations.stop(replaygain.NAME).as_dict()}
 
 
 @app.get("/api/operations")
