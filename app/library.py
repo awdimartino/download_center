@@ -397,6 +397,76 @@ def owns_track(identity: navidrome.Identity, track_id: str) -> bool:
     return bool(row) and row[0] in allowed
 
 
+def lookup(identity: navidrome.Identity, item_id: str) -> dict[str, Any]:
+    """A track or an album, opened by pasting its Navidrome id.
+
+    For an id copied from elsewhere - the duplicates ledger, a bug report -
+    rather than reached by browsing to it. A track is tried first: a track id
+    and an album id are typed the same way, and only Navidrome's own tables
+    can say which this one is.
+    """
+    item_id = (item_id or "").strip()
+    if not item_id:
+        raise ValueError("Paste a track or album id.")
+
+    allowed = [lib["id"] for lib in identity.libraries]
+    if not allowed:
+        raise ValueError("That id is not in one of your libraries.")
+
+    try:
+        connection = navidrome.open_db()
+        with connection:
+            live = navidrome.live_clause(connection, allowed)
+            names = {lib["id"]: lib["name"] for lib in identity.libraries}
+
+            row = connection.execute(f"""
+                select mf.id, mf.path, coalesce(mf.title, ''),
+                       coalesce(mf.artist, ''), coalesce(mf.album, ''),
+                       coalesce(mf.album_artist, ''), mf.library_id,
+                       coalesce(mf.track_number, 0),
+                       coalesce(mf.disc_number, 0),
+                       coalesce(mf.mbz_recording_id, '')
+                  from media_file mf
+                 where mf.id = ? and {live}""", (item_id,)).fetchone()
+            if row is not None:
+                return {
+                    "type": "track", "id": row[0], "path": row[1],
+                    "title": row[2], "artist": row[3], "album": row[4],
+                    "album_artist": row[5], "library_id": row[6],
+                    "library": names.get(row[6], ""), "track_no": row[7],
+                    "disc_no": row[8], "mbid": row[9],
+                }
+
+            columns = navidrome.columns_of(connection, "media_file")
+            if "album_id" not in columns:
+                raise ValueError("No track or album has that id in your "
+                                 "library.")
+            rows = connection.execute(f"""
+                select mf.id, mf.path, coalesce(mf.title, ''),
+                       coalesce(mf.artist, ''), coalesce(mf.album, ''),
+                       coalesce(mf.album_artist, ''), mf.library_id,
+                       coalesce(mf.track_number, 0), coalesce(mf.disc_number, 0)
+                  from media_file mf
+                 where mf.album_id = ? and {live}""", (item_id,)).fetchall()
+    except (navidrome.Unavailable, sqlite3.Error) as exc:
+        raise ValueError(f"Navidrome's database is unreadable: {exc}") from exc
+
+    if not rows:
+        raise ValueError("No track or album has that id in your library.")
+
+    tracks_found = sorted(
+        ({"id": r[0], "path": r[1], "title": r[2], "artist": r[3],
+          "track_no": r[7], "disc_no": r[8]} for r in rows),
+        key=lambda t: (t["disc_no"], t["track_no"], t["title"]))
+    first = rows[0]
+    return {
+        "type": "album", "id": item_id, "album": first[4],
+        "artist": first[5] or first[3], "library_id": first[6],
+        "library": names.get(first[6], ""), "folder": folder_of(first[1]),
+        "tracks": tracks_found,
+    }
+
+
 def album_dir(identity: navidrome.Identity, library_id: int,
               folder: str) -> Path:
     """Where that album actually is on disk, if it really is that person's.

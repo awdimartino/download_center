@@ -275,14 +275,17 @@ def reviewed_albums(library_ids: list[int]) -> set[tuple[int, str]]:
 
 # --- what was set aside ---------------------------------------------------
 
-def record_quarantine(group_key: str, copy: Any, keeper: Any,
+def record_quarantine(group_key: str, copy: Any, keeper: Any | None,
                       source: str, target: str, decided_by: str) -> None:
-    """Note that a losing copy was moved, and where it went.
+    """Note that a copy was moved, and where it went.
 
     `copy` and `keeper` are duplicates.Copy objects; only the fields worth
     reading back later are stored, so this module keeps no dependency on that
     one. Recorded after the move so the row only ever describes a file that
     is really at `target`.
+
+    `keeper` is None for a track set aside by hand rather than as the loser
+    of a duplicate pair - there is no other copy for it to have lost to.
     """
     assert _conn is not None, "state.db not connected"
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
@@ -294,8 +297,9 @@ def record_quarantine(group_key: str, copy: Any, keeper: Any,
             "  moved_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (group_key, copy.id, copy.library_id, copy.title, copy.artist,
-             copy.album, source, target, keeper.id, keeper.path, decided_by,
-             stamp))
+             copy.album, source, target,
+             keeper.id if keeper is not None else None,
+             keeper.path if keeper is not None else None, decided_by, stamp))
         _conn.commit()
 
 

@@ -204,6 +204,65 @@ def test_a_missing_file_is_reported_not_swallowed(tmp_path, state_db, identity):
     assert store.quarantined() == [], "nothing moved, so nothing recorded"
 
 
+# --- quarantining a track chosen by hand, not as a duplicate's loser -------
+
+def test_quarantine_one_moves_the_file_and_records_no_keeper(tmp_path,
+                                                              state_db,
+                                                              identity):
+    root = tmp_path / "music"
+    source = root / "Artist" / "Album" / "01 Song.mp3"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"audio")
+
+    outcome = duplicates.quarantine_one(
+        _copy("solo", "Artist/Album/01 Song.mp3"), identity)
+
+    landed = root / duplicates.QUARANTINE_NAME / "Artist" / "Album" / "01 Song.mp3"
+    assert landed.is_file()
+    assert not source.exists()
+    assert outcome["moved_to"] == str(landed)
+
+    row = store.quarantined()[0]
+    assert row["track_id"] == "solo"
+    assert row["keeper_id"] is None
+    assert row["keeper_path"] is None
+    assert row["decided_by"] == "alex"
+
+
+def test_quarantine_one_refuses_a_missing_file(tmp_path, state_db, identity):
+    with pytest.raises(ValueError, match="already gone"):
+        duplicates.quarantine_one(
+            _copy("solo", "Artist/Album/gone.mp3"), identity)
+    assert store.quarantined() == []
+
+
+def test_quarantine_one_refuses_a_file_already_set_aside(tmp_path, state_db,
+                                                          identity):
+    buried = _copy("buried", "duplicates-removed/Artist/Album/01 Song.mp3")
+    with pytest.raises(ValueError, match="already set aside"):
+        duplicates.quarantine_one(buried, identity)
+
+
+def test_quarantine_many_continues_past_one_failure(tmp_path, state_db,
+                                                     identity):
+    root = tmp_path / "music"
+    for name in ("01 Song.mp3", "02 Song.mp3"):
+        path = root / "Artist" / "Album" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"audio")
+
+    outcome = duplicates.quarantine_many([
+        _copy("a", "Artist/Album/01 Song.mp3"),
+        _copy("b", "Artist/Album/gone.mp3"),
+        _copy("c", "Artist/Album/02 Song.mp3"),
+    ], identity)
+
+    assert [m["path"] for m in outcome["quarantined"]] == [
+        "Artist/Album/01 Song.mp3", "Artist/Album/02 Song.mp3"]
+    assert any("already gone" in f for f in outcome["failed"])
+    assert len(store.quarantined()) == 2
+
+
 # --- refusing ---------------------------------------------------------------
 
 def test_refuses_before_moving_anything_when_a_star_cannot_migrate(

@@ -121,9 +121,20 @@ Tick items as they land.
       retagging into it a deliberate merge rather than a hopeful retype.
       No dropdowns existed in the editors before this session either - the
       framing was about the edit flow, not literal `<select>` elements.
-- [ ] **Session 7 — a page per track / album UUID**, like Browse, with
-      manual quarantine on it (same quarantine and ledger path as
-      duplicates).
+- [x] **Session 7 — a page per track / album UUID.** Done 2026-09-28. A
+      "Lookup" tab: paste the id Navidrome already uses as the UUID (`mf.id`
+      for a track, the shared `album_id` for an album - not the raw
+      `navidrome_uuid` tag, which nothing else in the app queries directly
+      either) and `GET /api/lookup` opens it, track first since a track id
+      and an album id are typed the same way. Quarantining a track or every
+      track in an album reuses `duplicates.py`'s own directory and ledger -
+      `duplicates.record_quarantine`'s `keeper` is now optional, since a
+      manual removal has no other copy to migrate a star onto, and the
+      collision-avoiding move itself was pulled out of `resolve()` into
+      `_set_aside()` so the two paths a file can take into quarantine can't
+      drift apart. Unlike the original per-group duplicate button (Code
+      quality, item 1), this one confirms before moving anything, from the
+      start.
 - [ ] **Session 8 — genres.** A genre tally in the library, then merge and
       rename.
 - [ ] **Session 9 — rename and setup docs.** Rename to Navidrome Companion

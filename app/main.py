@@ -1292,6 +1292,92 @@ async def library_album(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get("/api/lookup")
+async def api_lookup(
+    id: str,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """A track or an album, opened by pasting its Navidrome id.
+
+    For an id copied from elsewhere - the duplicates ledger, a bug report -
+    rather than reached by browsing to it.
+    """
+    try:
+        return await asyncio.to_thread(library.lookup, session.identity, id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class LookupQuarantine(BaseModel):
+    id: str
+    type: str
+
+
+def _copy_from_lookup(row: dict[str, Any], library_id: int,
+                      album: str, artist: str) -> duplicates.Copy:
+    """Enough of duplicates.Copy to quarantine a track found by lookup.
+
+    The fields duplicates.py ranks copies by - bit rate, duration, a
+    MusicBrainz id - do not matter here: nothing is being compared against
+    anything else, only moved.
+    """
+    return duplicates.Copy(
+        id=row["id"], path=row["path"], title=row.get("title", ""),
+        album=album, artist=artist, suffix="", bit_rate=0, duration=0.0,
+        size=0, mbid="", track_artist=artist, starred=False, rating=0,
+        library_id=library_id, library="")
+
+
+@app.post("/api/lookup/quarantine")
+async def api_lookup_quarantine(
+    body: LookupQuarantine,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Manually set a track or album aside, by its Navidrome id.
+
+    The same quarantine directory and ledger `duplicates.py` writes to for a
+    resolved duplicate - chosen here by hand rather than found automatically,
+    for the track or album that is simply the wrong file, not a worse copy
+    of a right one.
+    """
+    if body.type not in ("track", "album"):
+        raise HTTPException(status_code=400,
+                            detail="type must be 'track' or 'album'.")
+
+    try:
+        found = await asyncio.to_thread(
+            library.lookup, session.identity, body.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if found["type"] != body.type:
+        raise HTTPException(
+            status_code=400,
+            detail=f"That id is {'an album' if found['type'] == 'album' else 'a track'}, "
+                   f"expected {body.type}.")
+
+    try:
+        if body.type == "track":
+            copy = _copy_from_lookup(found, found["library_id"],
+                                     found["album"], found["artist"])
+            outcome = {
+                "quarantined": [await asyncio.to_thread(
+                    duplicates.quarantine_one, copy, session.identity)],
+                "failed": []}
+        else:
+            copies = [_copy_from_lookup(t, found["library_id"],
+                                        found["album"], t["artist"])
+                     for t in found["tracks"]]
+            outcome = await asyncio.to_thread(
+                duplicates.quarantine_many, copies, session.identity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if outcome.get("quarantined"):
+        await asyncio.to_thread(navidrome.notify)
+    return outcome
+
+
 class AlbumEdit(BaseModel):
     library_id: int
     folder: str

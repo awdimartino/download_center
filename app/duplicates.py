@@ -425,6 +425,90 @@ def _library_root(copy: Copy, identity: navidrome.Identity) -> Path:
     return settings.music_dir
 
 
+def _set_aside(copy: Copy, root: Path) -> Path:
+    """Move one file into its library's quarantine, without colliding.
+
+    Shared by resolving a duplicate group and quarantining a single track by
+    hand, so the destination, the collision handling and the failure
+    messages cannot drift apart between the two paths a file can take to get
+    there.
+    """
+    if already_quarantined(copy, root):
+        # Not an error the person can act on, and not something to do
+        # again: this copy is already set aside and Navidrome has simply
+        # not noticed yet.
+        raise ValueError(f"{copy.path}: already set aside; "
+                         "Navidrome has not rescanned yet")
+    source = root / copy.path
+    if not source.exists():
+        raise ValueError(f"{copy.path}: already gone")
+
+    # The path inside the library is kept rather than flattened to the
+    # basename. Flattening collided every "01 Intro.mp3" in the collection
+    # into one folder and threw away the only thing that said which record a
+    # file came from, which made putting one back a guess.
+    target = _quarantine_root(root) / _relative(copy, root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stem, suffix = target.stem, target.suffix
+    n = 2
+    while target.exists():
+        target = target.with_name(f"{stem} ({n}){suffix}")
+        n += 1
+
+    try:
+        shutil.move(str(source), str(target))
+    except Exception as exc:
+        raise ValueError(f"{copy.path}: {type(exc).__name__}: {exc}") from exc
+    return target
+
+
+def quarantine_one(copy: Copy, identity: navidrome.Identity) -> dict[str, Any]:
+    """Set one track aside by itself - not as the loser of a duplicate pair.
+
+    For a track picked by hand: the wrong file entirely, rather than merely
+    a worse copy of a right one. Uses the same quarantine directory and
+    ledger a resolved duplicate does, so it shows up in the same survey and
+    can be undone the same way. There is no keeper here, so nothing is asked
+    to take over this track's star or rating - one showing up orphaned
+    afterwards is exactly what the "stars pointing nowhere" health check
+    exists to catch.
+    """
+    root = _library_root(copy, identity)
+    target = _set_aside(copy, root)
+    source = root / copy.path
+
+    # Written after the move, so the record only ever describes a file that
+    # is really there.
+    try:
+        store.record_quarantine(
+            group_key=f"manual:{copy.id}", copy=copy, keeper=None,
+            source=str(source), target=str(target),
+            decided_by=identity.username)
+    except Exception:
+        log.exception("could not record the quarantine of %s", source)
+
+    log.info("track manually quarantined by %s: %s",
+             identity.username, copy.path)
+    return {"path": copy.path, "moved_to": str(target),
+            "title": copy.title, "album": copy.album}
+
+
+def quarantine_many(copies: list[Copy],
+                    identity: navidrome.Identity) -> dict[str, Any]:
+    """Quarantine several tracks by hand - an album, from one id.
+
+    Continues past a single failure: one already-moved or missing file in a
+    twelve-track album should not leave the other eleven untouched.
+    """
+    moved, failed = [], []
+    for copy in copies:
+        try:
+            moved.append(quarantine_one(copy, identity))
+        except ValueError as exc:
+            failed.append(str(exc))
+    return {"quarantined": moved, "failed": failed}
+
+
 def resolve(group: Group, keeper_id: str,
             identity: navidrome.Identity) -> dict[str, Any]:
     """Keep one copy, set the others aside, and move annotations across."""
@@ -469,35 +553,12 @@ def resolve(group: Group, keeper_id: str,
     moved, failed = [], []
     for loser in losers:
         root = _library_root(loser, identity)
-        if already_quarantined(loser, root):
-            # Not an error the person can act on, and not something to do
-            # again: this copy is already set aside and Navidrome has simply
-            # not noticed yet.
-            failed.append(f"{loser.path}: already set aside; "
-                          "Navidrome has not rescanned yet")
+        try:
+            target = _set_aside(loser, root)
+        except ValueError as exc:
+            failed.append(str(exc))
             continue
         source = root / loser.path
-        if not source.exists():
-            failed.append(f"{loser.path}: already gone")
-            continue
-
-        # The path inside the library is kept rather than flattened to the
-        # basename. Flattening collided every "01 Intro.mp3" in the
-        # collection into one folder and threw away the only thing that said
-        # which record a file came from, which made putting one back a guess.
-        target = _quarantine_root(root) / _relative(loser, root)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        stem, suffix = target.stem, target.suffix
-        n = 2
-        while target.exists():
-            target = target.with_name(f"{stem} ({n}){suffix}")
-            n += 1
-
-        try:
-            shutil.move(str(source), str(target))
-        except Exception as exc:
-            failed.append(f"{loser.path}: {type(exc).__name__}: {exc}")
-            continue
 
         # Written after the move, so the record only ever describes a file
         # that is really there. Without this, undoing a resolution meant
