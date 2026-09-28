@@ -88,8 +88,15 @@ Tick items as they land.
       existing Spotify search. The jobs list, its empty state, the crumb and
       the results grid now all live in `#view-browse`; switching the kind
       filter re-searches only when the field does not hold a URL.
-- [ ] **Session 4 — merge Home and Listening.** Dashboard on top, detail
-      below. Every header stat links to its breakdown or is dropped.
+- [x] **Session 4 — merge Home and Listening.** Done 2026-09-28. The
+      Listening nav item is gone; its range buttons, coverage stats and
+      ranked track list now live at the bottom of Home, under the existing
+      dashboard. The hero fact and the "In `<year>`" tile scroll straight
+      to that list ("In `<year>`" also switches it to the Year range); "This
+      month" scrolls to the monthly chart, which already carries that
+      number's breakdown; "Your library" opens the Library view. All four
+      were candidates to drop rather than link — each found a genuine
+      target instead.
 - [ ] **Session 5 — more stats.** Top albums, top genres, hourly
       distribution, longest session; a day / month / year / all-time
       switch on every chart.

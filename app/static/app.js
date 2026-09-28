@@ -780,12 +780,11 @@ function showView(view) {
   if (view === "browse" && matchMedia("(hover: hover) and (pointer: fine)").matches) {
     urlInput.focus();
   }
-  if (view === "home") loadHome();
+  if (view === "home") { loadHome(); loadListening(); }
   if (view === "library") loadLibrary();
   if (view === "health") loadHealth();
   if (view === "dupes") loadDupes();
   if (view === "playlists") loadPlaylists();
-  if (view === "listening") loadListening();
   if (view === "settings") loadSettings();
 }
 
@@ -1855,14 +1854,17 @@ document.getElementById("library-rescan").addEventListener("click", async () => 
    most recent play date, so "how much did I listen to in March" has no home
    anywhere else.
 
-   Everything drawn here is a door into a section that holds the real
-   detail. Nothing on this page is a control, and nothing is edited here. */
+   Everything drawn here is a door to the detail lower on this page, which
+   the Listening panel used to hold on its own. Nothing on this page is a
+   control, and nothing is edited here. */
 
 const homeGreeting = document.getElementById("home-greeting");
 const homeHero = document.getElementById("home-hero");
 const homeStats = document.getElementById("home-stats");
+const homeChart = document.getElementById("home-chart");
 const homeMonths = document.getElementById("home-months");
 const homeArtists = document.getElementById("home-artists");
+const homeListening = document.getElementById("home-listening");
 const homeSnapshots = document.getElementById("home-snapshots");
 const homeEmpty = document.getElementById("home-empty");
 
@@ -2056,14 +2058,22 @@ function homeTiles(data) {
     : "no month before this one";
 
   const tiles = [
-    stat("This month", (heard.this_month || 0).toLocaleString(), versus),
+    // Its breakdown is the chart directly below: same by-month series,
+    // this month's bar is the one on the right.
+    stat("This month", (heard.this_month || 0).toLocaleString(), versus,
+         () => homeChart.scrollIntoView({ behavior: "smooth", block: "start" })),
+    // "Year" is already the name of a range button on the track list below
+    // - the breakdown of which tracks made up this total.
     stat("In " + (year.year || new Date().getFullYear()),
          (year.tracks || 0).toLocaleString(),
-         "different tracks, about " + hours.toLocaleString() + " hours"),
+         "different tracks, about " + hours.toLocaleString() + " hours",
+         () => { selectRange(365); homeListening.scrollIntoView(
+           { behavior: "smooth", block: "start" }); }),
   ];
   if (held.available) {
     tiles.push(stat("Your library", (held.tracks || 0).toLocaleString(),
-                    (held.albums || 0).toLocaleString() + " albums"));
+                    (held.albums || 0).toLocaleString() + " albums",
+                    () => showView("library")));
   }
   homeStats.replaceChildren(...tiles);
 }
@@ -2100,7 +2110,8 @@ async function loadHome() {
   }
 }
 
-homeHero.addEventListener("click", () => showView("listening"));
+homeHero.addEventListener("click",
+  () => homeListening.scrollIntoView({ behavior: "smooth", block: "start" }));
 
 /* --- listening -----------------------------------------------------------
    The snapshots have been running since before there was anywhere to read
@@ -2115,8 +2126,15 @@ const listeningError = document.getElementById("listening-error");
 const listeningCoverage = document.getElementById("listening-coverage");
 let listeningDays = 3650;
 
-function stat(label, value, detail) {
-  const box = el("div", "stat");
+// A stat with somewhere to go is a button styled like the plain ones;
+// one with nowhere to go stays a div, because a control that does nothing
+// is worse than a number that never pretended to be one.
+function stat(label, value, detail, onClick) {
+  const box = el(onClick ? "button" : "div", onClick ? "stat stat-link" : "stat");
+  if (onClick) {
+    box.type = "button";
+    box.addEventListener("click", onClick);
+  }
   box.append(el("div", "stat-label", label), el("div", "stat-value", value));
   if (detail) box.append(el("div", "stat-detail", detail));
   return box;
@@ -2193,13 +2211,18 @@ async function loadListening() {
   }
 }
 
-document.querySelectorAll(".listen-range .range").forEach((button) => {
-  button.addEventListener("click", () => {
-    document.querySelectorAll(".listen-range .range")
-      .forEach((other) => other.classList.toggle("active", other === button));
-    listeningDays = Number(button.dataset.days);
-    loadListening();
+// Shared with the "In <year>" home tile, which jumps here already filtered
+// to the Year button rather than leaving the visitor to click it themselves.
+function selectRange(days) {
+  listeningDays = days;
+  document.querySelectorAll(".listen-range .range").forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.days) === days);
   });
+  loadListening();
+}
+
+document.querySelectorAll(".listen-range .range").forEach((button) => {
+  button.addEventListener("click", () => selectRange(Number(button.dataset.days)));
 });
 
 // --- health ---------------------------------------------------------------
@@ -2990,6 +3013,7 @@ function start() {
   // The panel the page opens on, so it is not blank until somebody
   // navigates away and back.
   loadHome();
+  loadListening();
   loadHealth();
   loadLibrary();
   checkSpotify();

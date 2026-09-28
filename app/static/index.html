@@ -66,9 +66,6 @@
     <button class="nav-item" data-view="playlists" type="button">
       <span class="nav-label">Playlists</span>
     </button>
-    <button class="nav-item" data-view="listening" type="button">
-      <span class="nav-label">Listening</span>
-    </button>
 
     <hr class="menu-rule">
 
@@ -108,7 +105,7 @@
     <p id="home-snapshots" class="warn" hidden></p>
     <div id="home-stats" class="stats"></div>
 
-    <section class="home-figure">
+    <section id="home-chart" class="home-figure">
       <h2 class="home-figure-title">Plays by month</h2>
       <p class="home-figure-note">Last two years. Counted from the nightly
         snapshots, which Navidrome does not keep.</p>
@@ -119,6 +116,29 @@
       <h2 class="home-figure-title">Most played artists</h2>
       <p class="home-figure-note">Last twelve months.</p>
       <div id="home-artists" class="home-bars"></div>
+    </section>
+
+    <!-- The detail the tiles and the hero fact above are doors into: the
+         same snapshots and imported Last.fm history, at track level. -->
+    <section id="home-listening" class="home-figure">
+      <h2 class="home-figure-title">Every track</h2>
+      <div class="panel-note">
+        <p>
+          Your play counts, kept where Navidrome does not keep them: a
+          nightly snapshot of every track's total, plus the Last.fm history
+          from before that started. Counts follow the track's identity tag,
+          so they survive re-tagging, moving and a rebuilt database.
+        </p>
+        <div class="listen-range">
+          <button class="range ghost" data-days="30" type="button">30 days</button>
+          <button class="range ghost" data-days="365" type="button">Year</button>
+          <button class="range ghost active" data-days="3650" type="button">All time</button>
+        </div>
+      </div>
+      <p id="listening-error" class="warn" hidden></p>
+      <div id="listening-coverage" class="stats"></div>
+      <div id="listening"></div>
+      <p id="listening-empty" class="empty">Loading…</p>
     </section>
 
     <p id="home-empty" class="empty" hidden></p>
@@ -310,29 +330,6 @@
 
     <div id="playlists"></div>
     <p id="playlists-empty" class="empty">Loading…</p>
-  </section>
-
-  <!-- What the nightly snapshots are actually for. The collecting has been
-       running since before there was anywhere to read it, which made four
-       years of history look like nothing was happening. -->
-  <section id="view-listening" hidden>
-    <div class="panel-note">
-      <p>
-        Your play counts, kept where Navidrome does not keep them: a nightly
-        snapshot of every track's total, plus the Last.fm history from before
-        that started. Counts follow the track's identity tag, so they survive
-        re-tagging, moving and a rebuilt database.
-      </p>
-      <div class="listen-range">
-        <button class="range ghost" data-days="30" type="button">30 days</button>
-        <button class="range ghost" data-days="365" type="button">Year</button>
-        <button class="range ghost active" data-days="3650" type="button">All time</button>
-      </div>
-    </div>
-    <p id="listening-error" class="warn" hidden></p>
-    <div id="listening-coverage" class="stats"></div>
-    <div id="listening"></div>
-    <p id="listening-empty" class="empty">Loading…</p>
   </section>
 
   <section id="view-settings" hidden>
