@@ -1271,23 +1271,100 @@ function albumEditor(album, reload) {
     });
   });
 
-  form.append(artist, name, save);
+  // Retagging to an album name that already exists is what merges into it,
+  // but that meant remembering and retyping an existing artist and title
+  // exactly right - one typo made a new album instead of joining the one you
+  // meant. This searches the whole library and fills the two fields above
+  // from a real match, so a merge starts from a name that is known to exist.
+  const mergeLabel = el("span", "edit-label", "Merge into an existing album");
+  const mergeInput = el("input", "album-merge-input");
+  mergeInput.type = "search";
+  mergeInput.autocomplete = "off";
+  mergeInput.placeholder = "Search artist or album to merge into";
+  const mergeResults = el("div", "album-merge-results");
+  mergeResults.hidden = true;
+
+  async function searchMergeTargets(query) {
+    let data;
+    try {
+      const response = await fetch(
+        `/api/library?q=${encodeURIComponent(query)}&limit=8`);
+      data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || `HTTP ${response.status}`);
+      }
+    } catch (err) {
+      mergeResults.replaceChildren(
+        el("p", "album-merge-empty", `Could not search: ${err.message}`));
+      mergeResults.hidden = false;
+      return;
+    }
+    const matches = (data.albums || []).filter((a) => !(
+      a.library_id === album.library_id && a.folder === album.folder));
+    if (!matches.length) {
+      mergeResults.replaceChildren(
+        el("p", "album-merge-empty", "No other album matches."));
+      mergeResults.hidden = false;
+      return;
+    }
+    mergeResults.replaceChildren(...matches.map((a) => {
+      const row = el("button", "album-merge-result");
+      row.append(
+        el("span", "album-merge-name", albumName(a)),
+        el("span", "album-merge-count", plural(a.tracks, "track")));
+      row.addEventListener("click", () => {
+        artist.input.value = a.artist;
+        name.input.value = a.album;
+        mergeInput.value = "";
+        mergeResults.hidden = true;
+        mergeResults.replaceChildren();
+      });
+      return row;
+    }));
+    mergeResults.hidden = false;
+  }
+
+  // Debounced: one request per pause, not one per keystroke.
+  let mergeTimer = null;
+  mergeInput.addEventListener("input", () => {
+    clearTimeout(mergeTimer);
+    const query = mergeInput.value.trim();
+    if (query.length < 2) {
+      mergeResults.hidden = true;
+      mergeResults.replaceChildren();
+      return;
+    }
+    mergeTimer = setTimeout(() => searchMergeTargets(query), 250);
+  });
+
+  const merge = el("div", "album-merge");
+  merge.append(mergeLabel, mergeInput, mergeResults);
+
+  form.append(artist, name, save, merge);
   return form;
 }
 
-// One track. Title, artist and the numbers rename it where it is; the move
-// panel takes it out of this album and into another, which is how a
-// misfiled track is rescued and how one gets split off by mistake.
-function trackEditor(album, track, reload) {
+// The rarer edits for one track: its disc number, and moving it out of this
+// album into another entirely, which is how a misfiled track is rescued and
+// how one gets split off by mistake. Kept behind "More" so it cannot be
+// triggered by the same accidental tap that would edit the title.
+function trackMorePanel(album, track, titleInput, artistInput, reload) {
   const form = el("div", "track-edit");
-  const title = field("Title", track.title, { wide: true });
-  const artist = field("Artist", track.artist, { wide: true });
-  const number = field("Track", track.track_no || "", { number: true });
   const disc = field("Disc", track.disc_no || "", { number: true });
-  const save = el("button", "ghost primary", "Save");
+  const discSave = el("button", "ghost primary", "Save disc");
 
-  const moveWrap = el("div", "track-move");
-  moveWrap.hidden = true;
+  discSave.addEventListener("click", async () => {
+    const d = parseInt(disc.input.value, 10);
+    if (Number.isNaN(d) || d === (track.disc_no || 0)) return;
+    await saveEdit("/api/library/track/edit",
+      { library_id: album.library_id, path: track.path, disc_no: d },
+      discSave, () => {
+        setNote("library-op", "Saved.", "notice");
+        libraryOpen.delete(albumKey(album));
+        reload();
+      });
+  });
+
   const moveArtist = field("Album artist", album.artist, { wide: true });
   const moveAlbum = field("Album", album.album, { wide: true });
   const single = el("button", "ghost", "As its own single");
@@ -1295,49 +1372,12 @@ function trackEditor(album, track, reload) {
 
   // A single is an album of one, which is how Spotify presents it and how
   // the filer files it. Without this every track rescued from Unknown Album
-  // needs an album name invented for it by hand.
+  // needs an album name invented for it by hand. Reads the title/artist
+  // fields on the row itself, in case they have not been saved yet.
   single.addEventListener("click", () => {
-    moveArtist.input.value = artist.input.value.trim()
+    moveArtist.input.value = artistInput.value.trim()
       || track.artist || album.artist;
-    moveAlbum.input.value = title.input.value.trim() || track.title;
-  });
-
-  const reveal = el("button", "ghost", "Move to another album…");
-  reveal.addEventListener("click", () => {
-    moveWrap.hidden = !moveWrap.hidden;
-    reveal.textContent = moveWrap.hidden
-      ? "Move to another album…" : "Cancel move";
-  });
-
-  save.addEventListener("click", async () => {
-    const body = { library_id: album.library_id, path: track.path };
-    if (title.input.value.trim() !== (track.title || "")) {
-      body.title = title.input.value.trim();
-    }
-    if (artist.input.value.trim() !== (track.artist || "")) {
-      body.artist = artist.input.value.trim();
-    }
-    const n = parseInt(number.input.value, 10);
-    if (!Number.isNaN(n) && n !== track.track_no) body.track_no = n;
-    const d = parseInt(disc.input.value, 10);
-    if (!Number.isNaN(d) && d !== track.disc_no) body.disc_no = d;
-    if (Object.keys(body).length <= 2) return;
-
-    // Setting the artist of a track with no album artist changes which
-    // album the file is on, so the server may move it. Say so first.
-    if (body.artist !== undefined && !album.artist) {
-      if (!confirm(
-        `Set this track's artist to "${body.artist}"?\n\n`
-        + "It has no album artist, so this also decides which folder it "
-        + "lives in and the file will move.")) return;
-    }
-    await saveEdit("/api/library/track/edit", body, save, () => {
-      setNote("library-op", "Saved.", "notice");
-      // Closed rather than re-read: Navidrome has not rescanned yet, and the
-      // tracks it would list are the ones from before the save.
-      libraryOpen.delete(albumKey(album));
-      reload();
-    });
+    moveAlbum.input.value = titleInput.value.trim() || track.title;
   });
 
   moveSave.addEventListener("click", async () => {
@@ -1363,9 +1403,91 @@ function trackEditor(album, track, reload) {
     });
   });
 
+  const moveWrap = el("div", "track-move");
   moveWrap.append(moveArtist, moveAlbum, single, moveSave);
-  form.append(title, artist, number, disc, save, reveal, moveWrap);
+  form.append(disc, discSave, moveWrap);
   return form;
+}
+
+// One track, edited in its row: track number, title and artist save as soon
+// as they lose focus with a changed value, with no separate edit mode to
+// step into first and no Save button to find. Disc number and moving to
+// another album are rarer, so they stay one tap away behind "More".
+function trackRow(album, track, reload) {
+  const row = el("div", `album-track${track.tagged ? "" : " unmatched"}`);
+
+  const no = el("input", "track-no-input");
+  no.type = "number";
+  no.min = "0";
+  no.value = track.track_no || "";
+  no.setAttribute("aria-label", "Track number");
+
+  const title = el("input", "track-title-input");
+  title.type = "text";
+  title.value = track.title || "";
+  title.setAttribute("aria-label", "Title");
+
+  const artist = el("input", "track-artist-input");
+  artist.type = "text";
+  artist.value = track.artist || "";
+  artist.setAttribute("aria-label", "Artist");
+
+  async function saveField(input, key, value, previous) {
+    if (value === previous) return;
+    // Setting the artist of a track with no album artist changes which
+    // album the file is on, so the server may move it. Say so first.
+    if (key === "artist" && !album.artist) {
+      if (!confirm(
+        `Set this track's artist to "${value}"?\n\n`
+        + "It has no album artist, so this also decides which folder it "
+        + "lives in and the file will move.")) {
+        input.value = previous;
+        return;
+      }
+    }
+    await saveEdit("/api/library/track/edit",
+      { library_id: album.library_id, path: track.path, [key]: value },
+      input, () => {
+        setNote("library-op", "Saved.", "notice");
+        // Closed rather than re-read: Navidrome has not rescanned yet, and
+        // the tracks it would list are the ones from before the save.
+        libraryOpen.delete(albumKey(album));
+        reload();
+      });
+  }
+
+  no.addEventListener("change", () => {
+    const n = parseInt(no.value, 10);
+    if (Number.isNaN(n)) { no.value = track.track_no || ""; return; }
+    saveField(no, "track_no", n, track.track_no || 0);
+  });
+  title.addEventListener("change", () => {
+    saveField(title, "title", title.value.trim(), track.title || "");
+  });
+  artist.addEventListener("change", () => {
+    saveField(artist, "artist", artist.value.trim(), track.artist || "");
+  });
+
+  const more = el("button", "ghost", "More…");
+  const moreWrap = el("div", "track-editor");
+  moreWrap.hidden = true;
+  more.addEventListener("click", () => {
+    if (!moreWrap.childElementCount) {
+      moreWrap.append(trackMorePanel(album, track, title, artist, reload));
+    }
+    moreWrap.hidden = !moreWrap.hidden;
+    more.textContent = moreWrap.hidden ? "More…" : "Less";
+  });
+
+  row.append(
+    no,
+    cover(track.id, 32),
+    title,
+    artist,
+    el("span", "track-meta dim", track.tagged ? "" : "no MusicBrainz match"),
+    more
+  );
+  return { row, more: moreWrap };
 }
 
 async function loadTracks(album, into) {
@@ -1384,27 +1506,8 @@ async function loadTracks(album, into) {
 
     const nodes = [albumEditor(album, reload)];
     for (const track of data.items) {
-      const row = el("div", `album-track${track.tagged ? "" : " unmatched"}`);
-      const editor = el("div", "track-editor");
-      editor.hidden = true;
-      const edit = el("button", "ghost", "Edit");
-      edit.addEventListener("click", () => {
-        if (!editor.childElementCount) {
-          editor.append(trackEditor(album, track, reload));
-        }
-        editor.hidden = !editor.hidden;
-        edit.textContent = editor.hidden ? "Edit" : "Done";
-      });
-      row.append(
-        el("span", "track-no", track.track_no ? String(track.track_no) : "—"),
-        cover(track.id, 32),
-        el("span", "track-title", track.title || "(untitled)"),
-        el("span", "track-meta", track.artist || ""),
-        el("span", "track-meta dim",
-           track.tagged ? "" : "no MusicBrainz match"),
-        edit
-      );
-      nodes.push(row, editor);
+      const { row, more } = trackRow(album, track, reload);
+      nodes.push(row, more);
     }
     into.replaceChildren(...nodes);
   } catch (err) {

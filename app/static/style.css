@@ -1652,8 +1652,55 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 .album-track .track-no { color: var(--muted); text-align: right; }
 .album-track .track-meta.dim { color: var(--muted); }
 
+/* Track number, title and artist, edited directly in the row - no toggle
+   into a separate edit mode first. Sized down from the default 38px input
+   so a dozen of them in a list read as a list, not a stack of form fields. */
+.album-track .track-no-input,
+.album-track .track-title-input,
+.album-track .track-artist-input {
+  min-height: 32px;
+  width: 100%;
+}
+.album-track .track-no-input { text-align: right; padding: 0 var(--s-1); }
+.album-track .track-artist-input { width: 10rem; }
+
 .track-editor { padding: 0 0 var(--s-2) 2.5rem; }
 .edit-field input.wide { min-width: 16rem; }
+
+/* A live match against the whole library, so merging an album means picking
+   one that is known to exist rather than retyping its name exactly right. */
+.album-merge { flex: 1 1 100%; }
+.album-merge .album-merge-input { width: 100%; }
+.album-merge-results {
+  margin-top: var(--s-1);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.album-merge-empty {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  color: var(--faint);
+  font-size: var(--t-sm);
+}
+.album-merge-result {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.album-merge-result:last-child { border-bottom: 0; }
+.album-merge-result:hover { background: var(--tint-accent); }
+.album-merge-name { overflow-wrap: anywhere; }
+.album-merge-count { flex: none; font-size: var(--t-sm); color: var(--muted); }
 
 @media (max-width: 720px) {
   main:has(#view-library:not([hidden])) { max-width: 100%; }
@@ -1674,6 +1721,13 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   .album-body { padding-left: var(--s-2); }
   .album-track { grid-template-columns: 2rem auto 1fr auto; }
   .album-track .track-meta { display: none; }
+  /* The artist input keeps editing on a phone rather than hiding, unlike the
+     dim match-status note above - it just takes a row of its own. */
+  .album-track .track-artist-input {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: var(--s-1);
+  }
   .track-editor { padding-left: 0; }
   .edit-field input.wide { min-width: 0; width: 100%; }
   .edit-field { flex: 1 1 100%; }

@@ -109,9 +109,18 @@ Tick items as they land.
       render from that one fetch; the monthly trend and top-artist bars
       above it stay on their own fixed windows (24 months, 12 months), which
       the switch was never meant to shorten.
-- [ ] **Session 6 — library editing without dropdowns.** Inline editing;
-      the album editor gets a search across every album in the library, to
-      merge albums that were split by mistake.
+- [x] **Session 6 — library editing without dropdowns.** Done 2026-09-28.
+      A track's number, title and artist are inputs directly in its row and
+      save on blur when changed - no "Edit" button and no separate panel
+      to open first. Disc number and moving a track to another album are
+      rarer, so they moved behind a "More" toggle rather than the row
+      itself. The album editor gained a debounced search across every
+      album in the library (`GET /api/library`, the same endpoint the
+      panel's own search box uses); picking a result fills the artist and
+      album fields with a name known to exist, which is what makes
+      retagging into it a deliberate merge rather than a hopeful retype.
+      No dropdowns existed in the editors before this session either - the
+      framing was about the edit flow, not literal `<select>` elements.
 - [ ] **Session 7 — a page per track / album UUID**, like Browse, with
       manual quarantine on it (same quarantine and ledger path as
       duplicates).

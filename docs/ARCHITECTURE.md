@@ -394,6 +394,25 @@ retags the files **in place** - beets runs with `move: no` and `copy: no`, so
 it tags and nothing else - and then `filer.after_retag()` re-points the album
 UUID and the filer moves each file. One function decides where a track lives.
 
+**Editing is inline, with no edit mode to step into first.** A track's
+number, title and artist are plain inputs in its row and save the moment
+one loses focus with a changed value (`POST /api/library/track/edit`,
+every field optional); disc number and moving a track to another album are
+rarer, so they sit one tap away behind "More" rather than in the row. An
+edit always collapses the album afterward rather than re-reading it -
+Navidrome has not rescanned yet, so the tracks a re-read would show are the
+ones from before the save.
+
+The album editor's "merge into an existing album" search is `GET
+/api/library` again, the same substring search the panel's own search box
+already runs, called from inside the open row and filtered to drop the
+album being edited. It exists because retagging to a name that already
+exists is what merges into it - `filer.after_retag()` finds the incumbent
+and these files join it - but that only ever worked if you retyped an
+existing artist and title exactly right; one typo made a new album instead
+of joining the one you meant. The search does not add a merge codepath, it
+just finds you a name that is known to exist.
+
 **"Needs review" is the part of that filter that can empty.** An album
 needs review when a track has no MusicBrainz id *and* nobody has dealt with
 it here: applied a match, edited it, or pressed *Mark reviewed*. That is
