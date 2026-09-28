@@ -21,7 +21,9 @@ import pytest
 
 STATIC = Path(__file__).resolve().parent.parent / "app" / "static"
 HTML = (STATIC / "index.html").read_text(encoding="utf-8")
-JS = (STATIC / "app.js").read_text(encoding="utf-8")
+JS_DIR = STATIC / "js"
+JS_FILES = {p.name: p.read_text(encoding="utf-8") for p in sorted(JS_DIR.glob("*.js"))}
+JS = "\n".join(JS_FILES.values())
 CSS = (STATIC / "style.css").read_text(encoding="utf-8")
 
 HTML_IDS = re.findall(r'id="([^"]+)"', HTML)
@@ -83,10 +85,13 @@ def test_the_menu_and_the_panels_agree():
 
 
 @pytest.mark.parametrize("pair", ["{}", "()", "[]"])
-def test_app_js_is_not_truncated(pair):
+def test_no_js_module_is_truncated(pair):
     """A crude shape check, but a JavaScript file that loses its tail takes
-    the whole page down and nothing else here would notice."""
-    assert JS.count(pair[0]) == JS.count(pair[1])
+    the whole page down and nothing else here would notice. Checked per file
+    - the whole concatenation could balance by accident even if one file's
+    tail were lost and another's matched the shortfall."""
+    for name, src in JS_FILES.items():
+        assert src.count(pair[0]) == src.count(pair[1]), name
 
 
 def test_no_top_level_function_is_declared_twice():
@@ -94,17 +99,23 @@ def test_no_top_level_function_is_declared_twice():
     caller in the file - `function` redeclaration is not a SyntaxError, so
     nothing else here would have caught it. Every search-result card called
     the one and only `cover`, which by source order was the Library page's
-    version, and built a Navidrome art-proxy URL out of a Spotify image URL."""
-    names = re.findall(r'^function ([A-Za-z0-9_$]+)\(', JS, re.M)
-    duplicates = sorted({n for n in names if names.count(n) > 1})
-    assert duplicates == []
+    version, and built a Navidrome art-proxy URL out of a Spotify image URL.
+
+    Checked per file, not across the whole module set: the same function name
+    in two different ES modules is not a bug, since module scope means
+    neither can shadow the other."""
+    for name, src in JS_FILES.items():
+        names = re.findall(r'^(?:export )?(?:async )?function ([A-Za-z0-9_$]+)\(', src, re.M)
+        duplicates = sorted({n for n in names if names.count(n) > 1})
+        assert duplicates == [], name
 
 
 def test_the_error_banner_is_cleared_when_the_view_changes():
     """It lives outside every section, so anything left in it followed you
     onto every other panel. Asserted on the source because there is no DOM
     here: showView must clear it."""
-    body = JS[JS.index("function showView("):]
+    body = JS_FILES["nav.js"]
+    body = body[body.index("function showView("):]
     body = body[:body.index("\n}\n")]
     assert 'showError("")' in body
 
@@ -157,20 +168,28 @@ def test_the_shell_stamps_a_version_onto_its_assets():
 
     html = asyncio.run(index()).body.decode()
     version = asset_version()
-    for name in ("app.js", "style.css"):
+    for name in ("js/main.js", "style.css"):
         assert f'/static/{name}?v={version}' in html
         assert f'"/static/{name}"' not in html, "an unversioned reference left behind"
 
 
 def test_the_version_follows_the_asset_contents(tmp_path, monkeypatch):
     """A token that does not change when the files do is worse than no token
-    at all: it pins every browser to the stale copy permanently."""
+    at all: it pins every browser to the stale copy permanently.
+
+    asset_version() hashes every file under static/js, not just main.js (the
+    one ASSETS stamps a URL for) - so the fixture needs a js/ subdirectory,
+    and changing a *non-entry* module must still change the token."""
     from app import main
 
-    assert set(main.ASSETS) == {"app.js", "style.css"}
+    assert main.ASSETS == ("js/main.js", "style.css")
 
-    def version_of(js: str) -> str:
-        (tmp_path / "app.js").write_text(js, encoding="utf-8")
+    def version_of(main_js: str, other_js: str = "") -> str:
+        js_dir = tmp_path / "js"
+        js_dir.mkdir(exist_ok=True)
+        (js_dir / "main.js").write_text(main_js, encoding="utf-8")
+        if other_js:
+            (js_dir / "other.js").write_text(other_js, encoding="utf-8")
         (tmp_path / "style.css").write_text("body{}", encoding="utf-8")
         monkeypatch.setattr(main, "STATIC_DIR", tmp_path)
         main.asset_version.cache_clear()
@@ -178,9 +197,16 @@ def test_the_version_follows_the_asset_contents(tmp_path, monkeypatch):
 
     first = version_of("console.log('one');")
     second = version_of("console.log('two');")
-
     assert len(first) == 12
     assert first != second
+
+    # A change to a module main.js does not directly reference must still
+    # move the token, or a browser holding a stale non-entry module is never
+    # told to revalidate against a new URL.
+    third = version_of("console.log('two');", other_js="console.log('a');")
+    fourth = version_of("console.log('two');", other_js="console.log('b');")
+    assert third != fourth
+    main.asset_version.cache_clear()
     main.asset_version.cache_clear()
 
 

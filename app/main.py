@@ -1885,7 +1885,7 @@ async def websocket(ws: WebSocket) -> None:
         await broker.unregister(ws)
 
 
-ASSETS = ("app.js", "style.css")
+ASSETS = ("js/main.js", "style.css")
 
 
 @functools.lru_cache(maxsize=1)
@@ -1898,11 +1898,18 @@ def asset_version() -> str:
     not ask - it has no reason to - so headers alone cannot rescue a browser
     that is already wrong. A new URL can.
 
+    Hashes every module under static/js, not just the one file ASSETS stamps
+    a URL for (main.js) - main.js is the only file index.html references
+    directly, but a change to any module it imports should still bump the
+    token, or this claims to track "the assets" while actually tracking one
+    of them.
+
     Computed once: the files cannot change inside a running container.
     """
     digest = hashlib.sha256()
-    for name in ASSETS:
-        digest.update((STATIC_DIR / name).read_bytes())
+    for path in sorted((STATIC_DIR / "js").glob("*.js")):
+        digest.update(path.read_bytes())
+    digest.update((STATIC_DIR / "style.css").read_bytes())
     return digest.hexdigest()[:12]
 
 
