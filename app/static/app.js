@@ -1068,7 +1068,7 @@ function albumKey(album) {
 // Lazy, so scrolling past two thousand albums does not fetch two thousand
 // covers, and it removes itself if there is none rather than leaving a
 // broken-image glyph in the row.
-function cover(trackId, size) {
+function libraryArt(trackId, size) {
   const box = el("div", "art");
   if (!trackId) return box;
   const img = el("img");
@@ -1481,7 +1481,7 @@ function trackRow(album, track, reload) {
 
   row.append(
     no,
-    cover(track.id, 32),
+    libraryArt(track.id, 32),
     title,
     artist,
     el("span", "track-meta dim", track.tagged ? "" : "no MusicBrainz match"),
@@ -1580,7 +1580,7 @@ function albumRow(album) {
   const caret = el("span", "album-caret", "▸");
   head.append(
     caret,
-    cover(album.art_id, 48),
+    libraryArt(album.art_id, 48),
     el("span", "album-name", albumName(album)),
     el("span", "album-meta", counted),
     el("span", "album-library", album.library || "library"),

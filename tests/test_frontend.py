@@ -89,6 +89,17 @@ def test_app_js_is_not_truncated(pair):
     assert JS.count(pair[0]) == JS.count(pair[1])
 
 
+def test_no_top_level_function_is_declared_twice():
+    """A second `function cover(...)` silently shadowed the first for every
+    caller in the file - `function` redeclaration is not a SyntaxError, so
+    nothing else here would have caught it. Every search-result card called
+    the one and only `cover`, which by source order was the Library page's
+    version, and built a Navidrome art-proxy URL out of a Spotify image URL."""
+    names = re.findall(r'^function ([A-Za-z0-9_$]+)\(', JS, re.M)
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    assert duplicates == []
+
+
 def test_the_error_banner_is_cleared_when_the_view_changes():
     """It lives outside every section, so anything left in it followed you
     onto every other panel. Asserted on the source because there is no DOM
