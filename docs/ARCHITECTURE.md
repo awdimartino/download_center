@@ -320,6 +320,23 @@ quiet period - long after `deliver()` has filed it. The same property means a
 track the application died on is sitting in the inbox and gets filed on the
 next start, instead of being discarded with the job's scratch directory.
 
+**A third road: a browser upload.** `POST /api/inbox/upload` (Session 2,
+2026-09-28) writes each file the browser sends into
+`inbox.upload_root(space, batch)` - one folder per drop, keyed by a
+server-generated id every file in the same drag or pick shares - and calls
+`inbox.backdate()` on it. Neither `deliver()` nor `drain()`'s usual wait
+applies: an HTTP request already knows when every byte has arrived, unlike an
+SMB copy `settled()` can only watch and wait out, so backdating the mtime
+past `inbox_quiet_seconds` is what lets `POST /api/inbox/upload/finish` call
+`inbox.drain()` and file it immediately instead of waiting for the next poll.
+The per-drop folder exists for one reason: `_carry_cover` reads whatever
+cover art is sitting beside the track it is filing, and delivering flat into
+the inbox root the way a download does would let one drop's cover art be
+carried onto a different drop's tracks if two people, or two albums, were
+uploaded around the same time. If `finish` is never called - a closed tab
+mid-upload - the backdated files are already old enough that the regular
+15s poll files them anyway; the explicit call only saves the browser a wait.
+
 ### Paths are frozen
 
 `$albumartist/$album/$disc-$track - $title.ext`, rooted at the library. The
@@ -456,7 +473,7 @@ quality mechanism.
 
 ## HTTP layer
 
-`main.py` (~1,370 lines — it still wants splitting) holds every route. Three
+`main.py` (~1,850 lines — it still wants splitting) holds every route. Three
 background loops run for the life of the process: `_inbox_loop` (every 15s,
 files what has been dropped in), `_audit_loop`, and `_snapshot_loop` (play
 counts, every 5 minutes).

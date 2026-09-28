@@ -511,3 +511,87 @@ def test_preparing_does_not_disturb_an_inbox_that_is_already_there(space):
 
     assert not dropped.exists(), "it was filed, not left alone"
     assert space.inbox_dir.is_dir()
+
+
+# --- a browser upload, the third way in --------------------------------------
+#
+# An upload's own request handler is the only thing that knows the transfer
+# is actually finished - `settled()` cannot, because it also has to be right
+# about an SMB copy still arriving. `backdate()` is how that knowledge gets
+# into the quiet-period check; `upload_root()` is what keeps one drop's cover
+# art from being offered to a different drop's tracks.
+
+def tagged(path: Path, **tags) -> Path:
+    shutil.copy(SILENCE, path)
+    audio = EasyID3(path)
+    for key, value in tags.items():
+        audio[key] = str(value)
+    audio.save()
+    return path
+
+
+def test_backdating_makes_a_just_written_file_settle_immediately(space,
+                                                                  monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
+    path = tagged(space.inbox_dir / "just-arrived.mp3",
+                  albumartist="Artist", album="Album", title="Song")
+    assert inbox.settled(path) is False
+
+    inbox.backdate(path)
+
+    assert inbox.settled(path) is True
+
+
+def test_an_uploaded_track_is_filed_once_backdated(space):
+    path = inbox.upload_root(space, "batch1") / "a.mp3"
+    path.parent.mkdir(parents=True)
+    tagged(path, albumartist="The Beatles", album="Abbey Road",
+          title="Come Together", tracknumber="1")
+    inbox.backdate(path)
+
+    result = inbox.drain(space)
+
+    assert result.filed == [space.library_path / "The Beatles" / "Abbey Road"
+                            / "01 - Come Together.mp3"]
+
+
+def test_an_uploaded_album_carries_its_own_cover(space):
+    """The whole reason an upload gets its own folder instead of landing flat
+    in the inbox root, the way a delivered download does."""
+    root = inbox.upload_root(space, "batch1")
+    root.mkdir(parents=True)
+    (root / "cover.jpg").write_bytes(b"art")
+    track = tagged(root / "a.mp3", albumartist="The Beatles",
+                  album="Abbey Road", title="Come Together", tracknumber="1")
+    inbox.backdate(track)
+
+    result = inbox.drain(space)
+
+    assert (result.filed[0].parent / "cover.jpg").is_file()
+
+
+def test_two_uploaded_albums_do_not_share_a_cover(space):
+    """Landed flat, the first track to file from either album would have
+    carried whichever cover happened to be sitting in the inbox root."""
+    one = inbox.upload_root(space, "batch1")
+    one.mkdir(parents=True)
+    (one / "cover.jpg").write_bytes(b"beatles art")
+    track_one = tagged(one / "a.mp3", albumartist="The Beatles",
+                       album="Abbey Road", title="Come Together",
+                       tracknumber="1")
+    inbox.backdate(track_one)
+
+    two = inbox.upload_root(space, "batch2")
+    two.mkdir(parents=True)
+    track_two = tagged(two / "b.mp3", albumartist="Aphex Twin",
+                       album="Drukqs", title="Avril 14th", tracknumber="10")
+    inbox.backdate(track_two)
+
+    inbox.drain(space)
+
+    assert (space.library_path / "The Beatles" / "Abbey Road"
+            / "cover.jpg").is_file()
+    assert not (space.library_path / "Aphex Twin" / "Drukqs"
+               / "cover.jpg").is_file()

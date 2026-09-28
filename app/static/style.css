@@ -705,6 +705,42 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 }
 .bar-fill { height: 100%; background: var(--accent); transition: width .3s ease; }
 
+/* --- drop -------------------------------------------------------------
+   A picked or dropped file's card reuses .job and .track wholesale - it is
+   the same "here is a list of items, each moving through states" shape the
+   queue already has, and a second version of it would only drift from the
+   first the way the old per-panel colours did. */
+
+#drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-6) var(--s-4);
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-lg);
+  color: var(--muted);
+  font-weight: var(--w-normal);
+  text-align: center;
+  white-space: normal;
+}
+#drop-zone:hover,
+#drop-zone:focus-visible { border-color: var(--accent); outline: none; }
+#drop-zone.drag-over {
+  background: var(--tint-accent);
+  border-color: var(--accent);
+  color: var(--text);
+}
+#drop-zone .drop-zone-hint { font-size: var(--t-sm); color: var(--faint); }
+
+.track-status.uploading { color: var(--accent); }
+.track.uploading { background: var(--tint-accent); }
+.track-status.uploaded { color: var(--ok); }
+.track.uploaded .track-name { color: var(--text); }
+
 /* --- settings ------------------------------------------------------------- */
 
 #settings {

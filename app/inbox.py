@@ -29,6 +29,7 @@ size and works wherever the files come from.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import threading
 import time
@@ -149,6 +150,42 @@ def _move_in(source: Path, target: Path) -> Path:
     target = filer.unused_name(target)
     shutil.move(str(source), str(target))
     return target
+
+
+# --- a browser upload, the third way in --------------------------------------
+#
+# A download knows it is finished because the worker built it; an SMB drop
+# can only be watched until it stops changing. A browser upload is a third
+# thing: the request itself says when every byte has arrived, so there is
+# nothing to watch for - but the transfer can carry several files at once,
+# a whole album folder among them, and those have to land together or the
+# cover art has nowhere to be found when the first track is filed.
+
+def upload_root(space: workspace.Workspace, batch: str) -> Path:
+    """One browser upload's own folder inside the inbox.
+
+    Shared by every file the browser sends in that drop, so a folder's cover
+    art is still sitting beside its tracks when `file_track` goes looking for
+    one - the same thing `_carry_cover` already does for a folder dragged in
+    over the network share. Delivering each file straight to the inbox root,
+    the way a download does, would put every drop's cover art in one place,
+    and the first track from any album to file would carry whichever cover
+    happened to be there.
+    """
+    return space.inbox_dir / f"upload-{batch}"
+
+
+def backdate(path: Path) -> None:
+    """Mark a file the caller knows is finished as already settled.
+
+    `settled()` exists because nothing here can tell an SMB copy still in
+    progress from one that is done. An HTTP upload is not that: the request
+    handler only reaches this once every byte has been received, so making
+    it wait out the quiet period a second time would just be a several-minute
+    lie about how long filing an upload takes.
+    """
+    age = time.time() - settings.inbox_quiet_seconds - 5
+    os.utime(path, (age, age))
 
 
 def settled(path: Path) -> bool:

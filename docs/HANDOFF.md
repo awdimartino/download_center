@@ -63,16 +63,22 @@ that.
 
 ## Where things stand
 
-**2026-09-28: feedback-round Session 1 is committed but NOT deployed.**
-Next up is Session 2 in PLAN.md. Before deploying Session 1:
+**2026-09-28: feedback-round Sessions 1 and 2 are committed but NOT deployed.**
+Next up is Session 3 in PLAN.md. Before deploying:
 - It needs a fresh image, not just a restart: the Dockerfile now installs
-  `rsgain`. Push to `main`, wait for CI, then pull on the Pi.
+  `rsgain`, and `requirements.txt` gained `python-multipart` (Session 2's
+  upload endpoints need it to parse the request at all - without it the
+  container starts and `/api/inbox/upload` 500s on the first request). Push
+  to `main`, wait for CI, then pull on the Pi.
 - It adds the `album_reviewed` table to `state.db` (created automatically,
   nothing existing changes); back up `state.db` anyway.
 - Nothing in it has been seen in a browser (Safari): the sticky
   `.library-status` bar, the playlist library checkboxes, the Library
-  filter dropdown, and ReplayGain progress/Stop. Check those after the
-  deploy.
+  filter dropdown, ReplayGain progress/Stop, and the whole Drop tab -
+  particularly dragging a folder in on desktop Safari/Chrome, since iOS
+  Safari has no folder picker and was only exercised through the plain
+  multi-file input and an HTTP-level check standing in for a browser (see
+  ARCHITECTURE.md's inbox section). Check all of it after the deploy.
 - Existing smart playlists stay unscoped (drawing from every library)
   until each is opened and saved; their cards say so.
 

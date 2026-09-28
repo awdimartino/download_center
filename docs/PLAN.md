@@ -70,8 +70,17 @@ Tick items as they land.
   - [x] Library: a ReplayGain button (per album and "all missing"), with a
         count of untagged tracks. rsgain, progress and Stop in the sticky
         bar.
-- [ ] **Session 2 — file drop page.** Drag and drop or file picker, uploads
-      into the inbox.
+- [x] **Session 2 — file drop page.** Done 2026-09-28. A "Drop" tab: drag
+      files or a whole folder in, or pick them, and each upload lands in
+      `POST /api/inbox/upload`, which writes it into a per-drop folder inside
+      the person's inbox and backdates its mtime so the quiet period does not
+      make it wait - an HTTP upload is not an SMB copy that might still be
+      arriving, the request already knows it is finished. `POST
+      /api/inbox/upload/finish` then drains the inbox immediately rather than
+      waiting for the 15s poll. The per-drop folder (`inbox.upload_root`) is
+      what lets a dragged album's cover art be carried onto its tracks
+      without two different albums uploaded around the same time being able
+      to hand each other's cover to the wrong one.
 - [ ] **Session 3 — merge Queue and Browse.** One input; a URL queues, a
       search term browses.
 - [ ] **Session 4 — merge Home and Listening.** Dashboard on top, detail

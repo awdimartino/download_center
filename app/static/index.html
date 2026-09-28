@@ -48,6 +48,9 @@
     <button class="nav-item" data-view="queue" type="button">
       <span class="nav-label">Queue</span>
     </button>
+    <button class="nav-item" data-view="drop" type="button">
+      <span class="nav-label">Drop</span>
+    </button>
     <button class="nav-item" data-view="browse" type="button">
       <span class="nav-label">Browse</span>
     </button>
@@ -132,6 +135,27 @@
     </form>
     <section id="jobs"></section>
     <p id="empty" class="empty">Nothing queued yet.</p>
+  </section>
+
+  <!-- The third way music arrives, beside a download and a folder dragged
+       onto the network share: picked or dropped here. Filed by its own
+       tags the moment the upload finishes - the inbox does the filing,
+       the same as it does for the other two. -->
+  <section id="view-drop" hidden>
+    <div class="panel-note">
+      <p>
+        Add music by hand: drag files in, or a whole album folder, or
+        choose them from your device. Filed by its own tags, the same as
+        anything else that reaches the library.
+      </p>
+    </div>
+    <button id="drop-zone" type="button">
+      <span>Drop audio files or a folder here</span>
+      <span class="drop-zone-hint">or choose files</span>
+    </button>
+    <input id="drop-input" type="file" multiple accept="audio/*" hidden>
+    <section id="drop-batches"></section>
+    <p id="drop-empty" class="empty">Nothing uploaded yet.</p>
   </section>
 
   <section id="view-browse" hidden>

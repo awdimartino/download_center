@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 
-from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
-                     WebSocket, WebSocketDisconnect)
+from fastapi import (Depends, FastAPI, File, Form, HTTPException, Request,
+                     Response, UploadFile, WebSocket, WebSocketDisconnect)
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -23,6 +23,7 @@ from . import auth, beets_runner, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
 from . import filer, inbox, library, overview, registry, replaygain, spotify
+from . import uuidtags
 from . import worker, workspace
 from . import config
 from . import health as health_checks
@@ -732,6 +733,105 @@ async def retry_job(
     await push_job(job)
     asyncio.create_task(_run(job, space))
     return {"retrying": len(retryable)}
+
+
+# --- inbox uploads ----------------------------------------------------------
+# The third way music gets into the library, beside a download and a folder
+# dragged onto the network share: picked or dropped in a browser. It reuses
+# the inbox's own filing rather than adding a second one - see
+# `inbox.upload_root` and `inbox.backdate` for the only two things that are
+# actually new here.
+
+# A FLAC track comfortably clears 40MB; refused well past that rather than
+# guessed from a bitrate.
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+
+def _relpath_segments(relpath: str, filename: str | None) -> list[str]:
+    """A browser-supplied path, broken into filesystem-safe components.
+
+    `relpath` carries a dragged folder's structure when there is one (the
+    browser has no equivalent for a plain file picker, so `filename` is the
+    fallback). Sanitising component by component, after splitting, is what
+    keeps a ``..`` segment from walking out of its upload folder - sanitizing
+    the joined string would only turn its slashes into underscores and leave
+    the dots untouched.
+    """
+    raw = (relpath or filename or "").replace("\\", "/").split("/")
+    return [filer.sanitize(part) for part in raw if part.strip()]
+
+
+@app.post("/api/inbox/upload")
+async def upload_to_inbox(
+    file: UploadFile = File(...),
+    relpath: str = Form(""),
+    batch: str | None = Form(None),
+    library_id: int | None = Form(None),
+    session: auth.Session = Depends(current_session),
+) -> dict[str, str]:
+    try:
+        space = workspace.for_session(session.identity, library_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    segments = _relpath_segments(relpath, file.filename)
+    if not segments:
+        raise HTTPException(status_code=400, detail="No filename given.")
+    name = segments[-1]
+    suffix = Path(name).suffix.lower()
+    if not (uuidtags.is_audio(Path(name)) or suffix in filer.COVER_SUFFIXES):
+        raise HTTPException(
+            status_code=400, detail=f"{name}: not something this can file.")
+
+    await asyncio.to_thread(space.prepare)
+
+    data = await file.read()
+    await file.close()
+    if not data:
+        raise HTTPException(status_code=400, detail=f"{name} is empty.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413, detail=f"{name} is larger than this accepts.")
+
+    # Server-generated on the first file of a drop and echoed back by every
+    # later one in the same drop, rather than trusted from the browser - it
+    # ends up as a path component, and a made-up value is cheap to sanitise
+    # but has no reason to be trusted in the first place.
+    batch = filer.sanitize(batch or uuid.uuid4().hex)
+    target = inbox.upload_root(space, batch).joinpath(*segments)
+
+    def write() -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        inbox.backdate(target)
+
+    await asyncio.to_thread(write)
+    return {"batch": batch}
+
+
+@app.post("/api/inbox/upload/finish")
+async def finish_upload(
+    library_id: int | None = None,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """File whatever has landed, instead of waiting for the next poll.
+
+    Drains the whole inbox, not just the drop that just finished - anything
+    else sitting there is this same person's, and there is no reason to make
+    it wait. The regular poller would file it anyway within `POLL_SECONDS`;
+    this only saves the browser watching a batch sit at "filing" for it.
+    """
+    try:
+        space = workspace.for_session(session.identity, library_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    result = await asyncio.to_thread(inbox.drain, space)
+    return {
+        "filed": [str(path.relative_to(space.library_path))
+                  for path in result.filed],
+        "failures": result.failures,
+        "waiting": result.waiting,
+    }
 
 
 class SettingsUpdate(BaseModel):

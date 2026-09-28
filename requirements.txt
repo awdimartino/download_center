@@ -1,5 +1,9 @@
 fastapi==0.121.2
 uvicorn[standard]==0.40.0
+
+# FastAPI's multipart parser, for the inbox upload endpoints - the browser
+# has no other way to send a file.
+python-multipart==0.0.20
 spotipy==2.25.1
 yt-dlp==2026.8.19
 ytmusicapi==1.11.5
