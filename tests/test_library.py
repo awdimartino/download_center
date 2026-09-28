@@ -572,58 +572,6 @@ def test_an_album_that_is_not_there_is_refused(db, identity):
         library.tracks(identity, 1, "Nobody/Nothing")
 
 
-# --- opening something by pasting its Navidrome id --------------------------
-#
-# For a track or album id copied from elsewhere - the duplicates ledger, a
-# bug report - rather than found by browsing to it.
-
-def test_a_track_id_opens_that_track(db, identity):
-    add_track(db, "t1", path="A/B/01 Song.mp3", title="Song",
-             artist="Artist", album="B", track_number=1)
-
-    found = library.lookup(identity, "t1")
-
-    assert found["type"] == "track"
-    assert found["id"] == "t1"
-    assert found["title"] == "Song"
-    assert found["album"] == "B"
-    assert found["library_id"] == 1
-
-
-def test_an_album_id_opens_every_track_sharing_it(db, identity):
-    make_album(db, "The Beatles/Revolver", 3, album="Revolver",
-              album_artist="The Beatles", album_id="al-revolver")
-
-    found = library.lookup(identity, "al-revolver")
-
-    assert found["type"] == "album"
-    assert found["album"] == "Revolver"
-    assert found["folder"] == "The Beatles/Revolver"
-    assert len(found["tracks"]) == 3
-
-
-def test_an_unknown_id_is_refused(db, identity):
-    with pytest.raises(ValueError):
-        library.lookup(identity, "nothing-like-this")
-
-
-def test_a_blank_id_is_refused(db, identity):
-    with pytest.raises(ValueError):
-        library.lookup(identity, "  ")
-
-
-def test_lookup_does_not_cross_a_library(db, identity):
-    add_track(db, "hers", path="Kelly/Song.mp3", library_id=2)
-    with pytest.raises(ValueError):
-        library.lookup(identity, "hers")
-
-
-def test_a_missing_track_is_not_found(db, identity):
-    add_track(db, "gone", path="A/B/01.mp3", missing=1)
-    with pytest.raises(ValueError):
-        library.lookup(identity, "gone")
-
-
 # --- the boundary a track path has to clear ---------------------------------
 
 def test_a_track_resolves_inside_the_library(tmp_path, identity):

@@ -171,6 +171,87 @@ async function useCandidate(album, candidate, button) {
                          release_id: candidate.id });
 }
 
+// Reports a quarantine outcome the same way whether it moved one track or a
+// whole album, so the two callers below cannot drift in wording.
+function reportQuarantine(data) {
+  const moved = data.quarantined || [];
+  const failed = data.failed || [];
+  const parts = [];
+  if (moved.length) {
+    parts.push(`Set aside ${plural(moved.length, "file")} to duplicates-removed/.`);
+  }
+  if (failed.length) parts.push(`Could not move: ${failed.join("; ")}`);
+  setNote("library-op", parts.join(" ") || "Nothing was moved.",
+         failed.length ? "warn" : "notice");
+}
+
+// Set aside every file in an album folder by hand - the wrong record
+// entirely, not a worse copy of a right one.
+async function quarantineAlbum(album, button) {
+  if (!confirm(
+    `Move ${plural(album.tracks, "file")} to duplicates-removed/ inside `
+    + `${album.library || "this library"}?\n\n${albumName(album)}\n\n`
+    + "This is for the wrong record entirely, not a worse copy of a right "
+    + "one. It cannot be undone from here.")) return;
+
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/library/quarantine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        library_id: album.library_id, folder: album.folder,
+        album: album.album, artist: album.artist,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setNote("library-op", data.detail || `That did not work (${response.status}).`, "warn");
+      button.disabled = false;
+      return;
+    }
+    reportQuarantine(data);
+    libraryOpen.delete(albumKey(album));
+    refreshLibrary();
+  } catch (err) {
+    setNote("library-op", `Could not reach the server: ${err.message}`, "warn");
+    button.disabled = false;
+  }
+}
+
+// Set aside one track by hand, leaving the rest of the album alone.
+async function quarantineTrack(album, track, button, reload) {
+  if (!confirm(
+    `Move "${track.title}" to duplicates-removed/ inside `
+    + `${album.library || "this library"}?\n\n${track.path}\n\n`
+    + "This is for the wrong file entirely, not a worse copy of a right "
+    + "one. It cannot be undone from here.")) return;
+
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/library/track/quarantine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        library_id: album.library_id, folder: album.folder,
+        track_id: track.id, album: album.album, artist: album.artist,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setNote("library-op", data.detail || `That did not work (${response.status}).`, "warn");
+      button.disabled = false;
+      return;
+    }
+    reportQuarantine(data);
+    libraryOpen.delete(albumKey(album));
+    reload();
+  } catch (err) {
+    setNote("library-op", `Could not reach the server: ${err.message}`, "warn");
+    button.disabled = false;
+  }
+}
+
 /* --- one album's tracks ---------------------------------------------------
    Fetched when a row is opened rather than with the listing: the listing
    counts tracks, and paying for every track in the library to show twelve
@@ -388,7 +469,11 @@ function trackMorePanel(album, track, titleInput, artistInput, reload) {
 
   const moveWrap = el("div", "track-move");
   moveWrap.append(moveArtist, moveAlbum, single, moveSave);
-  form.append(disc, discSave, moveWrap);
+
+  const quarantine = el("button", "ghost primary", "Quarantine this track");
+  quarantine.addEventListener("click", () => quarantineTrack(album, track, quarantine, reload));
+
+  form.append(disc, discSave, moveWrap, quarantine);
   return form;
 }
 
@@ -533,6 +618,15 @@ function albumRow(album) {
     });
     actions.append(review);
   }
+
+  const quarantine = el("button", "ghost primary", "Quarantine");
+  quarantine.title = "Set this whole album aside - the wrong record "
+    + "entirely, not a worse copy of a right one.";
+  quarantine.addEventListener("click", (event) => {
+    event.stopPropagation();
+    quarantineAlbum(album, quarantine);
+  });
+  actions.append(quarantine);
 
   if (album.no_gain) {
     const gain = el("button", "ghost", "ReplayGain");

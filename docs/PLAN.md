@@ -135,6 +135,16 @@ Tick items as they land.
       drift apart. Unlike the original per-group duplicate button (Code
       quality, item 1), this one confirms before moving anything, from the
       start.
+      **Later removed** (still 2026-09-28): the Lookup tab and `GET
+      /api/lookup` are gone. Quarantine moved to where the album already is
+      - a "Quarantine" button per album row (`POST /api/library/quarantine`)
+      and "Quarantine this track" behind a track's "More" (`POST
+      /api/library/track/quarantine`) - so pasting an id in a separate tab is
+      no longer the only door in. Both endpoints get their `library_id`/path
+      from `library.tracks`, the same validated read the row itself came
+      from, never from the request body; `_copy_from_lookup` is now
+      `_copy_from_track_row` for the same reason. The underlying
+      `quarantine_one`/`quarantine_many`/`_set_aside` plumbing is unchanged.
 - [x] **Session 8 — genre tally.** Done 2026-09-28. A "Genres" toggle in
       the Library panel's header, next to Rescan, opens `GET
       /api/library/genres` (`library.genre_tally`): every genre string a

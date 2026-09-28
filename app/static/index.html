@@ -63,9 +63,6 @@
       <span class="nav-label">Duplicates</span>
       <span id="dupe-badge" class="badge" hidden></span>
     </button>
-    <button class="nav-item" data-view="lookup" type="button">
-      <span class="nav-label">Lookup</span>
-    </button>
     <button class="nav-item" data-view="playlists" type="button">
       <span class="nav-label">Playlists</span>
     </button>
@@ -295,28 +292,6 @@
     </details>
     <div id="dupes"></div>
     <p id="dupes-empty" class="empty">Looking for duplicates…</p>
-  </section>
-
-  <!-- One track or album, opened by its Navidrome id rather than by
-       browsing to it - from the duplicates ledger, a health check, or a
-       bug report - with a manual quarantine for the times it is simply the
-       wrong file, not a worse copy of a right one. -->
-  <section id="view-lookup" hidden>
-    <div class="panel-note">
-      <p>
-        Open a track or album by pasting its Navidrome id. Quarantining here
-        moves the same way a resolved duplicate does — to
-        <code>duplicates-removed/</code> inside its own library, and nothing
-        else is asked to take over its star or rating.
-      </p>
-    </div>
-    <form id="lookup-form" autocomplete="off">
-      <input id="lookup-id" type="text" spellcheck="false"
-             placeholder="Track or album id">
-      <button type="submit">Go</button>
-    </form>
-    <p id="lookup-error" class="warn" hidden></p>
-    <div id="lookup-result"></div>
   </section>
 
   <section id="view-playlists" hidden>

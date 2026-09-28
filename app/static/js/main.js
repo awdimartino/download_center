@@ -16,10 +16,9 @@ import { loadDupes } from "./duplicates.js";
 import { loadPlaylists } from "./playlists.js";
 import { loadSettings, checkSpotify } from "./settings.js";
 import { focusSearchIfPointer } from "./browse.js";
-// No bindings needed from these two - they wire their own DOM listeners as
-// a side effect of being imported, the same as every other panel module.
+// No bindings needed from this one - it wires its own DOM listeners as a
+// side effect of being imported, the same as every other panel module.
 import "./drop.js";
-import "./lookup.js";
 
 // --- sign in ----------------------------------------------------------------
 // Navidrome owns the accounts, so this only forwards credentials to it and
