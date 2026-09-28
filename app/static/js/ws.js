@@ -240,3 +240,9 @@ export function connect(onSessionExpired) {
     retryDelay = Math.min(retryDelay * 2, 15000);
   });
 }
+
+// Called on sign-out, so the server sees a clean close rather than the
+// connection just dropping when the page reloads.
+export function disconnect() {
+  if (socket) socket.close();
+}

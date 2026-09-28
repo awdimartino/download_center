@@ -47,7 +47,7 @@ function openMenu() {
   if (current) current.focus();
 }
 
-function closeMenu() {
+export function closeMenu() {
   if (menu.hidden) return;
   menu.hidden = true;
   menuToggle.setAttribute("aria-expanded", "false");
