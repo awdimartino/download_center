@@ -37,6 +37,32 @@ JS_IDS |= set(re.findall(r'querySelector(?:All)?\(`?"?#([A-Za-z0-9_-]+)', JS))
 # and an unresolvable one here means a finished import reports into nothing.
 OPERATION_IDS = set(re.findall(r'(?:button|note): "([^"]+)"', JS))
 
+# --- the module graph --------------------------------------------------------
+# Splitting app.js into ES modules (2026-09-28) added a new kind of join this
+# file didn't have to check before: an `import { x } from "./y.js"` whose `x`
+# isn't exported by `y.js`, or whose path doesn't resolve. Either one fails
+# the whole page silently - the browser refuses the module graph, the shell
+# renders and nothing else ever runs, including the sign-in form. Nothing
+# else here would catch that.
+
+# (importer, [(name, target_path), ...]) for every named import in every file.
+MODULE_IMPORTS = []
+for _importer, _src in JS_FILES.items():
+    for _names, _target in re.findall(r'^import \{([^}]*)\} from "([^"]+)";', _src, re.M):
+        for _name in _names.split(","):
+            MODULE_IMPORTS.append((_importer, _name.strip(), _target))
+
+EXPORTED_BY = {
+    name: filename for filename, src in JS_FILES.items()
+    for name in re.findall(r'^export (?:async )?(?:function|const|let) ([A-Za-z0-9_$]+)', src, re.M)
+}
+
+IMPORTED_BY = {
+    filename: {n.strip() for names, _t in re.findall(r'^import \{([^}]*)\} from "([^"]+)";', src, re.M)
+               for n in names.split(",")}
+    for filename, src in JS_FILES.items()
+}
+
 
 def test_no_id_appears_twice():
     """getElementById returns the first, so a duplicate silently wires half
@@ -73,6 +99,80 @@ def test_every_id_in_the_markup_is_used():
     unused = {i for i in HTML_IDS if i not in referenced
               and not i.startswith("view-")}
     assert sorted(unused) == []
+
+
+def test_every_import_path_resolves_to_a_real_module():
+    """An import whose target file doesn't exist, or isn't a relative `.js`
+    path, is a page that never loads - the browser refuses the whole module
+    graph rather than skipping the one bad import."""
+    bad = []
+    for filename, src in JS_FILES.items():
+        for target in re.findall(r'^import (?:\{[^}]*\}|"[^"]*") from "([^"]+)";', src, re.M):
+            if not re.fullmatch(r'\./[\w-]+\.js', target):
+                bad.append(f"{filename}: {target!r} is not a relative .js path")
+            elif target[2:] not in JS_FILES:
+                bad.append(f"{filename}: imports {target!r}, no such file")
+        for target in re.findall(r'^import "([^"]+)";', src, re.M):
+            if target[2:] not in JS_FILES:
+                bad.append(f"{filename}: imports {target!r}, no such file")
+    assert bad == []
+
+
+def test_every_imported_name_is_exported_by_its_target():
+    """The other half of the same join: the file exists, but does it
+    actually export the name being imported?"""
+    bad = [f"{importer} imports `{name}` from {target}, which does not export it"
+           for importer, name, target in MODULE_IMPORTS
+           if EXPORTED_BY.get(name) != target[2:]]
+    assert bad == []
+
+
+def test_no_file_uses_another_files_export_without_importing_it():
+    """The bug class the two tests above can't see: a name exported by one
+    module, used as a bare identifier in another module's body, with no
+    import line pulling it in. Not a SyntaxError - it is a ReferenceError
+    the first time that code path actually runs, which nothing here can
+    execute to catch. (Found by hand once during the app.js module split,
+    2026-09-28 - listening.js called setBanner() without importing it.)"""
+    bad = []
+    for filename, src in JS_FILES.items():
+        # Explanatory comments in this codebase name other files' functions
+        # by design (e.g. nav.js's header explains what used to call
+        # loadHome/loadLibrary/loadHealth directly) - strip comments before
+        # scanning for real uses, or every such comment is a false positive.
+        # Block comments first, then whole-line `//` comments; this codebase
+        # never trails a `//` comment after code on the same line (checked:
+        # the only same-line `//` occurrences are inside string/regex
+        # literals like "http://..." and /^https?:\/\//), so a whole-line-only
+        # strip cannot corrupt a URL.
+        code = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
+        code = "\n".join(l for l in code.split("\n") if not l.strip().startswith("//"))
+
+        # A name this file declares itself shadows an identically-named
+        # export elsewhere - not a bug.
+        local = set(re.findall(r'^(?:export )?(?:async )?function ([A-Za-z0-9_$]+)', code, re.M))
+        local |= set(re.findall(r'^(?:export )?const ([A-Za-z0-9_$]+)', code, re.M))
+        local |= set(re.findall(r'^(?:export )?let ([A-Za-z0-9_$]+)', code, re.M))
+        imported = IMPORTED_BY[filename]
+        for name, owner in EXPORTED_BY.items():
+            if owner == filename or name in local or name in imported:
+                continue
+            # A bare identifier: not preceded by `.` (a property access, e.g.
+            # `event.stat`) and not part of a longer identifier on either side.
+            if re.search(rf'(?<![.\w$]){re.escape(name)}(?![\w$])', code):
+                bad.append(f"{filename}: uses `{name}` (exported by {owner}) "
+                           "without importing it")
+    assert bad == []
+
+
+def test_main_js_imports_library_and_health_for_their_registrations():
+    """library.js and health.js each call registerOperation(...) at module
+    top level - a side-effecting import. If main.js stopped importing one of
+    them, its operation (replaygain/import/candidates, or audit) would never
+    be registered, and starting it would silently do nothing."""
+    main_js = JS_FILES["main.js"]
+    assert 'import "./library.js"' in main_js or "from \"./library.js\"" in main_js
+    assert 'import "./health.js"' in main_js or "from \"./health.js\"" in main_js
 
 
 def test_the_menu_and_the_panels_agree():
