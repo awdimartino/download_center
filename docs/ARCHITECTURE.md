@@ -415,7 +415,7 @@ just finds you a name that is known to exist.
 
 **Genre tally** (`GET /api/library/genres`, `library.genre_tally`) counts
 tracks per genre string, read the same way `playcounts.top_genres` reads
-one - `json_extract` on the first `genre` tag in `media_file.tags` -  but
+one - `json_extract` on the first `genre` tag in `media_file.tags` - but
 across the whole library rather than a played window, and library-scoped
 the same way the album listing is. Counted exactly as tagged, with no
 casefolding or merging: the point is to surface spelling and case variants

@@ -709,3 +709,15 @@ def test_genre_tally_is_private_to_the_account(db, identity, kelly):
         {"genre": "Ambient", "tracks": 1}]
     assert library.genre_tally(kelly)["genres"] == [
         {"genre": "Rock", "tracks": 1}]
+
+
+def test_an_unreadable_database_is_reported_not_raised_for_genres(
+        identity, monkeypatch, tmp_path):
+    from app.config import settings
+    monkeypatch.setattr(settings, "navidrome_db", tmp_path / "nothing.db")
+
+    tally = library.genre_tally(identity)
+
+    assert tally["available"] is False
+    assert tally["genres"] == []
+    assert tally["reason"]
