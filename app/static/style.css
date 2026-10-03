@@ -98,6 +98,10 @@
 
 body {
   margin: 0;
+  /* Clips only at the page edge. The home cover is wider than the panel on
+     purpose, and clipping at the panel would crop it. `clip`, not `hidden`,
+     so the sticky header still sticks. */
+  overflow-x: clip;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -909,6 +913,8 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   display: block;
   width: 100%;
   min-height: 0;
+  /* The button base is nowrap, which clipped a stat's detail line on a phone. */
+  white-space: normal;
   cursor: pointer;
   font: inherit;
   color: inherit;
@@ -1806,6 +1812,245 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   color: var(--accent);
 }
 
+/* --- home cover -----------------------------------------------------------
+   The most played album of the last year is the header of this page. Its
+   cover is darkened so the copy on it is legible and fades into the page
+   colour, which is the cover's own most common colour (set on :root by
+   home.js). Without a cover, `has-art` is off and none of this applies: the
+   intro is ordinary text and the page is the stylesheet's background. */
+
+:root { --cover-h: clamp(380px, 72vw, 560px); }
+
+/* On a phone the sleeve is square and the screen is about as wide as it is
+   tall, so a cover as tall as the screen is wide shows the whole sleeve. */
+@media (max-width: 719px) {
+  :root { --cover-h: 100vw; }
+}
+
+/* The cover runs from the very top of the page. The panel's top padding is
+   removed while it shows, so nothing sits above the image. */
+body:has(#view-home:not([hidden]) .home-cover.has-art) main { padding-top: 0; }
+
+/* On the home view the notices go to the bottom of the screen. At the top
+   they sat over the head and shoulders of the cover art. */
+body:has(#view-home:not([hidden])) main > #error,
+body:has(#view-home:not([hidden])) main > #warn {
+  top: auto;
+  bottom: var(--s-4);
+}
+
+/* On the home view the top bar is gone: no fill, no rule. The burger and the
+   LIVE indicator float over the cover, and the view's name is kept for screen
+   readers only, since it is no longer visible on screen. */
+body:has(#view-home:not([hidden])) > header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: none;
+  border-bottom-color: transparent;
+}
+body:has(#view-home:not([hidden])) #current-view {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* A dark, translucent disc behind the burger so its lines read over bright
+   artwork, without a bar behind it. */
+body:has(#view-home:not([hidden])) .menu-toggle {
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border-radius: 999px;
+}
+body:has(#view-home:not([hidden])) .menu-toggle:hover {
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+}
+/* The LIVE indicator's own tint is too faint to read over bright artwork, so
+   it sits on the same dark backing as the burger. */
+body:has(#view-home:not([hidden])) #conn {
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.home-cover { position: relative; text-shadow: 0 1px 14px rgba(0, 0, 0, .55); }
+
+/* Edge to edge of the viewport, under the header. The panel is centred, so
+   the offset from its centre to the viewport's centre is what pulls it out
+   past the gutter on both sides. */
+.home-cover.has-art {
+  height: var(--cover-h);
+  /* Visible, not hidden, so the picture can run below the box. */
+  overflow: visible;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+
+/* The home view takes its colours from the cover. Redefining --accent here
+   means every chart, bar, link and stat that already reads it picks up the
+   cover's colour, and the tints derived from it are recomputed against that
+   colour rather than the app's blue. Outside this view nothing changes. */
+#view-home.themed {
+  --accent: var(--home-accent);
+  --tint-accent: color-mix(in srgb, var(--accent) 12%, transparent);
+  --on-accent: var(--home-on);
+}
+
+/* The home view is its own stacking context, so the picture can sit behind
+   everything in it (copy, stats, charts) while still being positioned. */
+#view-home { position: relative; z-index: 0; }
+
+/* Three layers, bottom to top: the picture, the gradient, the text.
+   The box is exactly as tall as the picture at full width - nothing is
+   cropped, so on a wide window it simply runs on down behind the stats. */
+.home-cover-media {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: -1;
+  /* Clips only the blur's soft halo, never the picture itself. */
+  overflow: hidden;
+}
+.home-cover.has-art .home-cover-media { display: block; }
+
+.home-cover-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Softened, as the cover's background rather than the subject. The slight
+     scale pushes the blur's faded edges outside the clipped box. */
+  /* Darkened so the copy over it reads easily. */
+  filter: blur(8px) brightness(.68) saturate(1.1);
+  transform: scale(1.04);
+}
+
+/* The gradient over the picture: a light grey at the top for the copy, then
+   gradually to the page colour, which it reaches exactly at the picture's
+   bottom edge. */
+.home-cover-fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(40, 40, 44, .3) 0%,
+    color-mix(in srgb, var(--home-tint, var(--bg)) 35%, transparent) 22%,
+    color-mix(in srgb, var(--home-tint, var(--bg)) 72%, transparent) 40%,
+    color-mix(in srgb, color-mix(in srgb, var(--home-tint, var(--bg)) 50%, var(--bg)) 92%, transparent) 60%,
+    color-mix(in srgb, var(--bg) 98%, transparent) 82%,
+    var(--bg) 100%);
+}
+
+/* The copy sits on the lower part of the cover, above where the stats start
+   to overlap it. */
+/* Centred on the cover and sized to the panel's own column, so the copy lines
+   up with the sections below it rather than with the viewport edge. */
+.home-intro {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--s-6) + var(--s-4));
+  width: min(892px, calc(100% - var(--s-5) * 2));
+  transform: translateX(-50%);
+}
+.home-cover:not(.has-art) { margin: 0; }
+.home-cover:not(.has-art) .home-intro {
+  position: static;
+  left: auto;
+  width: auto;
+  transform: none;
+}
+
+.home-cover-caption {
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  color: var(--text);
+  opacity: .85;
+  margin: 0 0 var(--s-3);
+}
+
+.home-cover .home-greeting { margin: var(--s-1) 0 var(--s-3); }
+
+/* On the cover the fact is text, not a panel. The button keeps its behaviour
+   and loses its chrome. */
+.home-cover .home-hero,
+.home-cover .home-hero:hover {
+  background: none;
+  border-color: transparent;
+  padding: 0;
+  margin: 0;
+}
+.home-cover .home-hero-lead,
+.home-cover .home-hero-tail { color: var(--text); opacity: .85; }
+
+/* The stats are opaque cards, so they can overlap the cover's bottom edge
+   without any legibility cost: the fade behind them ends in the page colour.
+   Each card is a faint wash of the cover's colour, and its number carries
+   the colour itself. */
+.home-cover.has-art ~ #home-stats { margin-top: calc(var(--s-6) * -1); }
+#view-home .stat {
+  min-width: 0;
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+#view-home .stat-value { color: var(--accent); }
+#view-home .stat-label { text-transform: none; letter-spacing: 0; font-size: var(--t-sm); }
+
+/* Empty states on the home view: one style, aligned with the text beside
+   them, instead of a centred block that sat differently in each panel. */
+#view-home .empty {
+  text-align: left;
+  padding: var(--s-3) 0;
+}
+
+/* The three headline numbers float on the cover's fade rather than sitting in
+   cards. The cover is a positioned element, so without a stacking context
+   here it painted over the top of these and cropped them. No boxes means
+   nothing left to crop: the numbers are set in the cover's colour and
+   divided by a rule the same colour. */
+#home-stats { position: relative; z-index: 1; gap: 0; }
+#home-stats .stat {
+  flex: 1;
+  min-width: 0;
+  padding: var(--s-1) var(--s-3);
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+#home-stats .stat + .stat {
+  border-left: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+#home-stats .stat-link:hover { background: none; }
+/* The labels and detail lines sit on the veil, not on a card, so they use the
+   primary text colour and a soft shadow rather than the muted greys. */
+#home-stats .stat-label,
+#home-stats .stat-detail {
+  color: var(--text);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .6);
+}
+#home-stats .stat-value { font-size: clamp(1.6rem, 5vw, 2.3rem); }
+
+/* Page-level notices (the Spotify and sign-in warnings) float under the
+   header instead of taking a place in the flow. Before, one appearing pushed
+   the whole page down, and on the home view that moved the cover off the top
+   of the screen. Panels' own banners are still in-flow. */
+main > #error,
+main > #warn {
+  position: fixed;
+  top: calc(var(--header-h, 60px) + var(--s-2));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - var(--s-5)));
+  z-index: 25;
+  margin: 0;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .35);
+}
+/* Floating over the page, so the banner's usual translucent tint would let the
+   cover and the text behind show through it. Opaque, with the same hue mixed
+   into the panel colour. */
+main > #warn { background: color-mix(in srgb, var(--warn) 16%, var(--panel-2)); }
+main > #error { background: color-mix(in srgb, var(--bad) 16%, var(--panel-2)); }
+
 /* --- figures -------------------------------------------------------------- */
 
 .home-figure { margin-top: var(--s-6); }
@@ -2019,4 +2264,204 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 @media (prefers-reduced-motion: reduce) {
   .home-hero, .stat-link, .chart-crosshair { transition: none; }
+}
+
+/* --- home: below the cover ----------------------------------------------
+   The cover is the loud part of this page; everything under it is quiet and
+   open, set straight on the grey like liner notes. No cards and no boxed
+   tables. One heading size for every section, so the page reads as a list of
+   equals, and the cover's colour is kept for the data marks alone - bars,
+   the line, the big numbers. */
+
+#view-home .home-figure { margin-top: calc(var(--s-6) * 1.75); }
+#view-home .home-figure-title {
+  font-size: var(--t-xl);
+  font-weight: var(--w-bold);
+  letter-spacing: -.01em;
+}
+#view-home .home-figure-note {
+  color: var(--muted);
+  margin: var(--s-1) 0 var(--s-4);
+}
+
+/* A title with its control on the same line: the range switch belongs to the
+   section it filters, not to a box under it. */
+#view-home .home-figure-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
+#view-home .home-figure-head .home-figure-note { margin-bottom: 0; }
+
+/* The range switch as one segmented control rather than four loose buttons. */
+#view-home .listen-range {
+  gap: 0;
+  padding: var(--s-0);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+#view-home .listen-range .range {
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  min-height: 32px;
+  padding: 0 var(--s-3);
+}
+#view-home .listen-range .range:hover { color: var(--text); }
+#view-home .listen-range .range.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Every stat in the view floats, like the three under the cover: a number in
+   the cover's colour, its label above, divided by a hairline. */
+#view-home .stat {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: var(--s-1) var(--s-4) var(--s-1) 0;
+}
+/* An even grid rather than wrapping flex, so three short numbers stay on one
+   line on a phone and none drops to a row of its own. */
+#view-home #listening-coverage,
+#view-home #listening-session {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--s-4) 0;
+  margin-top: var(--s-5);
+}
+#view-home #listening-coverage .stat + .stat,
+#view-home #listening-session .stat + .stat {
+  padding-left: var(--s-4);
+  border-left: 1px solid var(--line);
+}
+#view-home .stat-detail { color: var(--muted); }
+
+/* Sub-sections: the same title as a section, a little less space above. */
+#view-home .home-sub { margin-top: calc(var(--s-6) * 1.25); }
+#view-home .home-sub > .home-figure-title {
+  font-size: var(--t-lg);
+  margin-bottom: var(--s-4);
+}
+
+/* Two columns on a desktop - top albums beside top genres - one on a phone. */
+#view-home .listen-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  column-gap: var(--s-6);
+}
+#view-home .listen-grid > .home-sub[hidden] { display: none; }
+/* auto-fit collapses the empty column, so a part with no partner (genres
+   hidden, say) takes the full width rather than sitting in half of it. */
+@media (min-width: 760px) {
+  #view-home .listen-grid { grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); }
+}
+
+/* Thinner bars on a quieter track: a measurement, not a block of colour. */
+#view-home .home-bars { gap: var(--s-3); }
+#view-home .home-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+#view-home .home-bar-fill { border-radius: 999px; }
+#view-home .listen-grid .home-bar-row { grid-template-columns: minmax(5rem, 1fr) minmax(4rem, 1fr) auto; }
+
+/* The track list without its box: hairline rows on the page itself. */
+#view-home #listening {
+  margin-top: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+#view-home .listen-row {
+  padding: var(--s-3) 0;
+  border-bottom-color: var(--line-soft);
+}
+#view-home .listen-bar {
+  height: 4px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+#view-home .listen-more {
+  margin-top: var(--s-3);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+}
+
+/* Hour columns in the cover's colour, softer than the bars so the two charts
+   don't compete. */
+#view-home .hour-bar { background: color-mix(in srgb, var(--accent) 75%, transparent); }
+
+/* The cover's stats keep their own spacing: a gap after each divider. */
+#view-home #home-stats .stat { padding: var(--s-1) var(--s-3) var(--s-1) 0; }
+#view-home #home-stats .stat + .stat { padding-left: var(--s-3); }
+/* On a phone the page gutter is narrower, so the cover copy uses the same
+   one and lines up with the stats and sections below it. */
+@media (max-width: 720px) {
+  .home-intro { width: calc(100% - var(--s-3) * 2); }
+}
+
+/* The date range form: one pill under the switch it belongs to, built the
+   same way - a faint track, borderless parts, and the action filled with the
+   cover's colour like the selected range. */
+#view-home .listen-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+  width: fit-content;
+  max-width: 100%;
+  margin: var(--s-3) 0 0 auto;
+  padding: var(--s-0) var(--s-0) var(--s-0) var(--s-4);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+#view-home .listen-dates[hidden] { display: none; }
+#view-home .listen-dates label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+#view-home .listen-dates input {
+  /* 16px so iOS does not zoom on focus, without a field's box around it. */
+  font-size: var(--t-field);
+  color: var(--text);
+  color-scheme: dark;
+  background: none;
+  border: 0;
+  padding: var(--s-1) var(--s-1);
+  min-height: 32px;
+  width: auto;
+}
+#view-home .listen-dates input:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--r-sm);
+}
+#view-home .listen-dates .range {
+  border: 0;
+  border-radius: 999px;
+  min-height: 32px;
+  padding: 0 var(--s-4);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* On a phone the pill becomes a rounded panel: the two dates on their own
+   rows read better than one line squeezed past the screen edge. */
+@media (max-width: 520px) {
+  #view-home .listen-dates {
+    width: 100%;
+    margin-left: 0;
+    border-radius: var(--r-lg);
+    padding: var(--s-2) var(--s-3);
+    justify-content: space-between;
+  }
+  #view-home .listen-dates .range { flex: 1 0 100%; }
 }

@@ -25,6 +25,11 @@ const homeArtists = document.getElementById("home-artists");
 const homeListening = document.getElementById("home-listening");
 const homeSnapshots = document.getElementById("home-snapshots");
 const homeEmpty = document.getElementById("home-empty");
+const homeView = document.getElementById("view-home");
+const homeCover = document.getElementById("home-cover");
+const homeCoverArt = document.getElementById("home-cover-art");
+const homeCoverCaption = document.getElementById("home-cover-caption");
+
 
 function greeting() {
   const hour = new Date().getHours();
@@ -43,6 +48,130 @@ function heroFact(facts) {
   homeHero.querySelector(".home-hero-lead").textContent = fact.lead;
   homeHero.querySelector(".home-hero-value").textContent = fact.value;
   homeHero.querySelector(".home-hero-tail").textContent = fact.tail;
+}
+
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+// RGB (0-255) to HSL, each channel 0-1.
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+// The colours the page takes from a cover. The commonest colour in a cover
+// is usually its darkest - shadow, a black sleeve - and a dark accent cannot
+// carry a number on a dark page. So the pick is weighted toward brightness
+// and saturation, with frequency as one input rather than the rule: a colour
+// that is a little rarer but clearly bright wins over a muddy majority.
+// Null when the canvas will not give up its pixels.
+function coverPalette(img) {
+  const size = 48;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, size, size);
+  let pixels;
+  try {
+    pixels = ctx.getImageData(0, 0, size, size).data;
+  } catch (err) {
+    return null;
+  }
+
+  // Coarse buckets, averaged inside, so each candidate is a colour that is
+  // actually in the art rather than a quantised step.
+  const buckets = new Map();
+  let counted = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] < 128) continue;
+    counted += 1;
+    const key = ((pixels[i] >> 4) << 8) | ((pixels[i + 1] >> 4) << 4) | (pixels[i + 2] >> 4);
+    const b = buckets.get(key) || { n: 0, r: 0, g: 0, b: 0 };
+    b.n += 1;
+    b.r += pixels[i];
+    b.g += pixels[i + 1];
+    b.b += pixels[i + 2];
+    buckets.set(key, b);
+  }
+  if (!counted) return null;
+
+  let best = null;
+  for (const b of buckets.values()) {
+    const [h, s, l] = rgbToHsl(b.r / b.n, b.g / b.n, b.b / b.n);
+    // Frequency counts, but as a root: it lifts a vivid minority over a
+    // grey majority without letting a single pixel win.
+    const score = Math.sqrt(b.n / counted) * s * (0.25 + l);
+    if (!best || score > best.score) best = { score, h, s, l };
+  }
+
+  // A grey cover has no colour to take. A warm light neutral keeps the
+  // page from going cold and blue-grey by default.
+  if (best.s < 0.15) return paletteFrom(0.1, 0.4, 0.7);
+  return paletteFrom(best.h, best.s, best.l);
+}
+
+// Three roles from one hue. The accent is pushed bright enough to read as a
+// number on the dark page; the tint is the page itself, dark and only faintly
+// of the same hue; the ink is what sits on a filled accent.
+function paletteFrom(h, s, l) {
+  const hsl = (sat, lig) => `hsl(${Math.round(h * 360)} ${Math.round(sat * 100)}% ${Math.round(lig * 100)}%)`;
+  return {
+    accent: hsl(clamp(s, 0.6, 1), clamp(l, 0.62, 0.76)),
+    tint: hsl(clamp(s * 0.7, 0.25, 0.6), 0.12),
+    on: hsl(0.5, 0.08),
+  };
+}
+
+// The cover is set from the most played album, and the page takes its colour
+// from the cover once the image has loaded. Either step failing leaves the
+// page as it was: no cover shows the text alone, and no colour keeps the
+// stylesheet's own background.
+const PALETTE_VARS = ["--home-accent", "--home-tint", "--home-on"];
+
+function setPalette(palette) {
+  const root = document.documentElement;
+  // The class is what tells the stylesheet to take the cover's accent; with
+  // no palette the home view keeps the app's own accent.
+  homeView.classList.toggle("themed", Boolean(palette));
+  if (!palette) {
+    PALETTE_VARS.forEach((name) => root.style.removeProperty(name));
+    return;
+  }
+  root.style.setProperty("--home-accent", palette.accent);
+  root.style.setProperty("--home-tint", palette.tint);
+  root.style.setProperty("--home-on", palette.on);
+}
+
+function setCover(album) {
+  if (!album || !album.cover_track_id) {
+    homeCover.classList.remove("has-art");
+    setPalette(null);
+    return;
+  }
+
+  homeCover.classList.add("has-art");
+  homeCoverCaption.hidden = false;
+  homeCoverCaption.textContent = "Most played in the last year: "
+    + album.album + " by " + album.artist;
+  homeCoverArt.alt = album.album + " by " + album.artist;
+
+  homeCoverArt.onload = () => setPalette(coverPalette(homeCoverArt));
+  homeCoverArt.onerror = () => {
+    homeCover.classList.remove("has-art");
+    homeCoverCaption.hidden = true;
+    setPalette(null);
+  };
+  homeCoverArt.src = "/api/library/art?id="
+    + encodeURIComponent(album.cover_track_id) + "&size=600";
 }
 
 function homeTiles(data) {
@@ -93,6 +222,7 @@ export async function loadHome() {
     homeEmpty.hidden = true;
     homeGreeting.textContent = greeting() + ", " + data.username + ".";
     heroFact(data.highlights || []);
+    setCover(heard.top_album);
     homeTiles(data);
     homeMonths.replaceChildren(monthlyChart(heard.months || []));
     homeArtists.replaceChildren(...artistBars(heard.top_artists || []));

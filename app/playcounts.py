@@ -518,12 +518,16 @@ def _titles(uuids: list[str]) -> dict[str, dict[str, Any]]:
             rows = connection.execute(f"""
                 select json_extract(mf.tags, '{UUID_TAG}') as uuid,
                        mf.title, mf.artist, mf.album, mf.duration,
-                       coalesce(nullif(mf.album_artist, ''), mf.artist)
+                       coalesce(nullif(mf.album_artist, ''), mf.artist),
+                       mf.id
                   from media_file mf
                  where json_extract(mf.tags, '{UUID_TAG}') in ({holes})
             """, chunk).fetchall()
-            for uuid, title, artist, album, duration, album_artist in rows:
+            for uuid, title, artist, album, duration, album_artist, media_id in rows:
                 found[uuid] = {"title": title or "", "artist": artist or "",
+                               # The library's own id for the file, which is
+                               # what the cover endpoint is asked for.
+                               "id": media_id,
                                "album": album or "",
                                # Carried for the one caller that turns plays
                                # into hours; the rest ignore it.

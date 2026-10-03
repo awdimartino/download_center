@@ -557,3 +557,24 @@ def test_sessions_are_scoped_to_where_they_started(state_db):
 
     assert august["count"] == 1
     assert september["count"] == 0
+
+
+def test_top_album_is_the_album_with_most_plays_and_its_loudest_track():
+    # Two albums under the same artist name but different album artists must
+    # not merge, and the cover comes from the album's own most played track.
+    recent = {"a1": 5, "a2": 4, "a3": 3, "b1": 6}
+    named = {
+        "a1": {"album": "Kid A", "album_artist": "Radiohead", "id": "mf-1"},
+        "a2": {"album": "Kid A", "album_artist": "Radiohead", "id": "mf-2"},
+        "a3": {"album": "Kid A", "album_artist": "Radiohead", "id": "mf-3"},
+        "b1": {"album": "Kid A", "album_artist": "Someone Else", "id": "mf-9"},
+    }
+    top = overview._top_album(recent, named)
+    assert top == {"artist": "Radiohead", "album": "Kid A", "plays": 12,
+                   "cover_track_id": "mf-1"}
+
+
+def test_top_album_is_none_when_nothing_has_an_album():
+    named = {"x": {"album": "", "album_artist": "", "id": "mf-x"}}
+    assert overview._top_album({"x": 3}, named) is None
+    assert overview._top_album({}, {}) is None

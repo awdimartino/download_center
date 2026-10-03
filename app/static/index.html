@@ -91,19 +91,39 @@
        type, three numbers and two charts. Everything here is a door to a
        section that holds the real detail, and nothing here is a control. -->
   <section id="view-home">
-    <p id="home-greeting" class="home-greeting"></p>
+    <!-- The most played album of the last year is the header. Its cover is
+         darkened for the text on it, and the most common colour in it tints
+         the page behind everything below. With no cover (or none that loads)
+         the class stays off and this is an ordinary stack of text. -->
+    <div id="home-cover" class="home-cover">
+      <!-- The whole sleeve at full width and its natural height, never
+           cropped, with the gradient laid over exactly that box. -->
+      <div class="home-cover-media">
+        <img id="home-cover-art" class="home-cover-art" alt="" decoding="async">
+        <div class="home-cover-fade" aria-hidden="true"></div>
+      </div>
 
-    <!-- One fact, chosen at random by the browser from the several the
-         server sends, so the page is not the same page every morning. -->
-    <button id="home-hero" class="home-hero" type="button" hidden>
-      <span class="home-hero-lead"></span>
-      <span class="home-hero-value"></span>
-      <span class="home-hero-tail"></span>
-      <span class="home-hero-more">See the detail &rsaquo;</span>
-    </button>
+      <div class="home-intro">
+        <p id="home-cover-caption" class="home-cover-caption" hidden></p>
+        <p id="home-greeting" class="home-greeting"></p>
 
-    <p id="home-snapshots" class="warn" hidden></p>
+        <!-- One fact, chosen at random by the browser from the several the
+             server sends, so the page is not the same page every morning. -->
+        <button id="home-hero" class="home-hero" type="button" hidden>
+          <span class="home-hero-lead"></span>
+          <span class="home-hero-value"></span>
+          <span class="home-hero-tail"></span>
+          <span class="home-hero-more">See the detail &rsaquo;</span>
+        </button>
+      </div>
+    </div>
+
     <div id="home-stats" class="stats"></div>
+
+    <!-- Below the stats rather than on the cover: a notice about the nightly
+         counts is not part of the header, and on the cover it sat over the
+         art and pushed the copy around. -->
+    <p id="home-snapshots" class="warn" hidden></p>
 
     <section id="home-chart" class="home-figure">
       <h2 class="home-figure-title">Plays by month</h2>
@@ -122,39 +142,60 @@
          same snapshots and imported Last.fm history, broken down several
          ways. One range switch governs every chart in here. -->
     <section id="home-listening" class="home-figure">
-      <h2 class="home-figure-title">Listening</h2>
-      <div class="panel-note">
-        <p>
-          Your play counts, kept where Navidrome does not keep them: a
-          nightly snapshot of every track's total, plus the Last.fm history
-          from before that started. Counts follow the track's identity tag,
-          so they survive re-tagging, moving and a rebuilt database.
-        </p>
-        <div class="listen-range">
+      <div class="home-figure-head">
+        <div>
+          <h2 class="home-figure-title">Listening</h2>
+          <p class="home-figure-note">Nightly snapshots plus your Last.fm
+            history, kept per track so re-tagging never loses a play.</p>
+        </div>
+        <div class="listen-range" role="group" aria-label="Time range">
           <button class="range ghost" data-days="1" type="button">Today</button>
           <button class="range ghost" data-days="30" type="button">Month</button>
           <button class="range ghost" data-days="365" type="button">Year</button>
           <button class="range ghost active" data-days="3650" type="button">All time</button>
+          <button id="listen-custom" class="range ghost" type="button"
+                  aria-expanded="false" aria-controls="listen-dates">Dates</button>
         </div>
       </div>
+      <!-- A chosen range, both days included. Hidden until "Dates" is picked. -->
+      <form id="listen-dates" class="listen-dates" hidden>
+        <label>From <input id="listen-from" type="date" required></label>
+        <label>to <input id="listen-to" type="date" required></label>
+        <button class="range" type="submit">Show</button>
+      </form>
       <p id="listening-error" class="warn" hidden></p>
       <div id="listening-coverage" class="stats"></div>
 
-      <h3 class="home-figure-subtitle">Longest session</h3>
-      <div id="listening-session" class="stats"></div>
+      <!-- Each part hides itself when the range has nothing for it, rather
+           than leaving a heading over a "nothing here" line. -->
+      <div class="listen-grid">
+        <section id="listening-session-part" class="home-sub">
+          <h3 class="home-figure-title">Longest session</h3>
+          <div id="listening-session" class="stats"></div>
+        </section>
 
-      <h3 class="home-figure-subtitle">By hour of day</h3>
-      <div id="listening-hourly" class="hour-chart"></div>
+        <section id="listening-hourly-part" class="home-sub">
+          <h3 class="home-figure-title">By hour of day</h3>
+          <div id="listening-hourly" class="hour-chart"></div>
+        </section>
 
-      <h3 class="home-figure-subtitle">Top albums</h3>
-      <div id="listening-albums" class="home-bars"></div>
+        <section id="listening-albums-part" class="home-sub">
+          <h3 class="home-figure-title">Top albums</h3>
+          <div id="listening-albums" class="home-bars"></div>
+        </section>
 
-      <h3 class="home-figure-subtitle">Top genres</h3>
-      <div id="listening-genres" class="home-bars"></div>
+        <section id="listening-genres-part" class="home-sub">
+          <h3 class="home-figure-title">Top genres</h3>
+          <div id="listening-genres" class="home-bars"></div>
+        </section>
+      </div>
 
-      <h3 class="home-figure-subtitle">Every track</h3>
-      <div id="listening"></div>
-      <p id="listening-empty" class="empty">Loading…</p>
+      <section class="home-sub">
+        <h3 class="home-figure-title">Most played tracks</h3>
+        <div id="listening"></div>
+        <button id="listening-more" class="ghost listen-more" type="button" hidden></button>
+        <p id="listening-empty" class="empty">Loading…</p>
+      </section>
     </section>
 
     <p id="home-empty" class="empty" hidden></p>

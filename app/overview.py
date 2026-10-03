@@ -217,6 +217,7 @@ def listening(identity: navidrome.Identity) -> dict[str, Any]:
         known = named.get(track_uuid)
         if known and known["artist"]:
             by_artist[known["artist"]] += n
+    top_album = _top_album(recent, named)
 
     this_month = by_month.get(wanted[-1], 0)
     last_month = by_month.get(wanted[-2], 0) if len(wanted) > 1 else 0
@@ -252,6 +253,7 @@ def listening(identity: navidrome.Identity) -> dict[str, Any]:
         "last_month": last_month,
         "tracked_since": min((day for day, _, _ in plays), default=""),
         "artists_heard": len(by_artist),
+        "top_album": top_album,
         "year": {"year": year, "plays": plays_this_year,
                  "tracks": len(played_this_year),
                  "seconds": round(seconds_this_year)},
@@ -350,6 +352,33 @@ def highlights(heard: dict[str, Any], counted: dict[str, Any]) -> list[dict[str,
                       "value": f"{counted['tracks']:,} tracks",
                       "tail": f"across {counted.get('albums', 0):,} albums"})
     return facts
+
+
+def _top_album(recent: dict[str, int],
+               named: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """The most played album in the window, and the track to draw its cover from.
+
+    Grouped the way `playcounts.top_albums` groups - by album artist and album
+    together - so the cover shown here is the same album the Listening panel
+    ranks first. The cover comes from that album's most played track, which is
+    the one most likely to be a file with its art embedded.
+    """
+    by_album: dict[tuple[str, str], int] = collections.Counter()
+    loudest: dict[tuple[str, str], tuple[int, str]] = {}
+    for track_uuid, n in recent.items():
+        known = named.get(track_uuid)
+        if not known or not known["album"]:
+            continue
+        key = (known["album_artist"], known["album"])
+        by_album[key] += n
+        if key not in loudest or n > loudest[key][0]:
+            loudest[key] = (n, track_uuid)
+    if not by_album:
+        return None
+    (artist, album), plays = by_album.most_common(1)[0]
+    _, track_uuid = loudest[(artist, album)]
+    return {"artist": artist, "album": album, "plays": plays,
+            "cover_track_id": named[track_uuid].get("id")}
 
 
 def overview(identity: navidrome.Identity) -> dict[str, Any]:

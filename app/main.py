@@ -1815,6 +1815,8 @@ MAX_LISTENING_TRACKS = 200
 async def playcount_top(
     days: int = 30,
     limit: int = 25,
+    start: str | None = None,
+    end: str | None = None,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
     """Everything the Listening panel shows for one window: the signed-in
@@ -1827,15 +1829,37 @@ async def playcount_top(
     """
     days = max(1, min(days, MAX_LISTENING_DAYS))
     limit = max(1, min(limit, MAX_LISTENING_TRACKS))
+    # A chosen range, both ends inclusive, instead of "the last N days".
+    # Both or neither: half a range is a typo, not a request.
+    if (start is None) != (end is None):
+        raise HTTPException(status_code=422,
+                            detail="Give both a start and an end date.")
+    if start is not None:
+        try:
+            first = datetime.strptime(start, "%Y-%m-%d")
+            last = datetime.strptime(end, "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(status_code=422,
+                                detail="Dates must be YYYY-MM-DD.") from exc
+        if first > last:
+            raise HTTPException(status_code=422,
+                                detail="The start date is after the end date.")
+        days = (last - first).days + 1
 
     def collect() -> dict[str, Any]:
-        # Today, not yesterday. The window stopped at the last *complete*
-        # day because a nightly reading could not describe a day still
-        # going on; reading every few minutes can, and the panel was
-        # otherwise unable to show anything played since midnight.
-        end = playcounts.today()
-        start = (datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
-                 - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        if start is not None:
+            window_start, window_end = start, end
+        else:
+            # Today, not yesterday. The window stopped at the last *complete*
+            # day because a nightly reading could not describe a day still
+            # going on; reading every few minutes can, and the panel was
+            # otherwise unable to show anything played since midnight.
+            window_end = playcounts.today()
+            window_start = (datetime.strptime(window_end, "%Y-%m-%d").replace(tzinfo=UTC)
+                            - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        return _listening_window(window_start, window_end, days)
+
+    def _listening_window(start: str, end: str, days: int) -> dict[str, Any]:
         user_id = session.identity.user_id
         tracks = playcounts.top_tracks(start, end, user_id, limit)
         return {
