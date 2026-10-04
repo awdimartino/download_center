@@ -1,7 +1,8 @@
 # Code review — 2026-10-04
 
 A read-only review of the whole codebase (Session 11), at commit `6e45ae2`.
-**Nothing here has been fixed yet.** Findings are ordered by severity, then
+Fixes are being worked through top-down; a ticked item carries a **Fixed:**
+note saying what changed. Findings are ordered by severity, then
 by how much they matter in daily use. Tick them off as they land; do not
 delete them — a closed item is the record that it was looked at.
 
@@ -32,7 +33,7 @@ it less likely.
 
 ## Critical
 
-- [ ] **C1. *Use this* lets beets move files, because the Pi's beets
+- [x] **C1. *Use this* lets beets move files, because the Pi's beets
       configs say `move: yes`.** *Verified on the Pi.*
       `app/beets_match.py` (`apply_choice`), `app/beets_runner.py:156-181`.
       All three workspace configs (`alex`, `kelly-2`, `test-5`) predate the
@@ -47,6 +48,9 @@ it less likely.
       *Fix:* set `config["import"]["move"] = False`, `copy = False`,
       `write = True` inside `apply_choice` regardless of the file; and edit
       the three configs on the Pi.
+      **Fixed:** `apply_choice` now forces all three; reproduced first with a
+      `move: yes` config, and a test runs the same probe. The Pi's configs
+      are no longer dangerous but still say `move: yes`.
 
 - [ ] **C2. The featured-artist regex deletes the end of real titles and
       artists, so some songs can never match and others match the wrong

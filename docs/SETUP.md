@@ -279,9 +279,9 @@ person's `library.db`. There is one per person and library because beets
 stores paths relative to its `directory`, and one index cannot describe two
 library roots. The file is **never overwritten**, so edit it freely — and
 note that an older install keeps whatever template it was first given.
-**Configs written before September 2026 say `move: yes`; change it to
-`move: no`** in each `config.yaml`, or applying a match lets beets move
-files into its own layout (CODE_REVIEW.md, C1).
+Configs written before September 2026 say `move: yes`. Applying a match
+overrides `move`, `copy` and `write` whatever the file says, so that is
+harmless, but changing it to `move: no` keeps the file honest.
 
 The settings in it that matter:
 

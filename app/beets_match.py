@@ -160,6 +160,14 @@ def apply_choice(path: Path, chosen_id: str) -> dict[str, Any]:
         def choose_item(self, task: Any) -> Any:
             return self._pick(task, "track_id")
 
+    # Beets writes tags and nothing else, whatever the workspace's config
+    # says. Configs written before the template turned `move` off still say
+    # `move: yes`, and `ensure_config` never rewrites one - so a match let
+    # beets carry the files into its own layout, the filer then found
+    # nothing at the old folder to re-file, and the retag reported success.
+    config["import"]["move"] = False
+    config["import"]["copy"] = False
+    config["import"]["write"] = True
     # A loose file is a singleton and a directory is an album, the same rule
     # the rest of the pipeline follows.
     config["import"]["singletons"] = path.is_file()

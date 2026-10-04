@@ -265,3 +265,48 @@ def test_beets_is_told_not_to_move_anything():
     assert config["import"]["move"] is False
     assert config["import"]["copy"] is False
     assert config["import"]["write"] is True
+
+
+# An older workspace config says `move: yes`, and `ensure_config` never
+# rewrites one. Applying a match must not let that through: beets carried the
+# files into its own layout, the filer found nothing at the old folder, and
+# the retag reported success (CODE_REVIEW C1). Run in a subprocess because
+# beets' config is a process-wide singleton read from BEETSDIR.
+
+_APPLY_PROBE = """
+import json, sys
+from pathlib import Path
+from beets import config, importer
+from app import beets_match
+
+seen = {}
+def run(self):
+    seen.update({k: config["import"][k].get() for k in ("move", "copy", "write")})
+importer.ImportSession.run = run
+beets_match.apply_choice(Path(sys.argv[1]), "mb-1")
+print(json.dumps(seen))
+"""
+
+
+def test_applying_a_match_never_moves_files_whatever_the_config_says(tmp_path):
+    import json
+    import os
+    import subprocess
+    import sys
+
+    beets_dir = tmp_path / "beets"
+    beets_dir.mkdir()
+    (tmp_path / "album").mkdir()
+    (beets_dir / "config.yaml").write_text(
+        f"directory: {(tmp_path / 'music').as_posix()}\n"
+        f"library: {(beets_dir / 'library.db').as_posix()}\n"
+        "import:\n  move: yes\n  copy: yes\n  write: no\n"
+        "plugins: []\n", encoding="utf-8")
+    root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        [sys.executable, "-c", _APPLY_PROBE, str(tmp_path / "album")],
+        cwd=root, capture_output=True, text=True, timeout=120,
+        env={**os.environ, "BEETSDIR": str(beets_dir), "PYTHONPATH": str(root)})
+    assert result.returncode == 0, result.stderr
+    seen = json.loads(result.stdout.strip().splitlines()[-1])
+    assert seen == {"move": False, "copy": False, "write": True}
