@@ -371,7 +371,9 @@ Each is a dry run until `--apply`.
 
 `tools/fingerprint.py` (AcoustID lookups for files with no MusicBrainz id)
 and `tools/fix_broken_m4a.py` (repairs `.m4a` files that are not real MP4
-containers) are host scripts in the repository, not in the image.
+containers) are in the image too, run as `python -m tools.<name>`; each
+script's own usage says how. Run with `docker run --entrypoint`, pass
+`--user 1000:1000`, since that skips the image's drop from root.
 
 ---
 

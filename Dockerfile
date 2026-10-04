@@ -22,6 +22,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+# The one-off maintenance scripts, run with `docker exec` or `docker run
+# --entrypoint python ... -m tools.<name>`; their usage says so.
+COPY tools ./tools
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \

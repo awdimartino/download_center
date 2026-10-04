@@ -35,9 +35,16 @@ Even so, run it under a hard CPU ceiling. Measured on this Pi, `--cpus=1.0`
 holds a four-core machine to one core (11.92 cpu-seconds unbounded against
 3.05 bounded over the same three seconds):
 
-    docker run --rm --cpus=1.0 -v ...:/music -v ...:/config \\
+    docker run --rm --cpus=1.0 --user 1000:1000 \\
+        -v ...:/music -v ...:/config \\
         --entrypoint python ghcr.io/awdimartino/navidrome-companion:latest \\
         -m tools.fingerprint /music --api-key KEY
+
+`--user` because `--entrypoint` skips the image's own drop from root, and a
+checkpoint written as root in /config is one the app cannot touch later.
+
+Files AcoustID could not match, or fpcalc could not read, are checkpointed
+too, so a rerun does not pay for them again. `--retry-failed` asks again.
 """
 
 from __future__ import annotations
@@ -166,15 +173,20 @@ def lookup(api_key: str, duration: int, fp: str) -> dict | None:
             if best is None or score > best["score"]:
                 artists = recording.get("artists") or []
                 best = {
+                    # AcoustID's own track id, which is what the "Acoustid
+                    # Id" frame holds - not the MusicBrainz recording's.
+                    "acoustid_id": result.get("id", ""),
                     "recording_id": recording["id"],
                     "title": recording.get("title", ""),
                     "artist": ", ".join(a.get("name", "") for a in artists),
                     "score": score,
                 }
-    return best
+    # AcoustID answered and knew nothing: a real no, checkpointed as one.
+    # None is kept for a lookup that never got an answer.
+    return best or {"score": 0.0}
 
 
-def write_ids(path: Path, recording_id: str) -> None:
+def write_ids(path: Path, recording_id: str, acoustid_id: str = "") -> None:
     """Write the recording id, and nothing else.
 
     mtime is restored: these files are already indexed, and making the whole
@@ -196,9 +208,36 @@ def write_ids(path: Path, recording_id: str) -> None:
             tags.delall(f"UFID:{frame.owner}")
     tags.add(UFID(owner="http://musicbrainz.org",
                   data=recording_id.encode("ascii")))
-    tags.add(TXXX(encoding=3, desc="Acoustid Id", text=recording_id))
+    # The AcoustID track id, as Picard and beets write it. The recording id
+    # used to go in here too, so the frame claimed an id AcoustID never gave.
+    if acoustid_id:
+        tags.delall("TXXX:Acoustid Id")
+        tags.add(TXXX(encoding=3, desc="Acoustid Id", text=acoustid_id))
     tags.save(path, v2_version=4)
     os.utime(path, (stat.st_atime, stat.st_mtime))
+
+
+def clear_misfiled_acoustid(path: Path) -> bool:
+    """Remove an "Acoustid Id" frame that holds the recording id.
+
+    Earlier runs wrote the MusicBrainz recording id into it. A file that has
+    one is skipped as already identified, so this is the only pass that
+    will ever see it again. True if the frame was removed.
+    """
+    try:
+        tags = ID3(path)
+    except Exception:
+        return False
+    recordings = {f.data.decode("ascii", "replace") for f in tags.getall("UFID")
+                  if f.owner == "http://musicbrainz.org"}
+    frames = tags.getall("TXXX:Acoustid Id")
+    if not frames or not set(frames[0].text) & recordings:
+        return False
+    stat = path.stat()
+    tags.delall("TXXX:Acoustid Id")
+    tags.save(path, v2_version=4)
+    os.utime(path, (stat.st_atime, stat.st_mtime))
+    return True
 
 
 def already_identified(path: Path) -> bool:
@@ -207,6 +246,12 @@ def already_identified(path: Path) -> bool:
     except Exception:
         return False
     return any(f.owner == "http://musicbrainz.org" for f in tags.getall("UFID"))
+
+
+def set_aside(path: Path) -> bool:
+    """Whether a path is inside a library's quarantine. A --from-list is
+    filtered by this too, since the walk's own skip never sees it."""
+    return QUARANTINE_NAME in path.parts
 
 
 def library_files(root: Path) -> list[Path]:
@@ -224,11 +269,27 @@ def library_files(root: Path) -> list[Path]:
     return sorted(found)
 
 
-def load_done(checkpoint: Path) -> set[str]:
+# What a checkpoint line holds after the path, when there is no recording id:
+# the file was asked about and the answer was no.
+NO_MATCH = "-no-match"
+UNREADABLE = "-unreadable"
+
+
+def load_done(checkpoint: Path, retry_failed: bool = False) -> set[str]:
+    """Paths already dealt with. A failure counts, unless asked to retry -
+    every rerun used to fingerprint and look up the same unmatchable files
+    again, at a second each."""
     if not checkpoint.exists():
         return set()
-    return {line.split("\t")[0] for line in
-            checkpoint.read_text(encoding="utf-8").splitlines() if line}
+    done = set()
+    for line in checkpoint.read_text(encoding="utf-8").splitlines():
+        if not line:
+            continue
+        path, _, outcome = line.partition("\t")
+        if retry_failed and outcome in (NO_MATCH, UNREADABLE):
+            continue
+        done.add(path)
+    return done
 
 
 def main() -> int:
@@ -249,6 +310,8 @@ def main() -> int:
                         help="pause while load per core is above this")
     parser.add_argument("--min-score", type=float, default=0.85,
                         help="reject AcoustID matches below this confidence")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="ask again about files checkpointed as no match")
     args = parser.parse_args()
 
     # Settings first, so the key is set once in the Settings panel rather than
@@ -278,13 +341,13 @@ def main() -> int:
     if args.from_list:
         files = [Path(line.strip()) for line in
                  args.from_list.read_text(encoding="utf-8").splitlines()
-                 if line.strip()]
+                 if line.strip() and not set_aside(Path(line.strip()))]
     else:
         files = []
         for root in args.roots:
             files.extend(library_files(root))
 
-    done = load_done(args.checkpoint)
+    done = load_done(args.checkpoint, args.retry_failed)
     pending = [f for f in files if str(f) not in done]
     if args.limit:
         pending = pending[:args.limit]
@@ -307,12 +370,18 @@ def main() -> int:
 
             if already_identified(path):
                 skipped += 1
+                if args.apply and clear_misfiled_acoustid(path):
+                    print(f"  ~ removed a recording id from Acoustid Id  "
+                          f"{path.name[:40]}", flush=True)
                 continue
 
             got = fingerprint(path)
             if got is None:
                 failed += 1
                 print(f"  ? unreadable  {path.name[:60]}", flush=True)
+                if handle:
+                    handle.write(f"{path}\t{UNREADABLE}\n")
+                    handle.flush()
                 continue
             duration, fp = got
 
@@ -323,6 +392,11 @@ def main() -> int:
                 failed += 1
                 score = f"{match['score']:.2f}" if match else "none"
                 print(f"  - no match ({score})  {path.name[:52]}", flush=True)
+                # Not when the lookup itself failed: that is worth asking
+                # again next time, so it is left out of the checkpoint.
+                if handle and match is not None:
+                    handle.write(f"{path}\t{NO_MATCH}\n")
+                    handle.flush()
                 continue
 
             identified += 1
@@ -330,7 +404,7 @@ def main() -> int:
                   f"{match['title'][:30]}   <- {path.name[:36]}", flush=True)
             if args.apply:
                 try:
-                    write_ids(path, match["recording_id"])
+                    write_ids(path, match["recording_id"], match["acoustid_id"])
                 except Exception as exc:
                     failed += 1
                     identified -= 1

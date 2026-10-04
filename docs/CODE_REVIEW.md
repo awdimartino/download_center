@@ -950,10 +950,16 @@ it less likely.
       **Fixed:** the session middleware re-sends the cookie once a day
       while a session is used, with a max-age that never passes the 30-day
       cap; sign-in shares the same `_send_cookie`. Reproduced first.
-- [ ] **L34.** `tools/` is not in the image, but `tools/fingerprint.py`'s
+- [x] **L34.** `tools/` is not in the image, but `tools/fingerprint.py`'s
       usage says to run it there; it also writes the MusicBrainz recording
       id into the *AcoustID Id* frame (`fingerprint.py:193`), never
       checkpoints failures, and walks the quarantine.
+      **Fixed:** the image copies `tools/`, and the usage adds `--user`;
+      the *Acoustid Id* frame gets AcoustID's own track id, and an earlier
+      run's misfiled one is removed when the file is next passed over; no
+      match and unreadable are checkpointed (`--retry-failed` asks again),
+      a lookup that never answered is not. The walk already skipped the
+      quarantine; `--from-list` now does too. Reproduced first.
 - [ ] **L35.** Settings has no `beets_enabled` control, and a non-secret
       field (Navidrome URL, Spotify id) can never be cleared
       (`index.html:466-476`, `settings.js:42`).
