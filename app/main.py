@@ -1614,7 +1614,7 @@ async def library_album_edit(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if not inbox.settled(folder):
+    if inbox.receiving(folder):
         raise HTTPException(
             status_code=409,
             detail=f"{folder.name} is still arriving; try again shortly.")
@@ -1660,7 +1660,7 @@ async def library_track_edit(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if not inbox.settled(path):
+    if inbox.receiving(path):
         raise HTTPException(
             status_code=409,
             detail=f"{path.name} is still arriving; try again shortly.")
@@ -1839,7 +1839,7 @@ async def library_match_apply(
                    "find matches for it again.")
     _one_album(path)
 
-    if not inbox.settled(path):
+    if inbox.receiving(path):
         # A download of this album is still filing tracks into it.
         # Retagging mid-flight re-points the registry, and the tracks that
         # land afterwards still carry the old tags, miss the key that has
@@ -1930,7 +1930,7 @@ async def library_cover_apply(
         raise HTTPException(status_code=400,
                             detail="That cover is not one this offered.")
     path, tracks = _cover_target(session, body.library_id, body.folder)
-    if not inbox.settled(path):
+    if inbox.receiving(path):
         raise HTTPException(
             status_code=409,
             detail=f"{path.name} is still arriving; try again shortly.")
@@ -2011,7 +2011,7 @@ async def library_combine(
         raise HTTPException(status_code=400,
                             detail="Choose at least two tracks to combine.")
     for path in [*folders.values(), *(files[name] for name in body.tracks)]:
-        if not inbox.settled(path):
+        if inbox.receiving(path):
             raise HTTPException(
                 status_code=409,
                 detail=f"{path.name} is still arriving; try again shortly.")

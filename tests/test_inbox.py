@@ -595,3 +595,52 @@ def test_two_uploaded_albums_do_not_share_a_cover(space):
             / "cover.jpg").is_file()
     assert not (space.library_path / "Aphex Twin" / "Drukqs"
                / "cover.jpg").is_file()
+
+
+# --- what a Library edit waits for (CODE_REVIEW M10) ------------------------
+# "Settled" meant nothing in the folder modified within the quiet period, and
+# every edit modifies files: fixing a title and then its track number was
+# refused as "still arriving" for two minutes. What an edit has to wait for
+# is the inbox still filing music into that album.
+
+def test_an_album_the_inbox_just_filed_into_is_receiving(tmp_path, monkeypatch):
+    from app import inbox
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
+    monkeypatch.setattr(inbox, "_arrivals", {})
+    album = tmp_path / "Artist" / "Album"
+    album.mkdir(parents=True)
+    (album / "01.mp3").write_bytes(b"x")
+    other = tmp_path / "Artist" / "Other"
+    other.mkdir()
+
+    assert not inbox.receiving(album), "a file merely modified is not arriving"
+    inbox._arrived(album)
+    assert inbox.receiving(album)
+    assert inbox.receiving(album / "01.mp3")
+    assert not inbox.receiving(other)
+
+
+def test_an_arrival_stops_counting_after_the_quiet_period(tmp_path, monkeypatch):
+    from app import inbox
+    from app.config import settings
+
+    monkeypatch.setattr(inbox, "_arrivals", {})
+    inbox._arrived(tmp_path)
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", -1)
+
+    assert not inbox.receiving(tmp_path)
+
+
+def test_a_delivery_marks_its_album_as_receiving(space, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(inbox, "_arrivals", {})
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
+    source = built(space, albumartist="The Beatles", album="Abbey Road",
+                   title="Come Together", tracknumber="1")
+
+    filed = inbox.deliver(space, source)
+
+    assert inbox.receiving(filed.path.parent)

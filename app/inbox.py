@@ -55,6 +55,37 @@ POLL_SECONDS = 15
 _delivering: set[Path] = set()
 _delivering_lock = threading.Lock()
 
+# Library folders the inbox has just filed a track into, and when. What a
+# Library edit has to wait for is music still arriving in that album - not
+# "anything modified lately", which every edit is: fixing a title and then
+# its track number used to be refused as "still arriving" for two minutes.
+_arrivals: dict[Path, float] = {}
+_arrivals_lock = threading.Lock()
+
+
+def _arrived(folder: Path) -> None:
+    with _arrivals_lock:
+        _arrivals[folder.resolve()] = time.time()
+
+
+def receiving(path: Path) -> bool:
+    """Whether the inbox filed a track into this album folder (or the folder
+    holding this track) within the quiet period - so more may be on the way.
+
+    Only the inbox's own deliveries count. The app's edits, covers and
+    ReplayGain no longer lock an album; a file copied straight into a
+    library folder by hand is not noticed, since the inbox is the way in.
+    """
+    folder = (path if path.is_dir() else path.parent).resolve()
+    cutoff = time.time() - settings.inbox_quiet_seconds
+    with _arrivals_lock:
+        for where, when in list(_arrivals.items()):
+            if when < cutoff:
+                del _arrivals[where]
+            elif where == folder or folder in where.parents:
+                return True
+    return False
+
 
 @dataclass
 class Result:
@@ -135,7 +166,9 @@ def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
     with _delivering_lock:
         _delivering.add(arrived)
     try:
-        return filer.file_track(space, arrived)
+        filed = filer.file_track(space, arrived)
+        _arrived(filed.path.parent)
+        return filed
     finally:
         with _delivering_lock:
             _delivering.discard(arrived)
@@ -303,6 +336,7 @@ def drain(space: workspace.Workspace) -> Result:
                           "it changes", path.name, space.username)
             continue
         _unfilable.pop(path, None)
+        _arrived(filed.path.parent)
         if not filed.identified:
             result.failures.append(
                 f"{filed.path.name}: filed, but its identity tags could not "

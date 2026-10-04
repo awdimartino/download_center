@@ -70,7 +70,7 @@ def test_replaygain_skips_a_folder_holding_two_albums(space, identity, monkeypat
     measured = []
     monkeypatch.setattr(replaygain.library, "album_dir",
                         lambda identity, lid, name, **_: folder)
-    monkeypatch.setattr(replaygain.inbox, "settled", lambda path: True)
+    monkeypatch.setattr(replaygain.inbox, "receiving", lambda path: False)
     monkeypatch.setattr(replaygain, "measure", measured.append)
     replaygain.operations.reset()
 
@@ -92,7 +92,7 @@ async def test_a_track_edit_says_when_the_file_left_its_album(space, monkeypatch
                         lambda identity, lid, path: space.library_path / path)
     monkeypatch.setattr(main, "_before_edit", lambda *args: set())
     monkeypatch.setattr(main.navidrome, "notify", lambda: True)
-    monkeypatch.setattr(main.inbox, "settled", lambda path: True)
+    monkeypatch.setattr(main.inbox, "receiving", lambda path: False)
     session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
     relative = str(first[0].path.relative_to(space.library_path))
 

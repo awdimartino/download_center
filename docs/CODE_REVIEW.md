@@ -336,7 +336,8 @@ it less likely.
       **Fixed:** a request counter in `loadListening`, `loadAlbums` (which
       also stops a stale "more" page being appended to a new search) and the
       merge search, which also drops an answer once the box is cleared.
-      Found by reading; not reproduced in a browser.
+      Checked in headless Chromium against a fixture server (not the Pi):
+      a Year answer delayed by two seconds no longer replaces All time.
 
 - [x] **M6. The Dates button does not look selected until a range is
       submitted** (reported by the user). `app/static/js/listening.js:162-175`.
@@ -352,7 +353,9 @@ it less likely.
       **Fixed:** `markRange`/`markShown` set the class and `aria-pressed`;
       opening Dates marks Dates, closing it unsubmitted marks the range
       still shown. The markup no longer carries a default, and a frontend
-      test ties `listeningDays` to `overview.OPENING_DAYS`.
+      test ties `listeningDays` to `overview.OPENING_DAYS`. Checked in
+      headless Chromium: Dates is the one highlighted while open, and All
+      time again after closing.
 
 ### Library
 
@@ -385,8 +388,9 @@ it less likely.
       the stub from them.
       **Fixed:** `library.tracks` returns the album's most common album
       artist and album; `loadTracks` puts them on a stub, and Edit details
-      waits until the tracks have arrived. Server half tested; the page half
-      checked in a browser with the M5/M6 batch.
+      waits until the tracks have arrived. Checked in headless Chromium
+      against a fixture: the editor opened from a song shows the album
+      artist, not "Artist feat. Guest".
 
 - [x] **M9. Changing a track's artist can move the file without the
       confirm, and the panel goes stale.** `app/static/js/library.js:1629`,
@@ -398,9 +402,10 @@ it less likely.
       *Fix:* return `has_albumartist` per track and `moved` from the edit.
       **Fixed** as suggested: the confirm checks the track's
       `has_albumartist`, and a track whose edit reports `moved` leaves the
-      panel with a note saying where it went.
+      panel with a note saying where it went. Checked in headless Chromium
+      against a fixture: the confirm appears, and the moved track leaves.
 
-- [ ] **M10. Every edit locks the album for two minutes, with a wrong
+- [x] **M10. Every edit locks the album for two minutes, with a wrong
       message.** `app/inbox.py:191-210` used at `app/main.py:1617, 1663, 1805, 1893, 1972`.
       "Settled" means nothing modified in `inbox_quiet_seconds`, and every
       edit modifies files. Fix a title, then its track number: 409 "still
@@ -408,6 +413,13 @@ it less likely.
       edits; ReplayGain skips recently edited albums.
       *Fix:* guard against active downloads/drains into the folder, or
       exempt paths this app just wrote.
+      **Fixed** the first way: `inbox.deliver` and `drain` record the album
+      folder each track was filed into, and edits, covers, combine, match
+      and ReplayGain wait only while that folder received a track within
+      `inbox_quiet_seconds` (`inbox.receiving`). The app's own writes no
+      longer lock anything. Trade-off: a file copied straight into a
+      library folder by hand, not through the inbox, is not noticed.
+      Found in the browser checks: a fresh album could not be edited.
 
 - [ ] **M11. Retags leave the old folder behind.** `app/main.py:1814-1835`,
       `app/filer.py:264-280, 414-445`. *Use this* never prunes; elsewhere

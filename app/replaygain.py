@@ -94,7 +94,7 @@ def measure_all(identity: navidrome.Identity,
             # failure, and the next run finds it where it is now.
             skipped.append(f"{folder}: {exc}")
             continue
-        if not inbox.settled(path):
+        if inbox.receiving(path):
             skipped.append(f"{folder}: still arriving")
             continue
         try:

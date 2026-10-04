@@ -656,8 +656,10 @@ folder-wide actions (rename, match, cover, combine) refuse them with the
 albums named; ReplayGain skips them. Edit them track by track, or move one
 album's tracks out first. See PLAN.md.
 
-Anything still arriving — modified within the quiet period — is refused with
-a message rather than edited mid-copy.
+An album the inbox filed a track into within the quiet period is still
+arriving, and edits to it are refused with a message until the download or
+drop has finished. The app's own edits do not count: you can fix a title
+and then its track number straight away.
 
 ### The album panel
 

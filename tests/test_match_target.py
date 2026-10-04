@@ -27,7 +27,7 @@ def clean(monkeypatch, tmp_path):
     monkeypatch.setattr(workspace, "for_session", lambda identity, lid: object())
     monkeypatch.setattr(library, "album_dir",
                         lambda identity, lid, folder: tmp_path / folder)
-    monkeypatch.setattr(inbox, "settled", lambda path: True)
+    monkeypatch.setattr(inbox, "receiving", lambda path: False)
     yield
     operations.reset()
 

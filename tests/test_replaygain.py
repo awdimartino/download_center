@@ -21,7 +21,7 @@ def albums(tmp_path, identity, monkeypatch):
     root = tmp_path / "music"
     for name in ("A/One", "A/Two", "A/Three"):
         (root / name).mkdir(parents=True)
-    monkeypatch.setattr(replaygain.inbox, "settled", lambda path: True)
+    monkeypatch.setattr(replaygain.inbox, "receiving", lambda path: False)
     monkeypatch.setattr(navidrome, "notify", lambda: True)
     operations.reset()
     yield [(1, "A/One"), (1, "A/Two"), (1, "A/Three")]
@@ -84,8 +84,8 @@ def test_an_album_that_moved_is_skipped_not_counted(albums, identity,
 
 def test_an_album_still_arriving_is_left_alone(albums, identity, monkeypatch):
     """rsgain rewrites the file; the filer may be about to move it."""
-    monkeypatch.setattr(replaygain.inbox, "settled",
-                        lambda path: path.name != "Two")
+    monkeypatch.setattr(replaygain.inbox, "receiving",
+                        lambda path: path.name == "Two")
     seen = []
     monkeypatch.setattr(replaygain, "measure", lambda path: seen.append(path.name))
 
