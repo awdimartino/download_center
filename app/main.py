@@ -509,7 +509,7 @@ MAX_TRACKS_PER_JOB = 500
 
 def _resolve(url: str) -> tuple[str, str, list[dict[str, Any]]]:
     """Dispatch a link to whichever resolver handles it."""
-    if generic.looks_like_url(url) and "spotify.com" not in url:
+    if generic.looks_like_url(url) and not spotify.is_spotify(url):
         title, items = generic.resolve(url)
         return "generic", title, items
     return spotify.resolve_link(url)
@@ -517,8 +517,10 @@ def _resolve(url: str) -> tuple[str, str, list[dict[str, Any]]]:
 
 def validate(url: str) -> None:
     """Reject obviously unusable input before a job row is created."""
-    if generic.looks_like_url(url) and "spotify.com" not in url:
+    if generic.looks_like_url(url) and not spotify.is_spotify(url):
         return  # yt-dlp decides; there are too many sites to pre-check
+    if spotify.is_short(url):
+        return  # only following it says what it is; resolving does that
     spotify.parse_link(url)
 
 
@@ -598,6 +600,7 @@ async def create_job(
     url = request.url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="No link provided.")
+    url = spotify.canonical(url) or url
     # Validate before creating the job, so a typo does not litter the list.
     try:
         validate(url)

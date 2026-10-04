@@ -30,9 +30,12 @@ try {
   if (KINDS.includes(saved)) kind = saved;
 } catch { /* a private window starts on All */ }
 
-// Same test as the server's own generic.looks_like_url.
+// What the server queues rather than searches: any http(s) link
+// (generic.looks_like_url), and a Spotify link in the forms people paste
+// without the scheme (spotify.is_spotify).
 function looksLikeUrl(text) {
-  return /^https?:\/\//i.test(text.trim());
+  return /^(?:https?:\/\/|spotify:(?:track|album|playlist|artist):|(?:open\.spotify\.com|spotify\.link)\/)/i
+    .test(text.trim());
 }
 
 function plural(n, word) {
@@ -582,10 +585,10 @@ function syncBox() {
   kindsEl.hidden = url;
   hintEl.hidden = !url;
   if (url) {
-    const host = (/^https?:\/\/([^/?#]+)/i.exec(text) || [])[1] || "";
-    const what = /\/playlist/i.test(text) ? "A playlist"
-      : /\/album/i.test(text) ? "An album"
-      : /\/track|watch\?|youtu\.be/i.test(text) ? "A track" : "A link";
+    const host = (/^(?:https?:\/\/)?([^/?#:]+\.[^/?#:]+)/i.exec(text) || [])[1] || "spotify.com";
+    const what = /[/:]playlist/i.test(text) ? "A playlist"
+      : /[/:]album/i.test(text) ? "An album"
+      : /[/:]track|watch\?|youtu\.be/i.test(text) ? "A track" : "A link";
     hintEl.textContent = `${what} from ${host.replace(/^(www|open|music|m)\./i, "")}. `
       + "Press Download to queue it.";
   }

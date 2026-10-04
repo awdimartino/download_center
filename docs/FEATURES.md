@@ -303,8 +303,10 @@ about 15 ms on the Pi, against about 2 s uncached.
 ### Search, or paste a link
 
 Browse has one box: **"Search Spotify, or paste a link"**. Text that starts
-with `http://` or `https://` is a link — the button reads **Download** and a
-hint says what kind of link it looks like. Anything else is searched on
+with `http://` or `https://`, or is a Spotify link without it
+(`open.spotify.com/…`, `spotify.link/…`, `spotify:album:…`), is a link —
+the button reads **Download** and a hint says what kind of link it looks
+like. Anything else is searched on
 Spotify as you type (after a short pause, from two characters), filtered by
 the chips **All / Albums / Songs / Artists**.
 
@@ -339,8 +341,10 @@ broader answer.
 
 ### What links work
 
-**Spotify** track, album and playlist links, as URLs (with or without an
-`/intl-xx/` segment) or `spotify:` URIs. **Artist links are refused** —
+**Spotify** track, album and playlist links, as URLs (with or without the
+scheme, an `/intl-xx/` or an `/embed/` segment), `spotify:` URIs, or the
+app's `spotify.link` short links, which are followed when the job resolves.
+A job keeps the plain `https://open.spotify.com/…` form of the link. **Artist links are refused** —
 a discography is rarely what you meant. Playlists skip podcast episodes and
 local files. Jobs over 500 tracks are refused; queue them in parts.
 

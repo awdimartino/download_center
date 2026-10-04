@@ -753,10 +753,16 @@ it less likely.
 
 ### Getting music in
 
-- [ ] **L1.** Spotify links without `https://` and `spotify:` URIs are
+- [x] **L1.** Spotify links without `https://` and `spotify:` URIs are
       searched instead of queued (`browse.js:34-36`), though the server
       accepts them; `spotify.link` short links go to yt-dlp and fail;
       `/embed/` links are not recognised (`spotify.py:22-25`).
+      **Fixed:** the page queues bare `open.spotify.com/`, `spotify.link/`
+      and `spotify:` forms; the server routes by `spotify.is_spotify`,
+      accepts `/embed/`, follows short links when resolving
+      (`spotify.expand_short`), and stores the canonical https link.
+      Reproduced first. Not tried against a real short link: the redirect
+      is assumed, with the page body as a fallback.
 - [ ] **L2.** Resolving a direct link ignores `cookies.txt` (`generic.py:131-139`),
       so an age-gated video fails at resolve though it would download.
 - [ ] **L3.** `.incomplete/<job>` folders left by a crash are never removed

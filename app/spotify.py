@@ -11,6 +11,7 @@ import threading
 from typing import Any
 from collections.abc import Iterator
 
+import requests
 import spotipy
 from spotipy.cache_handler import CacheFileHandler
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -18,11 +19,16 @@ from spotipy.oauth2 import SpotifyClientCredentials
 from .config import CONFIG_DIR, settings
 
 # Matches both URL and URI forms, tolerating the /intl-xx/ locale segment that
-# Spotify inserts when a link is copied from a non-English client.
+# Spotify inserts when a link is copied from a non-English client, and the
+# /embed/ one in a player's share code.
 _LINK = re.compile(
-    r"(?:open\.spotify\.com/(?:intl-[a-z-]+/)?|spotify:)"
+    r"(?:open\.spotify\.com/(?:intl-[a-z-]+/)?(?:embed/)?|spotify:)"
     r"(track|album|playlist|artist)[/:]([A-Za-z0-9]+)"
 )
+
+# The phone app's share sheet hands out spotify.link short links, which only
+# say what they are once followed.
+_SHORT = re.compile(r"^(?:https?://)?spotify\.link/\S+$", re.I)
 
 SUPPORTED = ("track", "album", "playlist")
 
@@ -58,6 +64,46 @@ def client() -> spotipy.Spotify:
                 retries=3,
             )
         return _client
+
+
+def is_spotify(text: str) -> bool:
+    """Whether text is a Spotify link in any of its forms."""
+    text = text.strip()
+    return bool(_LINK.search(text) or _SHORT.match(text))
+
+
+def canonical(text: str) -> str | None:
+    """The plain https form of a Spotify link, or None if it is not one.
+
+    A job remembers the link it came from, and Browse finds an album's job
+    by that link, so a URI or an embed link is stored the way a copied
+    link would be.
+    """
+    match = _LINK.search(text.strip())
+    if not match:
+        return None
+    return f"https://open.spotify.com/{match.group(1)}/{match.group(2)}"
+
+
+def expand_short(text: str) -> str:
+    """Follow a spotify.link short link to the open.spotify.com one."""
+    url = text.strip()
+    if not url.lower().startswith("http"):
+        url = "https://" + url
+    try:
+        response = requests.get(url, timeout=15, allow_redirects=True)
+    except requests.RequestException as exc:
+        raise ResolveError(f"Could not follow the short link: {exc}") from exc
+    # Usually a redirect; failing that, the page names the link it stands for.
+    for place in (response.url, response.text[:200_000]):
+        found = canonical(place or "")
+        if found:
+            return found
+    raise ResolveError("That short link does not lead to a Spotify track, album or playlist.")
+
+
+def is_short(text: str) -> bool:
+    return bool(_SHORT.match(text.strip()))
 
 
 def parse_link(text: str) -> tuple[str, str]:
@@ -195,6 +241,8 @@ def resolve(kind: str, spotify_id: str) -> tuple[str, list[dict[str, Any]]]:
 
 def resolve_link(text: str) -> tuple[str, str, list[dict[str, Any]]]:
     """Parse then resolve. Returns (kind, title, tracks)."""
+    if is_short(text):
+        text = expand_short(text)
     kind, spotify_id = parse_link(text)
     title, tracks = resolve(kind, spotify_id)
     if not tracks:
