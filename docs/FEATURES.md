@@ -96,6 +96,7 @@ Knowing which store owns a fact is most of understanding the code.
 | `play_snapshot` | play counts as read from Navidrome, only when they changed |
 | `play_snapshot_run` | one row per day the collector ran, so a quiet day still counts as read |
 | `play_anomaly` | play counts that went down |
+| `play_collection` | when play counts were first read: the baseline |
 | `play_imported` | listening from before collection began (Last.fm) |
 | `album_reviewed` | albums someone has dealt with in Library |
 | `duplicate_dismissed` | "keep both" decisions |
@@ -267,7 +268,14 @@ Two derivations exist, and they are used in different places:
   order and counts each rise, dated by that reading's `play_date`. A
   track's first stored row is treated as a baseline.
 - **The statistics section** (`playcounts.plays_between`) takes the count at
-  the end of the range minus the count at the start.
+  the end of the range minus the count at the start. A range that opens
+  before collection began opens at the first reading's counts, not zero —
+  those are lifetimes, already covered by the imported history.
+
+When collection began is recorded in `play_collection` by the first reading
+ever taken, even one that found nothing to store; rows from that reading are
+the baseline, and a track's first row from any later reading counts from
+zero.
 
 Both add imported history. They do not always agree; see
 [CODE_REVIEW.md](CODE_REVIEW.md).

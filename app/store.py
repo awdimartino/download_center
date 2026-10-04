@@ -160,6 +160,16 @@ CREATE TABLE IF NOT EXISTS album_reviewed (
     PRIMARY KEY (library_id, album_id)
 );
 
+-- When play counts were first read, whether or not that reading stored
+-- anything. Rows from that reading are lifetimes, not plays; any later
+-- first row of a track is new listening. Taken from play_snapshot alone,
+-- a fresh install whose first reading found nothing would mistake its
+-- first real plays for a baseline. One row.
+CREATE TABLE IF NOT EXISTS play_collection (
+    id     INTEGER PRIMARY KEY CHECK (id = 1),
+    began  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS play_anomaly (
     noticed_on  TEXT NOT NULL,
     track_uuid  TEXT NOT NULL,
@@ -178,6 +188,12 @@ def connect(path: Path) -> None:
     generation += 1
     _migrate(_conn)
     _conn.executescript(SCHEMA)
+    # A database collecting since before play_collection existed: its
+    # earliest reading is when collection began.
+    _conn.execute(
+        "INSERT OR IGNORE INTO play_collection (id, began)"
+        " SELECT 1, MIN(taken_on) FROM play_snapshot"
+        " HAVING MIN(taken_on) IS NOT NULL")
     _conn.commit()
 
 

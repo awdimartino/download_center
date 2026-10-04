@@ -126,6 +126,23 @@ def local_stamp(raw: str | None) -> str:
     return moment.astimezone(zone()).isoformat(timespec="seconds")
 
 
+def baseline_stamp() -> str | None:
+    """When collection began: the stamp of the very first reading.
+
+    Rows from that reading are the counters as they stood when collection
+    began - a lifetime of listening, not plays. Any track's first row from a
+    later reading is new listening and counts from zero: `take` stores only
+    counts above zero, so a track first played after collection began first
+    appears at 1. Recorded by `take` in play_collection; without that row
+    (history written by hand), the earliest stored reading stands in.
+    """
+    db = store.connection()
+    row = db.execute("SELECT began FROM play_collection").fetchone()
+    if row is None:
+        row = db.execute("SELECT MIN(taken_on) FROM play_snapshot").fetchone()
+    return row[0] if row and row[0] else None
+
+
 def next_day(day: str) -> str:
     """The day after, so a timestamp can be bounded by a date.
 
@@ -274,6 +291,9 @@ def take(when: str | None = None) -> dict[str, Any]:
 
     db = store.connection()
     with store._lock:
+        # Only the first reading ever lands; every later one is ignored.
+        db.execute("INSERT OR IGNORE INTO play_collection (id, began)"
+                   " VALUES (1, ?)", (at,))
         db.executemany(
             "INSERT OR REPLACE INTO play_snapshot"
             " (taken_on, track_uuid, user_id, username, play_count, play_date)"
@@ -586,6 +606,17 @@ def _plays_between(start: str, end: str,
     before = (datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
               - timedelta(days=1)).strftime("%Y-%m-%d")
     opening, closing = value_at(before), value_at(end)
+    # A range opening before collection began has no reading to subtract
+    # from. Falling back to zero counted each track's whole lifetime at the
+    # first reading as plays in range - on top of the imported plays that
+    # lifetime already includes - so All time came out roughly doubled.
+    # The first reading is the opening balance instead, and a track whose
+    # first row came later started from zero, which is what that row says.
+    first = baseline_stamp()
+    baseline = {} if first is None else {
+        (t, u): c for t, u, c in store.connection().execute(
+            "SELECT track_uuid, user_id, play_count FROM play_snapshot"
+            " WHERE taken_on = ?", (first,))}
 
     names = dict(store.connection().execute(
         "SELECT user_id, username FROM play_snapshot GROUP BY user_id"))
@@ -594,7 +625,7 @@ def _plays_between(start: str, end: str,
     for key, finished in closing.items():
         if user_id is not None and key[1] != user_id:
             continue
-        started = opening.get(key, 0)
+        started = opening.get(key, baseline.get(key, 0))
         if finished > started:
             totals[key] = finished - started
 

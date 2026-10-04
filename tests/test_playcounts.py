@@ -687,3 +687,59 @@ def test_coverage_still_reports_the_job_globally(wired):
 
     for who in (ALEX, KELLY):
         assert playcounts.coverage(who)["days_run"] == 1
+
+
+# --- a range that opens before collection began -----------------------------
+# With no reading before the range there was nothing to subtract, and the
+# opening balance fell back to zero: each track's lifetime count at the
+# first reading was counted as plays in range, on top of the imported plays
+# that lifetime already includes. All time showed 192 for 92 (CODE_REVIEW H4).
+
+def test_all_time_does_not_count_the_first_reading_as_plays(wired):
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 100)
+    playcounts.take("2026-03-01")
+    played(wired, "t1", ALEX, 102)
+    playcounts.take("2026-03-05")
+    _import("2024-06-01", "uuid-a", ALEX, 90)
+
+    plays = playcounts.plays_between("2000-01-01", "2026-12-31", user_id=ALEX)
+
+    assert [row["plays"] for row in plays] == [92]
+
+
+def test_a_track_first_played_after_collection_began_counts_from_zero(wired):
+    add_track(wired, "t1", tags=UUID_A)
+    add_track(wired, "t2", tags=UUID_B, path="b.mp3")
+    played(wired, "t1", ALEX, 100)
+    playcounts.take("2026-03-01")
+    played(wired, "t2", ALEX, 2)
+    playcounts.take("2026-03-05")
+
+    plays = playcounts.plays_between("2000-01-01", "2026-12-31", user_id=ALEX)
+
+    assert {row["track_uuid"]: row["plays"] for row in plays} == {"uuid-b": 2}
+
+
+def test_collection_began_at_the_first_reading_even_if_it_stored_nothing(wired):
+    playcounts.take("2026-03-01")
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 3)
+    playcounts.take("2026-03-02")
+
+    assert playcounts.baseline_stamp() == "2026-03-01"
+
+
+def test_an_existing_history_learns_when_collection_began(tmp_path):
+    path = tmp_path / "state.db"
+    store.connect(path)
+    store.connection().execute("DELETE FROM play_collection")
+    store.connection().execute(
+        "INSERT INTO play_snapshot (taken_on, track_uuid, user_id, username,"
+        " play_count) VALUES ('2026-09-06', 'u', 'a', 'alex', 4)")
+    store.connection().commit()
+
+    store.connect(path)
+
+    assert store.connection().execute(
+        "SELECT began FROM play_collection").fetchone() == ("2026-09-06",)

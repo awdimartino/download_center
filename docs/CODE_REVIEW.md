@@ -172,7 +172,7 @@ it less likely.
       start returned Alex's operation). Trade-off: two people can now run
       ReplayGain, or a lookup, at the same time on the Pi.
 
-- [ ] **H4. Listening overcounts, by default.** `app/playcounts.py:597`
+- [x] **H4. Listening overcounts, by default.** `app/playcounts.py:597`
       (`started = opening.get(key, 0)`). For a range that starts before a
       track's first stored reading — including the default **All time** —
       there is no opening value, so the track's whole lifetime count at its
@@ -182,6 +182,14 @@ it less likely.
       *Fix:* fall back to the track's first stored reading, not 0 — or,
       better, compute Listening from the same per-play list Home uses
       (fixes H5 and M1 too).
+      **Fixed** the narrow way: a missing opening balance falls back to the
+      track's row from the first reading, else 0. "First reading" is
+      recorded in a new one-row `play_collection` table by `take`, even when
+      that reading stored nothing; an existing database backfills it from
+      `MIN(taken_on)`. Keying it on the first *stored* reading instead broke
+      six tests that model a fresh install, whose first real plays would
+      have been read as a baseline. Reproduced first (192 → 92). The
+      one-list rewrite is still open as M1.
 
 - [ ] **H5. Home undercounts: the first play of every newly played track is
       lost.** `app/overview.py:98-101`. Every track's first stored row is
