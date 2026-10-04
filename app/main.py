@@ -1575,6 +1575,15 @@ def _library_folder(identity: navidrome.Identity, library_id: int,
     return root / folder
 
 
+def _not_arriving(folder: Path) -> None:
+    """409 while the inbox is still filing into this album: setting it aside
+    now would leave the tracks still on their way behind."""
+    if inbox.receiving(folder):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{folder.name} is still arriving; try again shortly.")
+
+
 def _copy_from_track_row(row: dict[str, Any], library_id: int,
                          album: str, artist: str) -> duplicates.Copy:
     """Enough of duplicates.Copy to quarantine a track by hand.
@@ -1615,11 +1624,13 @@ async def api_library_quarantine(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    folder = _library_folder(session.identity, body.library_id, body.folder)
+    _not_arriving(folder)
     copies = [_copy_from_track_row(t, body.library_id, body.album,
                                    t["artist"] or body.artist)
               for t in found["items"]]
     outcome = await _locked_request(
-        [_library_folder(session.identity, body.library_id, body.folder)],
+        [folder],
         functools.partial(duplicates.quarantine_many, copies, session.identity))
 
     if outcome.get("quarantined"):
@@ -1659,11 +1670,13 @@ async def api_track_quarantine(
         raise HTTPException(status_code=404,
                             detail="That track is not in this album.")
 
+    folder = _library_folder(session.identity, body.library_id, body.folder)
+    _not_arriving(folder)
     copy = _copy_from_track_row(track, body.library_id, body.album,
                                 track["artist"] or body.artist)
     try:
         moved = await _locked_request(
-            [_library_folder(session.identity, body.library_id, body.folder)],
+            [folder],
             functools.partial(duplicates.quarantine_one, copy, session.identity))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

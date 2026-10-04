@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import navidrome, store
+from . import filer, navidrome, store
 from .matcher import FEATURING
 from .walk import NDIGNORE, QUARANTINE_NAME
 from .config import settings
@@ -472,7 +472,48 @@ def _set_aside(copy: Copy, root: Path) -> Path:
         shutil.move(str(source), str(target))
     except Exception as exc:
         raise ValueError(f"{copy.path}: {type(exc).__name__}: {exc}") from exc
+    try:
+        _leave(source.parent, root)
+    except OSError as exc:
+        log.warning("could not tidy %s after setting %s aside: %s",
+                    source.parent, copy.path, exc)
     return target
+
+
+def _leave(folder: Path, root: Path) -> None:
+    """Tidy the folders a set-aside track has left, once no audio is in them.
+
+    Quarantining a whole album left its folder behind, holding the cover
+    and nothing to play. A folder cover follows the tracks into the
+    quarantine, to the same place inside it, so the album can be put back
+    whole; then the emptied folder goes, and its parents if they emptied
+    too. Anything else - a cue sheet, a rip log - keeps its folder, which is
+    the right way to be wrong about somebody's files.
+    """
+    root = root.resolve()
+    here = folder.resolve()
+    aside = root / QUARANTINE_NAME
+    while here != root and root in here.parents and aside not in (here, *here.parents):
+        if not here.is_dir():
+            here = here.parent
+            continue
+        if filer.audio_in(here):
+            return
+        for name in filer.COVER_NAMES:
+            for suffix in filer.COVER_SUFFIXES:
+                cover = here / f"{name}{suffix}"
+                if not cover.is_file():
+                    continue
+                target = aside / here.relative_to(root) / cover.name
+                if target.exists():
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(cover), str(target))
+        try:
+            here.rmdir()
+        except OSError:
+            return              # something else is in there; leave it
+        here = here.parent
 
 
 def quarantine_one(copy: Copy, identity: navidrome.Identity) -> dict[str, Any]:

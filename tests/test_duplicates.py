@@ -711,3 +711,89 @@ def test_an_old_record_is_still_found_behind_two_thousand_newer_ones(
     old = next(e for e in survey["entries"] if e["name"] == "old.mp3")
     assert old["recorded"] is True
     assert old["title"] == "Old"
+
+
+# --- the folder a quarantined album leaves behind (L20) -------------------------
+
+def _album_on_disk(root, *names, cover=True, disc=None):
+    folder = root / "Artist" / "Album"
+    tracks = folder / disc if disc else folder
+    tracks.mkdir(parents=True)
+    for name in names:
+        (tracks / name).write_bytes(b"audio")
+    if cover:
+        (folder / "cover.jpg").write_bytes(b"art")
+    return folder
+
+
+def test_quarantining_a_whole_album_takes_its_cover_and_removes_the_folder(
+        tmp_path, state_db, identity):
+    root = tmp_path / "music"
+    folder = _album_on_disk(root, "01 Song.mp3", "02 Song.mp3")
+
+    duplicates.quarantine_many([_copy("a", "Artist/Album/01 Song.mp3"),
+                                _copy("b", "Artist/Album/02 Song.mp3")], identity)
+
+    assert not folder.exists()
+    assert not (root / "Artist").exists()
+    aside = root / duplicates.QUARANTINE_NAME / "Artist" / "Album"
+    assert sorted(p.name for p in aside.iterdir()) == [
+        "01 Song.mp3", "02 Song.mp3", "cover.jpg"]
+
+
+def test_a_multi_disc_album_is_tidied_from_its_disc_folder_up(tmp_path, state_db,
+                                                             identity):
+    root = tmp_path / "music"
+    folder = _album_on_disk(root, "01 Song.mp3", disc="CD1")
+
+    duplicates.quarantine_one(_copy("a", "Artist/Album/CD1/01 Song.mp3"), identity)
+
+    assert not folder.exists()
+    assert (root / duplicates.QUARANTINE_NAME / "Artist" / "Album"
+            / "cover.jpg").is_file()
+
+
+def test_the_folder_and_cover_stay_while_a_track_is_left(tmp_path, state_db,
+                                                         identity):
+    root = tmp_path / "music"
+    folder = _album_on_disk(root, "01 Song.mp3", "02 Song.mp3")
+
+    duplicates.quarantine_one(_copy("a", "Artist/Album/01 Song.mp3"), identity)
+
+    assert (folder / "cover.jpg").is_file()
+    assert (folder / "02 Song.mp3").is_file()
+
+
+def test_a_file_it_does_not_know_keeps_the_folder(tmp_path, state_db, identity):
+    root = tmp_path / "music"
+    folder = _album_on_disk(root, "01 Song.mp3")
+    (folder / "rip.log").write_text("EAC")
+
+    duplicates.quarantine_one(_copy("a", "Artist/Album/01 Song.mp3"), identity)
+
+    assert sorted(p.name for p in folder.iterdir()) == ["rip.log"]
+
+
+@pytest.mark.asyncio
+async def test_an_album_still_arriving_is_not_quarantined(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app import inbox, library, main
+
+    monkeypatch.setattr(library, "tracks", lambda identity, lid, folder: {
+        "items": [{"id": "t1", "path": "Artist/Album/01.mp3", "artist": "A"}]})
+    identity = SimpleNamespace(libraries=[{"id": 1, "path": str(tmp_path)}])
+    monkeypatch.setattr(inbox, "receiving", lambda path: True)
+    moved = []
+    monkeypatch.setattr(duplicates, "quarantine_many",
+                        lambda copies, identity: moved.append(1))
+
+    with pytest.raises(HTTPException) as refused:
+        await main.api_library_quarantine(
+            main.LibraryQuarantine(library_id=1, folder="Artist/Album"),
+            SimpleNamespace(identity=identity))
+
+    assert refused.value.status_code == 409
+    assert moved == []

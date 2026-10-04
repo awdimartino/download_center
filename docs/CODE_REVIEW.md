@@ -871,8 +871,14 @@ it less likely.
 
 ### Library and listening
 
-- [ ] **L20.** Quarantine has no "still arriving" check and leaves the
+- [x] **L20.** Quarantine has no "still arriving" check and leaves the
       emptied folder (`main.py:1439-1509`).
+      **Fixed:** both quarantine routes answer 409 while
+      `inbox.receiving` the folder. `duplicates._leave` runs after each
+      file is set aside: once a folder has no audio, its folder covers
+      move to the matching place in the quarantine and the folder is
+      removed, walking up through emptied parents; any other file keeps
+      it. Reproduced first.
 - [ ] **L21.** The barred-cover memory is lost on restart; `barred_known`
       ignores the stamp, so a squared cover stays flagged until the next
       survey; and a card already flagged *Review* never gets the *Cover*

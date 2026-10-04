@@ -822,6 +822,13 @@ library into `duplicates-removed/` (section 9), recorded in the same
 ledger. The files to move are taken from Navidrome's index for that folder,
 never from the request. Stars are not migrated, since there is no other copy
 to move them to. It confirms first; putting a file back is a manual job.
+It is refused while the inbox is still filing into that album.
+
+When the last track leaves a folder (by quarantine or a resolved
+duplicate), its folder cover follows the tracks to the same place inside
+the quarantine, so the album can be put back whole, and the emptied folder
+is removed with any parents it emptied. Anything else in it, such as a cue
+sheet or a rip log, keeps the folder.
 
 ### Genres and Rescan
 
