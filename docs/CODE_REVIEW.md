@@ -299,7 +299,7 @@ it less likely.
       dated every play 1 March; it now leaves `play_date` unset unless asked.
       Reproduced first.
 
-- [ ] **M2. Re-running the Last.fm import after `--times` doubles plays; the
+- [x] **M2. Re-running the Last.fm import after `--times` doubles plays; the
       hand-over day is imported twice.** `app/lastfm.py:240, 311-324, 606-607`.
       A plain `--apply` re-inserts bare-date rows beside the timestamped
       rows `--times` wrote. The "stop at the first snapshot" cutoff compares
@@ -307,6 +307,13 @@ it less likely.
       uses the minimum across all users, and mixes local and UTC.
       *Fix:* refuse a plain import when timestamped rows exist; compare
       instants against this user's first reading.
+      **Fixed:** `--apply` without `--times` exits, writing nothing, when the
+      account already has timestamped rows. The cutoff is now an instant:
+      when collection began (`playcounts.baseline_stamp`, H4's rule, so
+      global rather than per user), compared with each scrobble's unix time.
+      A bare-date first reading held the total at the end of its day, so its
+      cutoff is the next local midnight; the old code dropped that day's
+      scrobbles. Tests cover the cutoff and the count, not the exit itself.
 
 - [ ] **M3. Two files sharing a UUID can make phantom plays.**
       `app/playcounts.py:191-201`. `_current` keeps whichever annotation row

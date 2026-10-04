@@ -40,7 +40,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from . import navidrome, playcounts, store
@@ -214,6 +214,35 @@ def library_index(connection: sqlite3.Connection) -> dict[tuple[str, str], list[
 
 # --- putting the two together -----------------------------------------------
 
+def _cutoff(began: str | None) -> float | None:
+    """When collection began, as a unix time.
+
+    Compared as an instant, not as text. "2026-09-25" sorts before
+    "2026-09-25T17:00", so comparing a scrobble's day with a timestamped
+    first reading imported the whole handover day - including the plays
+    after the reading, which the snapshots count too. A bare date is a
+    reading from the nightly era, which held the total at the *end* of that
+    day, so collection began at the next local midnight.
+    """
+    if not began:
+        return None
+    if "T" in began:
+        moment = datetime.fromisoformat(began)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        return moment.timestamp()
+    day = datetime.strptime(began, "%Y-%m-%d").replace(tzinfo=playcounts.zone())
+    return (day + timedelta(days=1)).timestamp()
+
+
+def timed_rows(user_id: str, source: str = SOURCE) -> int:
+    """How many of this person's imported rows `--times` has timestamped."""
+    return store.connection().execute(
+        "SELECT COUNT(*) FROM play_imported"
+        " WHERE user_id = ? AND source = ? AND played_at LIKE '%T%'",
+        (user_id, source)).fetchone()[0]
+
+
 def plan(username: str, user_id: str, played: list[tuple[str, str, int]],
          index: dict[tuple[str, str], list[str]],
          before: str | None) -> dict[str, Any]:
@@ -224,11 +253,13 @@ def plan(username: str, user_id: str, played: list[tuple[str, str, int]],
     imported row saying "argyle_nz" for the same person reads like two
     different listeners.
 
-    `before` is the first day snapshots cover. Scrobbles from that day
-    onwards are dropped: the nightly snapshots already count them, and
-    importing both would double every play on the handover day.
+    `before` is when collection began (`playcounts.baseline_stamp`).
+    Scrobbles from that moment on are dropped: the snapshots count them,
+    and importing both would double them. Scrobbles before it are inside the
+    first reading's lifetimes, which count as nothing, so they are kept.
     """
     zone = playcounts.zone()
+    cutoff = _cutoff(before)
     per_day: dict[tuple[str, str], int] = collections.Counter()
     matched = ambiguous = unmatched = overlapping = 0
     ambiguous_examples: list[str] = []
@@ -236,7 +267,7 @@ def plan(username: str, user_id: str, played: list[tuple[str, str, int]],
 
     for artist, track, when in played:
         day = datetime.fromtimestamp(when, zone).strftime("%Y-%m-%d")
-        if before is not None and day >= before:
+        if cutoff is not None and when >= cutoff:
             overlapping += 1
             continue
         key = (normalise(artist), normalise(track))
@@ -600,10 +631,18 @@ def main() -> int:
     if args.times:
         return _report_times(args, user_id, played, index)
 
-    # Snapshots cover from their first day onwards; importing over the top of
-    # them would double every play on the handover day.
-    first_snapshot = store.connection().execute(
-        "select min(taken_on) from play_snapshot").fetchone()[0]
+    # A plain import writes one row per day. After --times has split those
+    # into timestamped rows, writing the day rows again puts both beside
+    # each other and doubles every play.
+    if args.apply and timed_rows(user_id):
+        raise SystemExit(
+            f"{args.user}'s imported plays already carry times from --times; "
+            "a plain import would add day rows beside them and double them. "
+            "Nothing was written. Use --times to pick up anything new.")
+
+    # Snapshots count everything from when collection began; importing over
+    # the top of them would double those plays.
+    first_snapshot = playcounts.baseline_stamp()
     # Stored under the Navidrome name so both sources label one person the
     # same way; the Last.fm name is reported above and nowhere else.
     planned = plan(args.user, user_id, played, index, first_snapshot)

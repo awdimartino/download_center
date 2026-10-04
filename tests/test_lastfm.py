@@ -272,6 +272,7 @@ def test_the_audit_flag_is_actually_wired_up(tmp_path, monkeypatch, capsys):
             return R()
     monkeypatch.setattr(lf.navidrome, "open_db", lambda: FakeConn())
     monkeypatch.setattr(lf.store, "connection", lambda: FakeConn())
+    monkeypatch.setattr(lf.playcounts, "baseline_stamp", lambda: None)
     monkeypatch.setattr(sys, "argv",
                         ["lastfm", "alex", "--audit", str(target)])
 
@@ -450,3 +451,51 @@ def test_a_write_that_would_change_the_total_is_refused(state_db):
         lastfm.write_times(planned, "alex")
 
     assert _plays() == [("2026-02-14", "uuid-a", 1)], "rolled back"
+
+
+# --- the handover, and running it twice -------------------------------------
+# The cutoff compared a scrobble's day with the first reading as text, so a
+# timestamped first reading let the whole handover day in - plays after the
+# reading included, which the snapshots count too. And a plain import after
+# --times wrote day rows beside the timestamped ones (CODE_REVIEW M2).
+
+def test_the_handover_day_is_split_at_the_moment_collection_began(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "play_day_timezone", "UTC")
+    index = _index([("Radiohead", "Let Down", ["uuid-a"])])
+    played = [
+        ("Radiohead", "Let Down", 1790323200),   # 2026-09-25 08:00 UTC
+        ("Radiohead", "Let Down", 1790359200),   # 2026-09-25 18:00 UTC
+    ]
+    planned = lastfm.plan("alex", "u-alex", played, index,
+                          before="2026-09-25T17:00:00+00:00")
+
+    assert planned["matched"] == 1
+    assert planned["after_snapshots_began"] == 1
+
+
+def test_a_nightly_first_reading_held_the_whole_of_its_day(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "play_day_timezone", "UTC")
+    index = _index([("Radiohead", "Let Down", ["uuid-a"])])
+    played = [("Radiohead", "Let Down", 1790359200)]   # 2026-09-25 18:00
+
+    kept = lastfm.plan("alex", "u-alex", played, index, before="2026-09-25")
+    dropped = lastfm.plan("alex", "u-alex", played, index, before="2026-09-24")
+
+    assert kept["matched"] == 1
+    assert dropped["after_snapshots_began"] == 1
+
+
+def test_timed_rows_are_counted_per_person(state_db):
+    from app import store
+
+    store.connection().executemany(
+        "INSERT INTO play_imported (played_at, track_uuid, user_id, username,"
+        " plays, source) VALUES (?, ?, ?, 'alex', 1, 'lastfm')",
+        [("2026-01-01", "a", "u-alex"), ("2026-01-02T10:00:00+00:00", "a", "u-alex"),
+         ("2026-01-02T10:00:00+00:00", "a", "u-kelly")])
+
+    assert lastfm.timed_rows("u-alex") == 1

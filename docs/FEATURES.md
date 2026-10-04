@@ -256,7 +256,10 @@ different kind of evidence — somebody else's record matched by artist and
 title, not a count this app read. `--times` later recovered each scrobble's
 exact time for rows already imported, without re-matching: it only replaces
 a day's row with timestamped rows when the scrobbles resolve to exactly that
-track, and rolls back if the total would move.
+track, and rolls back if the total would move. Scrobbles from the moment
+collection began onwards are left to the snapshots, and a plain import is
+refused once `--times` has run, since it would write day rows beside the
+timestamped ones.
 
 **Days and hours** are cut in `play_day_timezone` (default UTC).
 
