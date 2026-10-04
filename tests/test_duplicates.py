@@ -633,3 +633,30 @@ async def test_auto_resolve_waits_while_music_is_arriving(monkeypatch, identity)
     with pytest.raises(HTTPException) as refused:
         await main.auto_resolve_apply(main.AutoResolve(groups=[]), session)
     assert refused.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_keep_both_refuses_a_group_you_cannot_see(monkeypatch, identity,
+                                                        state_db):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app import main
+
+    monkeypatch.setattr(main, "_duplicate_groups", lambda identity: [])
+    session = SimpleNamespace(identity=identity)
+
+    with pytest.raises(HTTPException) as refused:
+        await main.dismiss_duplicate(main.DismissRequest(key="files:abc"), session)
+    assert refused.value.status_code == 404
+    assert store.dismissed_duplicates() == set()
+
+
+def test_a_note_is_capped():
+    from pydantic import ValidationError
+
+    from app import main
+
+    with pytest.raises(ValidationError):
+        main.DismissRequest(key="files:abc", note="x" * 501)

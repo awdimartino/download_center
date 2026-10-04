@@ -48,10 +48,15 @@ SCHEMA = """
 -- library is scanned, and a review list that never shrinks is one nobody
 -- reads. Keyed by the group's identity, not by path, so the decision holds
 -- when beets moves the files.
+-- `decided_by` is the user id of whoever chose "keep both", so one person's
+-- decision does not hide a group from somebody else sharing the library.
+-- Empty for decisions made before it was recorded, which apply to everyone.
 CREATE TABLE IF NOT EXISTS duplicate_dismissed (
-    group_key   TEXT PRIMARY KEY,
+    group_key   TEXT NOT NULL,
+    decided_by  TEXT NOT NULL DEFAULT '',
     note        TEXT,
-    decided_at  TEXT NOT NULL
+    decided_at  TEXT NOT NULL,
+    PRIMARY KEY (group_key, decided_by)
 );
 
 -- What was actually moved, and where to. Nothing is deleted, but "nothing is
@@ -219,6 +224,29 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE play_imported RENAME COLUMN day TO played_at")
 
+    # duplicate_dismissed gains `decided_by`, which is part of its key, so
+    # the table is rebuilt rather than altered. Existing decisions keep an
+    # empty `decided_by`: nobody recorded who made them, so they still apply
+    # to everyone.
+    if "duplicate_dismissed" in tables:
+        columns = {row[1] for row in
+                   conn.execute("PRAGMA table_info(duplicate_dismissed)")}
+        if "decided_by" not in columns:
+            conn.execute("ALTER TABLE duplicate_dismissed"
+                         " RENAME TO duplicate_dismissed_old")
+            conn.execute(
+                "CREATE TABLE duplicate_dismissed ("
+                " group_key TEXT NOT NULL,"
+                " decided_by TEXT NOT NULL DEFAULT '',"
+                " note TEXT, decided_at TEXT NOT NULL,"
+                " PRIMARY KEY (group_key, decided_by))")
+            conn.execute(
+                "INSERT INTO duplicate_dismissed"
+                " (group_key, decided_by, note, decided_at)"
+                " SELECT group_key, '', note, decided_at"
+                " FROM duplicate_dismissed_old")
+            conn.execute("DROP TABLE duplicate_dismissed_old")
+
 
 def connection() -> sqlite3.Connection:
     """The open state.db handle, for modules that own their own tables.
@@ -237,23 +265,31 @@ def connection() -> sqlite3.Connection:
 
 # --- duplicate review decisions -------------------------------------------
 
-def dismiss_duplicate(group_key: str, note: str = "") -> None:
-    """Remember that a duplicate group was looked at and left alone."""
+def dismiss_duplicate(group_key: str, note: str = "",
+                      decided_by: str = "") -> None:
+    """Remember that a duplicate group was looked at and left alone, by whom."""
     assert _conn is not None, "state.db not connected"
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
     with _lock:
         _conn.execute(
             "INSERT OR REPLACE INTO duplicate_dismissed"
-            " (group_key, note, decided_at) VALUES (?, ?, ?)",
-            (group_key, note, stamp))
+            " (group_key, decided_by, note, decided_at) VALUES (?, ?, ?, ?)",
+            (group_key, decided_by, note, stamp))
         _conn.commit()
 
 
-def dismissed_duplicates() -> set[str]:
+def dismissed_duplicates(user_id: str | None = None) -> set[str]:
+    """Groups this person left alone, plus the decisions recorded before
+    anyone's were (those apply to everyone). None means every decision."""
     assert _conn is not None, "state.db not connected"
     with _lock:
-        return {row[0] for row in
-                _conn.execute("SELECT group_key FROM duplicate_dismissed")}
+        if user_id is None:
+            rows = _conn.execute("SELECT group_key FROM duplicate_dismissed")
+        else:
+            rows = _conn.execute(
+                "SELECT group_key FROM duplicate_dismissed"
+                " WHERE decided_by IN ('', ?)", (user_id,))
+        return {row[0] for row in rows}
 
 
 # --- albums somebody has dealt with ---------------------------------------

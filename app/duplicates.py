@@ -253,7 +253,7 @@ def find(connection: sqlite3.Connection,
     set_aside = store.quarantined_track_ids()
     if set_aside:
         copies = [c for c in copies if c.id not in set_aside]
-    dismissed = store.dismissed_duplicates()
+    dismissed = store.dismissed_duplicates(identity.user_id)
     groups: list[Group] = []
     # The same pair is often found twice - once by MusicBrainz id and once by
     # title - and listing it twice would have someone resolve it, then meet it

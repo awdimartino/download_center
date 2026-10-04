@@ -19,7 +19,7 @@ from fastapi import (Depends, FastAPI, File, Form, HTTPException, Request,
                      Response, UploadFile, WebSocket, WebSocketDisconnect)
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import auth, beets_runner, combine, covers, diskaudit, duplicates
@@ -1176,8 +1176,8 @@ class ResolveRequest(BaseModel):
 
 
 class DismissRequest(BaseModel):
-    key: str
-    note: str = ""
+    key: str = Field(max_length=64)
+    note: str = Field(default="", max_length=500)
 
 
 def _duplicate_groups(identity: navidrome.Identity) -> list[duplicates.Group]:
@@ -1229,7 +1229,13 @@ async def dismiss_duplicate(
     request: DismissRequest,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    await asyncio.to_thread(store.dismiss_duplicate, request.key, request.note)
+    # Only a group this person can see: any key at all used to be accepted,
+    # from anyone, with a note of any size.
+    groups = await asyncio.to_thread(_duplicate_groups, session.identity)
+    if not any(g.dismiss_key == request.key for g in groups):
+        raise HTTPException(status_code=404, detail="No such duplicate group.")
+    await asyncio.to_thread(store.dismiss_duplicate, request.key, request.note,
+                            session.identity.user_id)
     return {"dismissed": request.key}
 
 

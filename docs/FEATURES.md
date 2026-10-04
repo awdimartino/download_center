@@ -99,7 +99,7 @@ Knowing which store owns a fact is most of understanding the code.
 | `play_collection` | when play counts were first read: the baseline |
 | `play_imported` | listening from before collection began (Last.fm) |
 | `album_reviewed` | albums someone has dealt with in Library |
-| `duplicate_dismissed` | "keep both" decisions |
+| `duplicate_dismissed` | "keep both" decisions, and whose |
 | `duplicate_quarantined` | every file set aside: from where, to where, who decided, the copy kept |
 | `ledger` | legacy download record; no longer read, left on disk rather than dropped |
 
@@ -862,7 +862,9 @@ goes. Then:
 5. Navidrome is asked to scan.
 
 **Keep both** records the decision against a hash of the copies' track ids,
-so it survives regrouping. **Resolve MusicBrainz matches** previews every
+so it survives regrouping, and against you: someone else sharing the library
+still sees the group. (Decisions from before October 2026 recorded nobody
+and apply to everyone.) **Resolve MusicBrainz matches** previews every
 confident group, confirms, and resolves exactly those groups with their
 pre-selected copy, as an operation; a group that appeared or changed since
 the preview is left for the next look. It is refused while a download or

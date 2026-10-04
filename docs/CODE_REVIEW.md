@@ -662,12 +662,16 @@ it less likely.
       is filing into the person's libraries. Reproduced first (one group
       previewed, two resolved). Not clicked through in a browser.
 
-- [ ] **M32. "Keep both" is not scoped to the caller and its input is
+- [x] **M32. "Keep both" is not scoped to the caller and its input is
       unbounded.** `app/main.py:1177-1183`, `app/store.py:224-233`. Any user
       can dismiss any key with any size of note; in a shared library one
       person's decision hides the group from the other.
       *Fix:* validate the key against the caller's groups; cap the note;
       record who decided.
+      **Fixed** as suggested: the key must be one of the caller's groups
+      (404), key and note are capped (64 and 500), and `duplicate_dismissed`
+      gains `decided_by` in its key - rebuilt by a migration, with older
+      rows kept for everyone. Each person sees only their own decisions.
 
 - [ ] **M33. Sessions never pick up privilege changes.** `app/auth.py:69-78, 130-137`.
       Admin status and libraries are fixed at sign-in (libraries re-read only

@@ -141,3 +141,33 @@ def test_a_reconnect_applies_the_registry_schema_again(tmp_path):
         assert registry.count() == 1
     finally:
         _close()
+
+
+# --- "keep both" belongs to whoever decided it (CODE_REVIEW M32) -----------
+
+def test_one_persons_keep_both_does_not_hide_a_group_from_another(state_db):
+    store.dismiss_duplicate("group-1", "keep both", decided_by="u-alex")
+
+    assert store.dismissed_duplicates("u-alex") == {"group-1"}
+    assert store.dismissed_duplicates("u-kelly") == set()
+
+
+def test_decisions_from_before_anyone_was_recorded_apply_to_everyone(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE duplicate_dismissed (group_key TEXT PRIMARY KEY,"
+                " note TEXT, decided_at TEXT NOT NULL)")
+    old.execute("INSERT INTO duplicate_dismissed VALUES ('legacy', 'n', 'then')")
+    old.commit()
+    old.close()
+
+    store.connect(path)
+    try:
+        assert store.dismissed_duplicates("u-kelly") == {"legacy"}
+        store.dismiss_duplicate("legacy", "mine too", decided_by="u-alex")
+        assert store.dismissed_duplicates("u-alex") == {"legacy"}
+    finally:
+        store._conn.close()
+        store._conn = None
