@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browse redesign</title>
+<style>
+  /* The live site's tokens (app/static/style.css), same as the Library
+     mockup, so the decisions here are about layout and flow. */
+  :root{
+    color-scheme:dark;
+    --bg:#101217; --panel:#191c23; --panel-2:#21252e; --panel-3:#282d38;
+    --line:#2c313b; --line-soft:#232831;
+    --text:#e7e9ee; --muted:#949ba8; --faint:#6d7481;
+    --accent:#4ea1ff; --ok:#45c47a; --warn:#e0a33e; --bad:#e0574a;
+    --tint-accent:color-mix(in srgb, var(--accent) 12%, transparent);
+    --tint-warn:color-mix(in srgb, var(--warn) 12%, transparent);
+    --tint-ok:color-mix(in srgb, var(--ok) 12%, transparent);
+    --tint-bad:color-mix(in srgb, var(--bad) 12%, transparent);
+    --on-accent:#071320;
+    --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:24px; --s-6:32px;
+    --t-xs:11px; --t-sm:12.5px; --t-md:13.5px; --t-lg:15px; --t-xl:17px; --t-2xl:21px;
+    --r-sm:6px; --r-md:9px; --r-lg:12px;
+    --shadow:0 1px 2px rgba(0,0,0,.28), 0 10px 26px -16px rgba(0,0,0,.8);
+    --float-shadow:0 6px 20px rgba(0,0,0,.45);
+    --ring:0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
+    --rail:340px;
+  }
+  *{box-sizing:border-box;}
+  [hidden]{display:none !important;}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+       -webkit-font-smoothing:antialiased;overflow-x:clip;}
+  button{display:inline-flex;align-items:center;justify-content:center;gap:var(--s-2);
+         min-height:34px;padding:0 var(--s-3);border:0;border-radius:999px;
+         background:color-mix(in srgb, var(--text) 7%, transparent);color:var(--text);
+         font:inherit;font-size:var(--t-sm);white-space:nowrap;cursor:pointer;}
+  button:hover{background:color-mix(in srgb, var(--text) 12%, transparent);}
+  button:focus-visible{outline:none;box-shadow:var(--ring);}
+  button.primary{background:var(--accent);color:var(--on-accent);font-weight:600;}
+  button.primary:hover{background:color-mix(in srgb, var(--accent) 86%, #fff);}
+  button.bare{background:none;padding:0 var(--s-2);}
+  button.bare:hover{background:color-mix(in srgb, var(--text) 8%, transparent);}
+  button:disabled{opacity:.4;cursor:default;}
+  input{min-height:38px;padding:0 var(--s-3);border:1px solid transparent;border-radius:var(--r-md);
+        background:color-mix(in srgb, var(--text) 6%, transparent);color:var(--text);font:inherit;font-size:16px;}
+  input:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring);}
+
+  /* ---- page: results on the left, downloads in a rail on the right ---- */
+  .page{max-width:1320px;margin:0 auto;padding:var(--s-4) var(--s-4) 120px;}
+  .titlebar{display:flex;align-items:center;gap:var(--s-3);margin-bottom:var(--s-4);}
+  .burger{width:44px;height:44px;border-radius:999px;background:var(--panel-2);flex:none;flex-direction:column;gap:0;}
+  .burger span{display:block;width:16px;height:2px;background:var(--text);margin:2px 0;border-radius:2px;}
+  h1{font-size:var(--t-2xl);margin:0;font-weight:650;}
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) var(--rail);gap:var(--s-6);align-items:start;}
+  .main{min-width:0;}
+
+  /* ---- the search: pinned, so it never scrolls away from the results ---- */
+  .searchbar{position:sticky;top:0;z-index:5;padding:var(--s-2) 0 var(--s-3);
+             background:linear-gradient(var(--bg) 82%, transparent);}
+  .search{display:flex;gap:var(--s-2);}
+  .field{flex:1;position:relative;}
+  .field input{width:100%;min-height:46px;padding-left:42px;padding-right:38px;border-radius:999px;font-size:16px;
+               background:var(--panel);}
+  .field .icon{position:absolute;left:15px;top:50%;transform:translateY(-50%);color:var(--faint);pointer-events:none;}
+  .field .clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:30px;width:30px;padding:0;background:none;color:var(--faint);}
+  .search > button{min-height:46px;padding:0 var(--s-5);}
+  .link-hint{display:flex;align-items:center;gap:var(--s-2);margin-top:var(--s-2);font-size:var(--t-sm);color:var(--accent);}
+  .link-hint .dot{width:6px;height:6px;border-radius:999px;background:var(--accent);}
+  .chips{display:flex;gap:var(--s-1);margin-top:var(--s-3);flex-wrap:wrap;}
+  .chip{background:none;border:1px solid var(--line);color:var(--muted);min-height:30px;}
+  .chip[aria-pressed=true]{background:var(--tint-accent);border-color:transparent;color:var(--accent);}
+
+  /* ---- sections ---- */
+  .section-title{font-size:var(--t-lg);font-weight:650;margin:var(--s-5) 0 var(--s-3);display:flex;align-items:baseline;gap:var(--s-2);}
+  .section-title small{color:var(--faint);font-weight:500;font-size:var(--t-sm);}
+  .section-title .see{margin-left:auto;color:var(--accent);background:none;min-height:26px;padding:0 var(--s-2);}
+
+  /* ---- covers ---- */
+  .art{display:block;overflow:hidden;background:var(--panel-2);position:relative;}
+  .art svg{display:block;width:100%;height:100%;}
+
+  /* ---- album cards: the cover carries its own download state ---- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:var(--s-5) var(--s-4);}
+  .card{position:relative;cursor:pointer;border-radius:var(--r-md);outline:none;min-width:0;}
+  .card:focus-visible{box-shadow:var(--ring);}
+  .sleeve{position:relative;border-radius:var(--r-md);overflow:hidden;box-shadow:var(--shadow);}
+  .sleeve .art{width:100%;aspect-ratio:1;transition:transform .15s ease;}
+  .card:hover .sleeve .art{transform:scale(1.03);}
+  .card-title{margin-top:var(--s-2);font-size:var(--t-md);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .card-sub{font-size:var(--t-sm);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .flags{position:absolute;top:8px;left:8px;display:flex;gap:4px;z-index:2;}
+  .flag{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;
+        background:rgba(16,18,23,.8);backdrop-filter:blur(6px);color:var(--text);}
+  .flag.ok{color:var(--ok);}
+  .flag.part{color:var(--muted);}
+  .flag.bad{color:var(--bad);}
+  /* The quick download, in the corner of the sleeve - shown on hover on a
+     desktop, always there on a touch screen. */
+  .quick{position:absolute;right:8px;bottom:8px;z-index:2;width:38px;height:38px;padding:0;
+         background:var(--accent);color:var(--on-accent);box-shadow:var(--float-shadow);
+         opacity:0;transform:translateY(4px);transition:opacity .15s, transform .15s;}
+  .quick:hover{background:color-mix(in srgb, var(--accent) 86%, #fff);}
+  .card:hover .quick,.card:focus-within .quick{opacity:1;transform:none;}
+  @media (hover:none){.quick{opacity:1;transform:none;}}
+  /* While downloading, the sleeve dims and fills from the bottom. */
+  .veil{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;justify-content:flex-end;
+        background:linear-gradient(transparent 30%, rgba(10,11,15,.85));}
+  .veil-text{padding:0 10px 10px;font-size:var(--t-sm);font-weight:600;}
+  .veil-text small{display:block;font-weight:500;color:var(--muted);font-size:var(--t-xs);}
+  .veil-bar{height:4px;background:rgba(255,255,255,.12);}
+  .veil-fill{height:100%;background:var(--accent);transition:width .4s ease;}
+
+  /* ---- song rows ---- */
+  .rows{display:flex;flex-direction:column;}
+  .row{display:grid;grid-template-columns:40px minmax(0,1fr) auto auto auto;align-items:center;gap:var(--s-3);
+       padding:6px var(--s-2);border-radius:var(--r-md);}
+  .row:hover{background:var(--panel);}
+  .row .art{width:40px;height:40px;border-radius:var(--r-sm);}
+  .row-main{min-width:0;}
+  .row-title{font-size:var(--t-md);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row-sub{font-size:var(--t-sm);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row-sub a{color:inherit;text-decoration:none;cursor:pointer;}
+  .row-sub a:hover{color:var(--text);text-decoration:underline;}
+  .dur{color:var(--faint);font-size:var(--t-sm);font-variant-numeric:tabular-nums;}
+  .state{font-size:var(--t-xs);font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;}
+  .state.ok{color:var(--ok);background:var(--tint-ok);}
+  .state.run{color:var(--accent);background:var(--tint-accent);}
+  .state.wait{color:var(--muted);background:var(--panel-2);}
+  .state.bad{color:var(--bad);background:var(--tint-bad);}
+  .get{min-width:92px;}
+  .row .get{background:none;border:1px solid var(--line);}
+  .row .get:hover{border-color:transparent;background:var(--tint-accent);color:var(--accent);}
+  .get svg{width:14px;height:14px;flex:none;}
+  /* Already owned: still possible, but not the thing to press. */
+  .get.quiet{color:var(--faint);border-color:var(--line-soft) !important;}
+
+  /* ---- artists ---- */
+  .artist-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:var(--s-4);}
+  .artist{text-align:center;cursor:pointer;min-width:0;}
+  .artist .art{width:100%;aspect-ratio:1;border-radius:999px;box-shadow:var(--shadow);}
+  .artist-name{margin-top:var(--s-2);font-weight:600;font-size:var(--t-md);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .artist-sub{color:var(--muted);font-size:var(--t-sm);}
+  .back{margin:var(--s-2) 0 var(--s-3);}
+  .artist-head{display:flex;align-items:center;gap:var(--s-4);}
+  .artist-head .art{width:96px;height:96px;border-radius:999px;flex:none;box-shadow:var(--shadow);}
+  .artist-head h2{margin:0;font-size:var(--t-2xl);}
+
+  .empty{color:var(--muted);text-align:center;padding:var(--s-6) 0;}
+  .welcome{padding:var(--s-5) 0 0;}
+  .welcome p{color:var(--muted);margin:0;max-width:60ch;font-size:var(--t-md);}
+
+  /* ---- the downloads rail ---- */
+  .rail{position:sticky;top:var(--s-4);max-height:calc(100vh - 32px);overflow-y:auto;overscroll-behavior:contain;
+        background:var(--panel);border-radius:var(--r-lg);padding:var(--s-4) var(--s-3) var(--s-3);}
+  .rail-head{display:flex;align-items:baseline;gap:var(--s-2);padding:0 var(--s-1) var(--s-2);}
+  .rail-head h2{margin:0;font-size:var(--t-lg);font-weight:650;}
+  .rail-head small{color:var(--muted);font-size:var(--t-sm);}
+  .rail-head .x{margin-left:auto;display:none;}
+  .group-head{display:flex;align-items:center;gap:var(--s-2);margin:var(--s-3) var(--s-1) var(--s-1);
+              font-size:var(--t-sm);color:var(--muted);font-weight:600;}
+  .group-head button{margin-left:auto;min-height:26px;font-size:var(--t-xs);}
+  .group-head .twist{margin-left:0;background:none;padding:0 var(--s-1);color:var(--muted);font-size:var(--t-sm);font-weight:600;gap:6px;}
+  .group-head .twist svg{transition:transform .15s;}
+  .group-head .twist[aria-expanded=false] svg{transform:rotate(-90deg);}
+  .job{border-radius:var(--r-md);}
+  .job-head{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:var(--s-3);align-items:center;
+            padding:6px var(--s-1);border-radius:var(--r-md);cursor:pointer;}
+  .job-head:hover{background:var(--panel-2);}
+  .job-head .art{width:40px;height:40px;border-radius:var(--r-sm);}
+  .job-title{font-size:var(--t-md);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .job-sub{font-size:var(--t-sm);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .job-sub.bad{color:var(--bad);}
+  .job-bar{height:3px;border-radius:2px;background:var(--panel-3);margin-top:5px;overflow:hidden;}
+  .job-fill{height:100%;background:var(--accent);transition:width .4s ease;}
+  .job .remove{width:28px;min-height:28px;padding:0;background:none;color:var(--faint);opacity:0;}
+  .job-head:hover .remove,.job-head:focus-within .remove{opacity:1;}
+  @media (hover:none){.job .remove{opacity:1;}}
+  .job-tracks{padding:0 var(--s-1) var(--s-2) 56px;}
+  .jt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s-2);font-size:var(--t-sm);padding:3px 0;
+      border-bottom:1px solid var(--line-soft);}
+  .jt:last-child{border-bottom:0;}
+  .jt span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .jt .st{font-size:var(--t-xs);color:var(--faint);}
+  .jt .st.complete{color:var(--ok);} .jt .st.downloading,.jt .st.tagging,.jt .st.matching{color:var(--accent);}
+  .jt .st.failed{color:var(--bad);} .jt .st.skipped{color:var(--muted);}
+  .job-actions{display:flex;gap:var(--s-2);padding:var(--s-1) 0 0;}
+  .job-actions button{min-height:28px;font-size:var(--t-xs);}
+  .finished .job-head{grid-template-columns:32px minmax(0,1fr) auto;padding:4px var(--s-1);}
+  .finished .job-head .art{width:32px;height:32px;}
+  .finished .job-title{font-weight:500;}
+  .rail-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s-2) var(--s-1);}
+  .spin{width:8px;height:8px;border-radius:999px;background:var(--accent);flex:none;animation:pulse 1.4s ease-in-out infinite;}
+  @keyframes pulse{50%{opacity:.35;}}
+
+  /* ---- the phone's version of the rail: a pill, then a sheet ---- */
+  .pill-dock{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:30;display:none;
+             align-items:center;gap:var(--s-2);padding:0 var(--s-4) 0 var(--s-3);min-height:46px;
+             background:var(--panel-3);border-radius:999px;box-shadow:var(--float-shadow);font-size:var(--t-md);}
+  .pill-dock .covers{display:flex;}
+  .pill-dock .covers .art{width:26px;height:26px;border-radius:5px;margin-left:-8px;box-shadow:0 0 0 2px var(--panel-3);}
+  .pill-dock .covers .art:first-child{margin-left:0;}
+  .pill-dock .bad{color:var(--bad);}
+  .scrim{position:fixed;inset:0;background:rgba(5,6,9,.55);z-index:40;}
+
+  /* ---- album drawer, as in the Library ---- */
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:var(--panel);z-index:41;
+          box-shadow:-20px 0 40px rgba(0,0,0,.4);overflow-y:auto;overscroll-behavior:contain;}
+  .drawer-top{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;padding:var(--s-3);
+              background:linear-gradient(var(--panel) 60%, transparent);}
+  .drawer-body{padding:0 var(--s-5) var(--s-6);}
+  .hero{display:flex;gap:var(--s-4);align-items:flex-end;}
+  .hero .sleeve{width:168px;flex:none;}
+  .hero h2{margin:0 0 2px;font-size:var(--t-2xl);line-height:1.2;}
+  .hero .by{color:var(--accent);cursor:pointer;font-weight:600;}
+  .hero .meta{color:var(--muted);font-size:var(--t-sm);margin-top:var(--s-1);}
+  .actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2);margin:var(--s-4) 0;}
+  .actions .note{font-size:var(--t-sm);color:var(--muted);}
+  .tracks{border-top:1px solid var(--line-soft);}
+  .trk{display:grid;grid-template-columns:24px minmax(0,1fr) auto auto auto;align-items:center;gap:var(--s-3);
+       padding:6px var(--s-1);border-bottom:1px solid var(--line-soft);font-size:var(--t-md);}
+  .trk .no{color:var(--faint);text-align:right;font-variant-numeric:tabular-nums;}
+  .trk .t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .trk.held .t{color:var(--muted);}
+  .trk .get{min-width:0;min-height:28px;background:none;color:var(--muted);}
+  .trk .get:hover{color:var(--accent);background:var(--tint-accent);}
+
+  .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:var(--s-3);
+         padding:var(--s-2) var(--s-4);background:var(--panel-3);border-radius:999px;box-shadow:var(--float-shadow);
+         font-size:var(--t-md);max-width:calc(100% - 32px);}
+  @media (min-width:981px){.toast{bottom:24px;}}
+
+  .mock-note{margin-top:var(--s-6);color:var(--faint);font-size:var(--t-sm);border-top:1px solid var(--line-soft);padding-top:var(--s-3);max-width:80ch;}
+
+  @media (max-width:980px){
+    .layout{grid-template-columns:1fr;}
+    .rail{display:none;}
+    .pill-dock{display:flex;}
+    /* Open on a phone, the rail becomes a sheet from the bottom. */
+    body.sheet-open .rail{display:block;position:fixed;left:0;right:0;bottom:0;top:auto;z-index:41;
+      max-height:78vh;border-radius:var(--r-lg) var(--r-lg) 0 0;padding-bottom:var(--s-6);box-shadow:var(--float-shadow);}
+    body.sheet-open .rail-head .x{display:inline-flex;}
+  }
+  @media (max-width:640px){
+    .grid{grid-template-columns:repeat(2,1fr);gap:var(--s-4) var(--s-3);}
+    .artist-row{grid-template-columns:repeat(3,1fr);}
+    .search > button{padding:0 var(--s-4);}
+    /* On a phone the button keeps only its arrow, so the state badge
+       still fits beside the title. */
+    .row{grid-template-columns:40px minmax(0,1fr) auto auto;gap:var(--s-2);}
+    .row .dur{display:none;}
+    .get{min-width:0;width:36px;padding:0;}
+    .get .lbl{display:none;}
+    .drawer{width:100%;}
+    .drawer-body{padding:0 var(--s-4) var(--s-6);}
+    .hero{flex-direction:column;align-items:flex-start;}
+    .hero .sleeve{width:100%;}
+    .trk{grid-template-columns:24px minmax(0,1fr) auto auto;}
+    .trk .dur{display:none;}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important;}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="titlebar">
+    <button class="burger" aria-label="Menu"><span></span><span></span><span></span></button>
+    <h1>Browse</h1>
+  </div>
+
+  <div class="layout">
+    <div class="main">
+      <div class="searchbar">
+        <form class="search" id="search" autocomplete="off">
+          <label class="field">
+            <svg class="icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="q" type="text" spellcheck="false" aria-label="Search Spotify, or paste a link"
+                   placeholder="Search Spotify, or paste a link">
+            <button type="button" class="clear" id="clear" aria-label="Clear search">✕</button>
+          </label>
+          <button class="primary" id="go" type="submit">Search</button>
+        </form>
+        <div class="link-hint" id="link-hint" hidden><span class="dot"></span><span id="link-text"></span></div>
+        <div class="chips" id="chips" role="group" aria-label="Show">
+          <button class="chip" data-kind="all">All</button>
+          <button class="chip" data-kind="album">Albums</button>
+          <button class="chip" data-kind="track">Songs</button>
+          <button class="chip" data-kind="artist">Artists</button>
+        </div>
+      </div>
+      <div id="results"></div>
+    </div>
+
+    <aside class="rail" id="rail" aria-label="Downloads"></aside>
+  </div>
+
+  <p class="mock-note">Mockup · generated covers, invented catalog. The downloads simulate progress. Try:
+    press the download button on a cover, open an album, type a different artist, paste a link (anything starting
+    with https://), and narrow the window below 980px to see the phone layout.</p>
+</div>
+
+<button class="pill-dock" id="pill" aria-label="Show downloads"></button>
+<div id="drawer-root"></div>
+<div id="toast-root"></div>
+
+<script src="../home-mockups/data.js"></script>
+<script>
+"use strict";
+
+/* ===== catalog: a stand-in for what Spotify search returns =================== */
+
+const PAL = [
+  ['#1E2A44','#4EA1FF','#F2C46D','#0F1524','#7FB3E6'],
+  ['#2B1D3A','#E8704A','#F5C77E','#14101C','#3B2A4F'],
+  ['#12261E','#45C47A','#D8E8B0','#0A1611','#2E5E47'],
+  ['#3A1620','#E0574A','#F4D3C4','#1C0B10','#8A2E3B'],
+  ['#2A2A2E','#E7E9EE','#949BA8','#141418','#5B606B'],
+  ['#2E2412','#E0A33E','#F7E6C1','#17110A','#7A5A24'],
+];
+const pal = (s) => PAL[(hashStr(s) >> 2) % PAL.length];
+
+let nid = 1;
+const CAT_ARTISTS = {};
+const CAT_ALBUMS = [];
+function artist(name, followers) { CAT_ARTISTS[name] = { name, followers, id: 'ar' + nid++ }; }
+// held: indexes of tracks already in the library (read from Navidrome).
+function album(artistName, name, year, tracks, held = []) {
+  const id = 'al' + nid++;
+  const a = { id, artist: artistName, name, year, seed: artistName + name,
+    tracks: tracks.map((t, i) => ({ id: `${id}-${i}`, no: i + 1, name: t, held: held === 'all' || held.includes(i),
+      dur: 140 + (hashStr(t) % 180) })) };
+  a.type = tracks.length === 1 ? 'Single' : tracks.length < 7 ? 'EP' : 'Album';
+  CAT_ALBUMS.push(a);
+  return a;
+}
+
+artist('Phoebe Bridgers', 3100000); artist('boygenius', 1400000); artist('Better Oblivion Community Center', 310000);
+artist('Julien Baker', 620000); artist('Lucy Dacus', 780000); artist('Mitski', 6900000);
+artist('Big Thief', 1200000); artist('Alvvays', 980000); artist('Adrianne Lenker', 540000);
+artist('Waxahatchee', 410000); artist('Snail Mail', 520000); artist('Soccer Mommy', 690000);
+
+album('Phoebe Bridgers', 'Punisher', 2020, ['DVD Menu','Garden Song','Kyoto','Punisher','Halloween','Chinese Satellite','Moon Song','Savior Complex','ICU','Graceland Too','I Know the End'], 'all');
+album('Phoebe Bridgers', 'Stranger in the Alps', 2017, ['Smoke Signals','Motion Sickness','Funeral','Demi Moore','Scott Street','Killer','Georgia','Chelsea','Would You Rather','You Missed My Heart','Smoke Signals (Reprise)'], [1, 2, 4]);
+album('Phoebe Bridgers', 'Copycat Killer', 2020, ['Kyoto (Copycat Killer Version)','Savior Complex (Copycat Killer Version)','Chinese Satellite (Copycat Killer Version)','Punisher (Copycat Killer Version)']);
+album('Phoebe Bridgers', 'Sidelines', 2022, ['Sidelines']);
+album('Phoebe Bridgers', 'Christmas Song', 2020, ['Christmas Song']);
+album('boygenius', 'the record', 2023, ['Without You Without Them','$20','Emily I’m Sorry','True Blue','Cool About It','Not Strong Enough','Revolution 0','Leonard Cohen','Satanist','We’re in Love','Anti-Curse','Letter to an Old Poet'], 'all');
+album('boygenius', 'boygenius', 2018, ['Bite the Hand','Me & My Dog','Souvenir','Stay Down','Salt in the Wound','Ketchum, ID']);
+album('boygenius', 'the rest', 2023, ['Black Hole','Afraid of Heights','Voyager','Powers']);
+album('Better Oblivion Community Center', 'Better Oblivion Community Center', 2019, ['Didn’t Know What I Was in For','Sleepwalkin’','Dylan Thomas','Chesapeake','Service Road','Exception to the Rule','My City','Forest Lawn','Big Black Heart','Dominos']);
+album('Mitski', 'The Land Is Inhospitable and So Are We', 2023, ['Bug Like an Angel','Buffalo Replaced','Heaven','I Don’t Like My Mind','The Deal','When Memories Snow','My Love Mine All Mine','The Frost','Star','I’m Your Man','I Love Me After You']);
+album('Mitski', 'Be the Cowboy', 2018, ['Geyser','Why Didn’t You Stop Me?','Old Friend','A Pearl','Lonesome Love','Remember My Name','Me and My Husband','Come into the Water','Nobody','Pink in the Night','A Horse Named Cold Air','Washing Machine Heart','Blue Light','Two Slow Dancers'], [8]);
+album('Mitski', 'Puberty 2', 2016, ['Happy','Dan the Dancer','Once More to See You','Fireworks','Your Best American Girl','I Bet on Losing Dogs','My Body’s Made of Crushed Little Stars','Thursday Girl','A Loving Feeling','Crack Baby','A Burning Hill']);
+album('Julien Baker', 'Little Oblivions', 2021, ['Hardline','Heatwave','Faith Healer','Relative Fiction','Crying Wolf','Bloodshot','Ringside','Favor','Song in E','Repeat','Highlight Reel','Ziptie']);
+album('Lucy Dacus', 'Home Video', 2021, ['Hot & Heavy','Christine','First Time','VBS','Cartwheel','Thumbs','Going Going Gone','Partner in Crime','Brando','Please Stay','Triple Dog Dare']);
+album('Big Thief', 'Dragon New Mountain I Believe in You', 2022, ['Change','Time Escaping','Spud Infinity','Certainty','Dragon New Mountain','Wake Me Up to Drive','Promise Is a Pendulum','Sparrow','Little Things','Heavy Bend','Flower of Blood','Blurred View','Red Moon','No Reason','Love Love Love','The Only Place','Simulation Swarm','12,000 Lines','Blue Lightning']);
+album('Alvvays', 'Blue Rev', 2022, ['Pharmacist','Easy on Your Own?','After the Earthquake','Tom Verlaine','Pressed','Many Mirrors','Very Online Guy','Velveteen','Tile by Tile','Pomeranian Spinster','Belinda Says','Bored in Bristol','Lottery Noises','Fourth Figure'], 'all');
+album('Waxahatchee', 'Tigers Blood', 2024, ['3 Sisters','Evil Spawn','Ice Cold','Right Back to It','Bored','Lone Star Lake','Crimes of the Heart','Crowbar','365','Burns Out at Midnight','Tigers Blood','The Wolves']);
+album('Snail Mail', 'Valentine', 2021, ['Valentine','Ben Franklin','Headlock','Light Blue','Forever (Sailing)','Madonna','c. et al.','Glory','Mia','Automate']);
+album('Soccer Mommy', 'Color Theory', 2020, ['Bloodstream','Circle the Drain','Royal Screw Up','Night Swimming','Crawling in My Skin','Up the Walls','Stain','Yellow Is the Color of Her Eyes','Lucy','Gray Light']);
+album('Adrianne Lenker', 'Bright Future', 2024, ['Real House','Sadness as a Gift','Fool','Free Treasure','Vampire Empire','Ruined','Evol','Donut Seam','Already Lost','Cell Phone Says','Candleland','Fool (Reprise)']);
+
+const albumById = (id) => CAT_ALBUMS.find(a => a.id === id);
+const allTracks = () => CAT_ALBUMS.flatMap(a => a.tracks.map(t => ({ ...t, album: a })));
+
+/* ===== the queue: what the server would push over the websocket =============== */
+
+let jid = 1;
+const JOBS = [];
+// kind: 'album' | 'track'. items mirror the server's per-track status.
+function job(kind, a, trackIdx, preset) {
+  const tracks = kind === 'album' ? a.tracks : [a.tracks[trackIdx]];
+  const j = { id: jid++, kind, album: a, title: kind === 'album' ? a.name : tracks[0].name,
+    items: tracks.map(t => ({ id: t.id, name: t.name, status: t.held ? 'skipped' : 'queued', progress: 0 })),
+    created: Date.now() - (preset?.ago || 0) };
+  // A seeded job is history: its tracks are held *because* it downloaded them.
+  if (preset?.status) j.items.forEach((it, i) => { it.status = preset.status(i); });
+  JOBS.unshift(j);
+  return j;
+}
+const find = (n) => CAT_ALBUMS.find(a => a.name === n);
+// Already finished before the page opened: the reason the old page made you scroll.
+job('album', find('Punisher'), 0, { status: () => 'complete', ago: 9e6 });
+job('album', find('the record'), 0, { status: () => 'complete', ago: 8e6 });
+job('album', find('Blue Rev'), 0, { status: () => 'complete', ago: 7e6 });
+job('track', find('Be the Cowboy'), 8, { status: () => 'complete', ago: 6e6 });
+job('track', find('Stranger in the Alps'), 1, { status: () => 'complete', ago: 5e6 });
+job('track', find('Stranger in the Alps'), 2, { status: () => 'complete', ago: 5e6 });
+job('track', find('Stranger in the Alps'), 4, { status: () => 'complete', ago: 5e6 });
+// One that needs a look, and one still running.
+job('track', find('Puberty 2'), 4, { status: () => 'failed', ago: 3e6 }).error = 'No YouTube match close enough in length';
+job('album', find('The Land Is Inhospitable and So Are We'), 0, { status: (i) => i < 4 ? 'complete' : i === 4 ? 'downloading' : 'queued', ago: 6e4 });
+
+const jobDone = (j) => j.items.every(i => i.status === 'complete' || i.status === 'skipped');
+const jobFailed = (j) => !jobDone(j) && j.items.every(i => ['complete','skipped','failed'].includes(i.status));
+const jobActive = (j) => !jobDone(j) && !jobFailed(j);
+const doneCount = (j) => j.items.filter(i => i.status === 'complete' || i.status === 'skipped').length;
+const jobProgress = (j) => {
+  const cur = j.items.find(i => i.status === 'downloading');
+  return (doneCount(j) + (cur ? cur.progress : 0)) / j.items.length;
+};
+// What the queue currently says about one track or one album, for the
+// state shown on the result itself.
+function trackState(t) {
+  for (const j of JOBS) {
+    const it = j.items.find(i => i.id === t.id);
+    if (it && it.status !== 'skipped' && !(it.status === 'complete' && t.held)) return it.status;
+  }
+  return t.held ? 'held' : null;
+}
+function albumJob(a) { return JOBS.find(j => j.kind === 'album' && j.album.id === a.id); }
+
+// The simulated server: one track at a time per job, two jobs at once.
+setInterval(() => {
+  let running = 0;
+  for (const j of [...JOBS].reverse()) {
+    if (!jobActive(j) || running >= 2) continue;
+    running++;
+    let it = j.items.find(i => ['matching','downloading','tagging'].includes(i.status));
+    if (!it) { it = j.items.find(i => i.status === 'queued'); if (it) it.status = 'matching'; continue; }
+    if (it.status === 'matching') it.status = 'downloading';
+    else if (it.status === 'downloading') { it.progress = Math.min(1, it.progress + 0.34); if (it.progress >= 1) it.status = 'tagging'; }
+    else if (it.status === 'tagging') { it.status = 'complete'; if (jobDone(j)) toast(`${j.title} is in your library`); }
+  }
+  renderRail(); paintStates();
+}, 700);
+
+/* ===== state ================================================================= */
+
+const S = { q: 'phoebe', kind: 'all', artist: null, open: null, showFinished: false, expanded: new Set(), seeAll: null };
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const art = (seed, cls = '') => `<span class="art ${cls}">${albumArt(seed, pal(seed))}</span>`;
+const fmtFollowers = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M followers` : `${Math.round(n / 1e3)}K followers`;
+const isUrl = (s) => /^https?:\/\//i.test(s.trim());
+const dlIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg>';
+const chev = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m6 9 6 6 6-6"/></svg>';
+
+/* ===== search ================================================================ */
+
+function search(q) {
+  q = q.trim().toLowerCase();
+  if (!q) return null;
+  const hit = (s) => s.toLowerCase().includes(q);
+  const artists = Object.values(CAT_ARTISTS).filter(a => hit(a.name));
+  const albums = CAT_ALBUMS.filter(a => hit(a.name) || hit(a.artist));
+  const tracks = allTracks().filter(t => hit(t.name) || hit(t.album.artist))
+    .sort((x, y) => (hit(y.name) - hit(x.name)) || (y.album.year - x.album.year));
+  return { artists, albums, tracks };
+}
+
+/* ===== render: results ======================================================= */
+
+function albumCard(a) {
+  return `<div class="card" tabindex="0" data-open="${a.id}">
+    <div class="sleeve" data-sleeve="${a.id}">${art(a.seed)}</div>
+    <div class="card-title">${esc(a.name)}</div>
+    <div class="card-sub">${esc(a.artist)} · ${a.year}${a.type !== 'Album' ? ' · ' + a.type : ''}</div>
+  </div>`;
+}
+
+// The sleeve's overlay is painted separately, so a progress tick touches
+// only the sleeves rather than rebuilding the grid.
+function sleeveOverlay(a) {
+  const j = albumJob(a);
+  const heldN = a.tracks.filter(t => t.held).length;
+  const quick = `<button class="quick" data-dl-album="${a.id}" aria-label="Download ${esc(a.name)}" title="Download">${dlIcon}</button>`;
+  if (j && jobActive(j)) {
+    const pct = Math.round(jobProgress(j) * 100);
+    const queued = j.items.every(i => i.status === 'queued' || i.status === 'skipped');
+    return `<div class="veil"><div class="veil-text">${queued ? 'Queued' : 'Downloading'}
+      <small>${doneCount(j)} of ${j.items.length} tracks</small></div>
+      <div class="veil-bar"><div class="veil-fill" style="width:${pct}%"></div></div></div>`;
+  }
+  if (j && jobFailed(j)) return `<span class="flags"><span class="flag bad">Some failed</span></span>${quick}`;
+  if (heldN === a.tracks.length || (j && jobDone(j))) return `<span class="flags"><span class="flag ok">✓ In library</span></span>`;
+  if (heldN) return `<span class="flags"><span class="flag part">${heldN} of ${a.tracks.length} in library</span></span>${quick}`;
+  return quick;
+}
+
+function stateBadge(st) {
+  return {
+    held: '<span class="state ok">In library</span>', complete: '<span class="state ok">Downloaded</span>',
+    queued: '<span class="state wait">Queued</span>', matching: '<span class="state run">Finding</span>',
+    downloading: '<span class="state run">Downloading</span>', tagging: '<span class="state run">Tagging</span>',
+    failed: '<span class="state bad">Failed</span>',
+  }[st] || '<span></span>';
+}
+function trackRow(t) {
+  return `<div class="row" data-row="${t.id}">
+    ${art(t.album.seed)}
+    <div class="row-main"><div class="row-title">${esc(t.name)}</div>
+      <div class="row-sub">${esc(t.album.artist)} · <a data-open="${t.album.id}">${esc(t.album.name)}</a></div></div>
+    <span class="state-slot">${stateBadge(trackState(t))}</span>
+    <span class="dur">${mmss(t.dur)}</span>
+    ${trackButton(t, 'get')}
+  </div>`;
+}
+function trackButton(t, cls) {
+  const st = trackState(t);
+  const busy = ['queued','matching','downloading','tagging'].includes(st);
+  const label = st === 'failed' ? 'Retry' : st === 'held' || st === 'complete' ? 'Again' : busy ? 'Queued' : 'Download';
+  const owned = st === 'held' || st === 'complete';
+  const title = owned ? 'Already in your library. Downloading again makes a second copy.' : label;
+  return `<button class="${cls}${owned ? ' quiet' : ''}" data-dl-track="${t.id}" ${busy ? 'disabled' : ''} title="${title}"
+    aria-label="${label} ${esc(t.name)}">${dlIcon}<span class="lbl">${label}</span></button>`;
+}
+function artistTile(a) {
+  const first = CAT_ALBUMS.find(x => x.artist === a.name);
+  return `<div class="artist" tabindex="0" data-artist="${esc(a.name)}">${art(first ? first.seed : a.name)}
+    <div class="artist-name">${esc(a.name)}</div><div class="artist-sub">${fmtFollowers(a.followers)}</div></div>`;
+}
+
+function renderResults() {
+  document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.kind === S.kind));
+  $('#chips').hidden = !!S.artist || isUrl(S.q);
+  const root = $('#results');
+
+  if (S.artist) return root.innerHTML = renderArtist(S.artist);
+  if (isUrl(S.q)) return root.innerHTML = '';
+  const r = search(S.q);
+  if (!r) {
+    const recent = JOBS.filter(jobDone).slice(0, 6).map(j => j.album)
+      .filter((a, i, arr) => arr.indexOf(a) === i);
+    return root.innerHTML = `<div class="welcome"><p>Find an album, a song or an artist on Spotify and download it straight into the
+      library. Or paste a Spotify, YouTube or Bandcamp link.</p></div>
+      ${recent.length ? `<div class="section-title">Downloaded recently</div><div class="grid">${recent.map(albumCard).join('')}</div>` : ''}`;
+  }
+  if (!r.artists.length && !r.albums.length && !r.tracks.length)
+    return root.innerHTML = `<p class="empty">Nothing on Spotify matches “${esc(S.q)}”. Try fewer words, or paste a link instead.</p>`;
+
+  const see = (k, n, shown) => n > shown ? `<button class="see" data-kind-jump="${k}">See all ${n}</button>` : '';
+  let html = '';
+  if (S.kind === 'all') {
+    if (r.artists.length) html += `<div class="section-title">Artists ${see('artist', r.artists.length, 6)}</div>
+      <div class="artist-row">${r.artists.slice(0, 6).map(artistTile).join('')}</div>`;
+    if (r.tracks.length) html += `<div class="section-title">Songs ${see('track', r.tracks.length, 5)}</div>
+      <div class="rows">${r.tracks.slice(0, 5).map(trackRow).join('')}</div>`;
+    if (r.albums.length) html += `<div class="section-title">Albums ${see('album', r.albums.length, 10)}</div>
+      <div class="grid">${r.albums.slice(0, 10).map(albumCard).join('')}</div>`;
+  } else if (S.kind === 'album') {
+    html = r.albums.length ? `<div class="section-title">Albums <small>${r.albums.length}</small></div><div class="grid">${r.albums.map(albumCard).join('')}</div>` : '<p class="empty">No albums match.</p>';
+  } else if (S.kind === 'track') {
+    html = r.tracks.length ? `<div class="section-title">Songs <small>${r.tracks.length}</small></div><div class="rows">${r.tracks.slice(0, 40).map(trackRow).join('')}</div>` : '<p class="empty">No songs match.</p>';
+  } else {
+    html = r.artists.length ? `<div class="section-title">Artists <small>${r.artists.length}</small></div><div class="artist-row">${r.artists.map(artistTile).join('')}</div>` : '<p class="empty">No artists match.</p>';
+  }
+  root.innerHTML = html;
+  paintStates();
+}
+
+function renderArtist(name) {
+  const a = CAT_ARTISTS[name];
+  const albums = CAT_ALBUMS.filter(x => x.artist === name).sort((x, y) => y.year - x.year);
+  const full = albums.filter(x => x.type === 'Album'), rest = albums.filter(x => x.type !== 'Album');
+  const top = albums.flatMap(x => x.tracks.map(t => ({ ...t, album: x }))).sort((x, y) => hashStr(y.name) % 97 - hashStr(x.name) % 97).slice(0, 5);
+  setTimeout(paintStates);
+  return `<button class="bare back" data-act="artist-back">‹ Results for “${esc(S.q)}”</button>
+    <div class="artist-head">${art(albums[0] ? albums[0].seed : name)}<div><h2>${esc(name)}</h2>
+      <div class="artist-sub">${fmtFollowers(a.followers)} · ${plural(albums.length, 'release')}</div></div></div>
+    <div class="section-title">Popular</div><div class="rows">${top.map(trackRow).join('')}</div>
+    ${full.length ? `<div class="section-title">Albums</div><div class="grid">${full.map(albumCard).join('')}</div>` : ''}
+    ${rest.length ? `<div class="section-title">Singles and EPs</div><div class="grid">${rest.map(albumCard).join('')}</div>` : ''}`;
+}
+
+// Repaints just the state on whatever results are on screen.
+function paintStates() {
+  document.querySelectorAll('[data-sleeve]').forEach(el => {
+    const a = albumById(el.dataset.sleeve);
+    const html = sleeveOverlay(a);
+    if (el._last === html) return;
+    el._last = html;
+    el.querySelectorAll('.veil,.flags,.quick').forEach(n => n.remove());
+    el.insertAdjacentHTML('beforeend', html);
+  });
+  document.querySelectorAll('[data-row]').forEach(el => {
+    const t = allTracks().find(x => x.id === el.dataset.row);
+    el.querySelector('.state-slot').innerHTML = stateBadge(trackState(t));
+    el.querySelector('[data-dl-track]').outerHTML = trackButton(t, 'get');
+  });
+  if (S.open) paintDrawerTracks();
+}
+
+/* ===== render: the downloads rail ============================================ */
+
+function jobSub(j) {
+  if (jobFailed(j)) {
+    const f = j.items.filter(i => i.status === 'failed').length;
+    return `<div class="job-sub bad">${j.items.length === 1 ? esc(j.error || 'Failed') : `${f} of ${j.items.length} failed`}</div>`;
+  }
+  if (jobDone(j)) {
+    const skipped = j.items.filter(i => i.status === 'skipped').length;
+    const mins = Math.round((Date.now() - j.created) / 6e4);
+    const when = mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
+    return `<div class="job-sub">${esc(j.album.artist)} · ${when}${skipped ? ` · ${skipped} already held` : ''}</div>`;
+  }
+  const cur = j.items.find(i => ['matching','downloading','tagging'].includes(i.status));
+  const what = !cur ? 'Waiting its turn' : j.kind === 'album' ? `${doneCount(j)} of ${j.items.length} · ${esc(cur.name)}` : { matching: 'Finding a match', downloading: 'Downloading', tagging: 'Tagging' }[cur.status];
+  return `<div class="job-sub">${what}</div><div class="job-bar"><div class="job-fill" style="width:${Math.round(jobProgress(j) * 100)}%"></div></div>`;
+}
+function jobCard(j, finished) {
+  const open = S.expanded.has(j.id);
+  return `<div class="job">
+    <div class="job-head" data-job="${j.id}" role="button" tabindex="0" aria-expanded="${open}">
+      ${art(j.album.seed)}
+      <div style="min-width:0"><div class="job-title">${esc(j.title)}</div>${jobSub(j)}</div>
+      <button class="remove" data-remove="${j.id}" aria-label="${finished ? 'Clear' : 'Cancel'} ${esc(j.title)}" title="${finished ? 'Clear from the list' : 'Cancel'}">✕</button>
+    </div>
+    ${open ? `<div class="job-tracks">${j.items.map(i => `<div class="jt"><span>${esc(i.name)}</span>
+      <span class="st ${i.status}">${i.status === 'skipped' ? 'already held' : i.status}</span></div>`).join('')}
+      ${jobFailed(j) ? `<div class="job-actions"><button data-retry="${j.id}">Retry failed</button></div>` : ''}</div>` : ''}
+  </div>`;
+}
+function renderRail() {
+  const active = JOBS.filter(jobActive), failed = JOBS.filter(jobFailed), done = JOBS.filter(jobDone);
+  const running = active.filter(j => j.items.some(i => ['matching','downloading','tagging'].includes(i.status)));
+  const summary = active.length ? `${active.length} in progress` : failed.length ? '' : 'All done';
+  $('#rail').innerHTML = `
+    <div class="rail-head"><h2>Downloads</h2><small>${summary}</small>
+      <button class="bare x" data-act="sheet-close" aria-label="Close">✕</button></div>
+    ${active.length ? active.map(j => jobCard(j)).join('') : '<p class="rail-empty">Nothing downloading. Press the download button on anything in the results.</p>'}
+    ${failed.length ? `<div class="group-head">Needs a look</div>${failed.map(j => jobCard(j)).join('')}` : ''}
+    ${done.length ? `<div class="group-head">
+        <button class="twist" data-act="toggle-finished" aria-expanded="${S.showFinished}">${chev} Finished · ${done.length}</button>
+        <button data-act="clear-finished">Clear</button></div>
+      ${S.showFinished ? `<div class="finished">${done.map(j => jobCard(j, true)).join('')}</div>` : ''}` : ''}`;
+
+  // The phone's pill: only what's moving and what failed. Finished is a
+  // number, not a list, so it can never push anything off screen.
+  const pill = $('#pill');
+  const bits = [];
+  if (active.length) bits.push(`<span class="spin"></span>${active.length} downloading`);
+  if (failed.length) bits.push(`<span class="bad">${failed.length} failed</span>`);
+  if (!bits.length) bits.push(`✓ ${plural(done.length, 'download')} finished`);
+  pill.innerHTML = `<span class="covers">${(running.length ? running : active.length ? active : done).slice(0, 3).map(j => art(j.album.seed)).join('')}</span>${bits.join(' · ')}`;
+  pill.hidden = !JOBS.length || document.body.classList.contains('sheet-open');
+}
+
+/* ===== render: album drawer ================================================== */
+
+function renderDrawer() {
+  const root = $('#drawer-root');
+  const a = S.open && albumById(S.open);
+  if (!a) { root.innerHTML = ''; return; }
+  const heldN = a.tracks.filter(t => t.held).length;
+  const mins = Math.round(a.tracks.reduce((n, t) => n + t.dur, 0) / 60);
+  root.innerHTML = `<div class="scrim" data-act="close"></div>
+    <aside class="drawer" role="dialog" aria-label="${esc(a.name)}">
+      <div class="drawer-top"><button class="bare" data-act="close">✕ Close</button></div>
+      <div class="drawer-body">
+        <div class="hero"><div class="sleeve" data-sleeve="${a.id}">${art(a.seed)}</div>
+          <div><h2>${esc(a.name)}</h2><span class="by" data-artist="${esc(a.artist)}">${esc(a.artist)}</span>
+            <div class="meta">${a.type} · ${a.year} · ${plural(a.tracks.length, 'track')} · ${mins} min</div></div></div>
+        <div class="actions" id="drawer-actions"></div>
+        <div class="tracks" id="drawer-tracks"></div>
+      </div>
+    </aside>`;
+  paintDrawerTracks();
+  paintStates();
+}
+function paintDrawerTracks() {
+  const a = albumById(S.open);
+  if (!a || !$('#drawer-tracks')) return;
+  const heldN = a.tracks.filter(t => t.held).length;
+  const j = albumJob(a);
+  let actions;
+  if (j && jobActive(j)) actions = `<button class="primary" disabled>Downloading…</button><span class="note">${doneCount(j)} of ${j.items.length} tracks so far</span>`;
+  else if (heldN === a.tracks.length || (j && jobDone(j))) actions = `<button data-dl-album="${a.id}">Download again</button><span class="note">Already in your library. Again makes a second copy.</span>`;
+  else if (heldN) actions = `<button class="primary" data-dl-album="${a.id}">Download album</button><span class="note">${heldN} of ${a.tracks.length} already in your library — those are skipped</span>`;
+  else actions = `<button class="primary" data-dl-album="${a.id}">Download album</button>`;
+  $('#drawer-actions').innerHTML = actions;
+  $('#drawer-tracks').innerHTML = a.tracks.map(t => {
+    const st = trackState(t);
+    return `<div class="trk ${t.held ? 'held' : ''}"><span class="no">${t.no}</span><span class="t">${esc(t.name)}</span>
+      ${stateBadge(st)}<span class="dur">${mmss(t.dur)}</span>${trackButton({ ...t, album: a }, 'get')}</div>`;
+  }).join('');
+}
+
+/* ===== actions =============================================================== */
+
+function toast(msg) {
+  const root = $('#toast-root');
+  root.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`;
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => root.innerHTML = '', 2600);
+}
+function downloadAlbum(id) {
+  const a = albumById(id);
+  job('album', a);
+  toast(`Queued ${a.name}`);
+  renderRail(); paintStates();
+}
+function downloadTrack(id) {
+  const t = allTracks().find(x => x.id === id);
+  const failed = JOBS.find(j => j.items.some(i => i.id === id && i.status === 'failed'));
+  if (failed) { failed.items.forEach(i => { if (i.id === id) i.status = 'queued'; }); }
+  else job('track', t.album, t.no - 1);
+  toast(`Queued ${t.name}`);
+  renderRail(); paintStates();
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act],[data-open],[data-artist],[data-dl-album],[data-dl-track],[data-job],[data-remove],[data-retry],[data-kind-jump],.chip');
+  if (!t) return;
+  if (t.dataset.dlAlbum) { e.stopPropagation(); return downloadAlbum(t.dataset.dlAlbum); }
+  if (t.dataset.dlTrack) return downloadTrack(t.dataset.dlTrack);
+  if (t.dataset.remove) { e.stopPropagation(); JOBS.splice(JOBS.findIndex(j => j.id === +t.dataset.remove), 1); renderRail(); return paintStates(); }
+  if (t.dataset.retry) { JOBS.find(j => j.id === +t.dataset.retry).items.forEach(i => { if (i.status === 'failed') i.status = 'queued'; }); renderRail(); return paintStates(); }
+  if (t.dataset.job) { const id = +t.dataset.job; S.expanded.has(id) ? S.expanded.delete(id) : S.expanded.add(id); return renderRail(); }
+  if (t.dataset.kindJump) { S.kind = t.dataset.kindJump; return renderResults(); }
+  if (t.classList.contains('chip')) { S.kind = t.dataset.kind; return renderResults(); }
+  if (t.dataset.open) { S.open = t.dataset.open; return renderDrawer(); }
+  if (t.dataset.artist) { S.artist = t.dataset.artist; S.open = null; renderDrawer(); window.scrollTo(0, 0); return renderResults(); }
+  const act = t.dataset.act;
+  if (act === 'close') { S.open = null; renderDrawer(); }
+  if (act === 'artist-back') { S.artist = null; renderResults(); }
+  if (act === 'toggle-finished') { S.showFinished = !S.showFinished; renderRail(); }
+  if (act === 'clear-finished') { for (let i = JOBS.length - 1; i >= 0; i--) if (jobDone(JOBS[i])) JOBS.splice(i, 1); renderRail(); }
+  if (act === 'sheet-close') { document.body.classList.remove('sheet-open'); renderRail(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (S.open) { S.open = null; renderDrawer(); } document.body.classList.remove('sheet-open'); renderRail(); }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-job],.card,.artist')) { e.preventDefault(); e.target.click(); }
+});
+$('#pill').addEventListener('click', () => { document.body.classList.add('sheet-open'); renderRail(); });
+
+/* ===== the search box ======================================================== */
+
+const input = $('#q');
+function syncBox() {
+  const v = input.value;
+  const url = isUrl(v);
+  $('#go').textContent = url ? 'Download' : 'Search';
+  $('#clear').hidden = !v;
+  $('#link-hint').hidden = !url;
+  if (url) {
+    const host = (v.match(/^https?:\/\/([^/]+)/i) || [])[1] || 'that site';
+    const what = /playlist/.test(v) ? 'playlist' : /album/.test(v) ? 'album' : /track|watch/.test(v) ? 'track' : 'link';
+    $('#link-text').textContent = `A ${what} link from ${host.replace(/^(www|open)\./, '')}. Press Download to queue it.`;
+  }
+}
+let debounce;
+input.addEventListener('input', () => {
+  syncBox();
+  clearTimeout(debounce);
+  // Results follow the typing, the way the Library's search does.
+  debounce = setTimeout(() => { S.q = input.value; S.artist = null; renderResults(); }, 250);
+});
+$('#clear').addEventListener('click', () => { input.value = ''; S.q = ''; S.artist = null; syncBox(); renderResults(); input.focus(); });
+$('#search').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (isUrl(input.value)) {
+    const a = CAT_ALBUMS[(hashStr(input.value) % CAT_ALBUMS.length)];
+    job('album', a);
+    toast('Queued the link');
+    input.value = ''; S.q = ''; syncBox(); renderResults(); renderRail();
+    return;
+  }
+  S.q = input.value; S.artist = null; renderResults();
+});
+
+input.value = S.q;
+syncBox();
+renderResults();
+renderRail();
+</script>
+</body>
+</html>
