@@ -920,8 +920,10 @@ it less likely.
       **Fixed:** the stand-in reading stamp goes through `local_stamp`
       like a play date; a bare nightly-era date is left as it is.
       Reproduced first.
-- [ ] **L28.** The headline "You've played N tracks this month" counts plays
+- [x] **L28.** The headline "You've played N tracks this month" counts plays
       (`overview.py:456-460`).
+      **Fixed:** it reads "You've racked up N plays this month". The year
+      line keeps counting different tracks.
 - [ ] **L29.** The *In year* tile is the calendar year; tapping it shows the
       last 365 days (`home.js:232-236`).
 - [ ] **L30.** A forced snapshot does not warm Home's cache (`main.py:2176-2182`).

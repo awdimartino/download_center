@@ -732,3 +732,16 @@ def test_the_reading_time_that_stands_in_is_local_too(state_db, monkeypatch):
     when, _track, _n = overview._increments(ALEX)[0]
 
     assert when.startswith("2026-09-30T21:00:00"), when
+
+
+def test_the_months_headline_counts_plays_as_plays(state_db, identity_with_db,
+                                                   navidrome_db):
+    """One track played five times read "You've played 5 tracks this
+    month" (L28)."""
+    add_track(navidrome_db, "m1", tags=tagged("t1"))
+    imported(f"{this_month()}-01", "t1", 5)
+
+    facts = overview.overview(identity_with_db)["highlights"]
+    month = next(f for f in facts if f["tail"] == "this month")
+
+    assert month["value"] == "5 plays"

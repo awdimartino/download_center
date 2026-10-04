@@ -416,8 +416,10 @@ def highlights(heard: dict[str, Any], counted: dict[str, Any]) -> list[dict[str,
         facts.append({"lead": "That's", "value": _hours(year["seconds"]),
                       "tail": "of music this year"})
     if heard.get("this_month"):
-        facts.append({"lead": "You've played",
-                      "value": f"{heard['this_month']:,} track"
+        # Plays, said as plays: "tracks" read as different tracks, which is
+        # what the year's line counts, and one song on repeat is not forty.
+        facts.append({"lead": "You've racked up",
+                      "value": f"{heard['this_month']:,} play"
                                + ("" if heard["this_month"] == 1 else "s"),
                       "tail": "this month"})
     if artists:
