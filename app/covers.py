@@ -18,7 +18,9 @@ import base64
 import io
 import logging
 import os
+import threading
 import urllib.parse
+from collections import OrderedDict
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -124,6 +126,42 @@ def square(data: bytes) -> tuple[bytes, str]:
     out = io.BytesIO()
     image.save(out, "JPEG", quality=92)
     return out.getvalue(), JPEG
+
+
+# Squared covers by URL, for a download's tracks. Every track of an album
+# carries the same cover URL, and each one fetched and squared it again -
+# twelve requests and twelve re-encodes for one picture. Only successes are
+# kept, so a failed fetch is tried again by the next track. A few albums'
+# worth, since the tracks of one job arrive together.
+_SQUARED_KEPT = 8
+_squared: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+_squared_lock = threading.Lock()
+_fetching: dict[str, threading.Lock] = {}
+
+
+def squared(url: str) -> tuple[bytes, str] | None:
+    """The cover at url, fetched and squared once however many tracks ask."""
+    with _squared_lock:
+        if url in _squared:
+            _squared.move_to_end(url)
+            return _squared[url]
+        turn = _fetching.setdefault(url, threading.Lock())
+    # Tracks download side by side; the first to ask fetches, the others
+    # wait for it rather than fetching too.
+    with turn:
+        with _squared_lock:
+            if url in _squared:
+                return _squared[url]
+        data = fetch(url)
+        result = square(data) if data else None
+        with _squared_lock:
+            if result:
+                _squared[url] = result
+                while len(_squared) > _SQUARED_KEPT:
+                    _squared.popitem(last=False)
+            if _fetching.get(url) is turn:
+                del _fetching[url]
+        return result
 
 
 def is_square(data: bytes) -> bool:

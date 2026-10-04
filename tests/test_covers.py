@@ -232,3 +232,58 @@ def test_a_multi_disc_album_with_no_top_level_tracks_is_still_checked(tmp_path):
     folder = _album(tmp_path, cover=_letterboxed(), below="CD1")
 
     assert covers.barred(folder) is True
+
+
+# --- one fetch per cover, not per track (L16) ----------------------------------
+
+import threading
+from collections import OrderedDict
+
+import pytest
+
+
+@pytest.fixture
+def fresh_cache(monkeypatch):
+    monkeypatch.setattr(covers, "_squared", OrderedDict(), raising=False)
+    monkeypatch.setattr(covers, "_fetching", {}, raising=False)
+
+
+def test_an_albums_tracks_fetch_and_square_its_cover_once(tmp_path, monkeypatch,
+                                                         fresh_cache):
+    fetched, squared = [], []
+    real_square = covers.square
+
+    def fetch(url):
+        fetched.append(url)
+        return _pillarboxed()
+
+    monkeypatch.setattr(covers, "fetch", fetch)
+    monkeypatch.setattr(covers, "square",
+                        lambda data: squared.append(1) or real_square(data))
+    url = "https://i.ytimg.com/vi/album/maxresdefault.jpg"
+
+    def one(n):
+        path = tmp_path / f"{n}.mp3"
+        shutil.copy(SILENCE, path)
+        tagger.tag(path, {"title": f"Song {n}", "artist": "Artist",
+                          "album_artist": "Artist", "album": "Album",
+                          "cover_url": url})
+
+    threads = [threading.Thread(target=one, args=(n,)) for n in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert fetched == [url]
+    assert len(squared) == 1
+    for n in range(6):
+        assert _open(ID3(tmp_path / f"{n}.mp3").getall("APIC")[0].data).size == (720, 720)
+
+
+def test_a_failed_cover_fetch_is_tried_again(monkeypatch, fresh_cache):
+    answers = [None, _pillarboxed()]
+    monkeypatch.setattr(covers, "fetch", lambda url: answers.pop(0))
+
+    assert covers.squared("https://x.test/c.jpg") is None
+    assert covers.squared("https://x.test/c.jpg") is not None

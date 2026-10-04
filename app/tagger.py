@@ -65,11 +65,11 @@ def tag(path: Path, item: dict[str, Any], embed_cover: bool = True) -> None:
         tags.add(TXXX(encoding=3, desc="SPOTIFY_ID", text=item["spotify_id"]))
 
     if embed_cover and item.get("cover_url"):
-        cover = covers.fetch(item["cover_url"])
+        # Squared because a YouTube cover is the video frame, bars and all.
+        # A Spotify cover is square already and passes untouched.
+        cover = covers.squared(item["cover_url"])
         if cover:
-            # Squared because a YouTube cover is the video frame, bars and
-            # all. A Spotify cover is square already and passes untouched.
-            data, mime = covers.square(cover)
+            data, mime = cover
             tags.add(APIC(encoding=3, mime=mime, type=3,
                           desc="Cover", data=data))
 

@@ -849,8 +849,11 @@ it less likely.
       request; the job resolver passes `MAX_TRACKS_PER_JOB`, and its own
       check stays as a backstop. Reproduced first (paging and hydrating
       ran before the refusal).
-- [ ] **L16.** The same cover is fetched and squared once per track
+- [x] **L16.** The same cover is fetched and squared once per track
       (`tagger.py:65-72`).
+      **Fixed:** `covers.squared(url)` keeps the last eight squared covers
+      and lets one track fetch while the others wait; failures are not
+      kept. Reproduced first (six tracks, six fetches; now one).
 - [ ] **L17.** An upload path segment starting with `.` is never filed —
       hidden folders are skipped (`main.py:793-794`).
 - [ ] **L18.** `_delivering.add` happens after the move, leaving a window
