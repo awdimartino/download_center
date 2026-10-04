@@ -238,9 +238,7 @@ it less likely.
       the `active` class moves only in the form's submit handler (`:185-187`).
       While choosing, "All time" (or whatever was last) stays highlighted,
       and closing the pickers without submitting leaves no hint which range
-      is shown. (On first load "All time" *is* marked — the reviewer
-      confirmed it in Chromium, WebKit and Firefox — so if the report meant
-      something else, say so.) Related: the default range is written in three
+      is shown. (Confirmed by the user as the bug they meant.) Related: the default range is written in three
       places (`index.html:155`, `listening.js:26`, `overview.py:249`), and
       the selection is a class only, invisible to screen readers.
       *Fix:* a `markRange()` helper that sets the class and `aria-pressed`,

@@ -59,6 +59,27 @@ has been done and written up; fixing what it found comes next.
 
 ### Next
 
+- [ ] **Finish the rename: retire the Download Center leftovers.** Session 9
+      renamed what users see (repo, image, service, UI, logs) and kept the
+      rest so the Pi would not need its configuration touched. Rename:
+      - **The `DC_` environment variables** (`DC_NAVIDROME_URL`,
+        `DC_SPOTIFY_CLIENT_ID`, `DC_CONFIG_DIR`, … — the map in
+        `config.py`, `Dockerfile`, `docker-compose.yml`, `.env.example`)
+        to a new prefix such as `NC_`. Read the old `DC_` names as a
+        fallback for a release, logging a deprecation warning, so an
+        existing `.env` keeps working while it is updated.
+      - **The Pi's config folder**, `~/Docker/download-center/config` →
+        `~/Docker/navidrome-companion/config`. Stop the container, move
+        the folder, update the bind mount; back up `state.db` first.
+      - **The session cookie** `dc_session` (`auth.py:33`). Renaming it
+        signs everyone out once, which a deploy does anyway.
+      - **The container user** `downloader` (Dockerfile, entrypoint), and
+        the `config.py` default `output_dir = ROOT / "untagged"` and
+        compose's `STAGING_DIR` naming, both from the staging era.
+      - **The local checkout folder** `download_center` (cosmetic; memory
+        notes and the IDE workspace point at it).
+      Then update SETUP.md (settings table, "Moving from the old name") and
+      the 2026-10-04 decisions-log entry that says the prefix stays.
 - [ ] **Split `app/main.py` into routers.** 2,287 lines holding every
       route. The review proposes a split.
 - [ ] **Folders holding more than one album.** Found 2026-09-28: 57 of
@@ -175,8 +196,9 @@ September 2026; verify before acting.
 Why things are the way they are, so they do not get re-litigated.
 
 - **2026-10-04 — Renamed to Navidrome Companion.** It stopped being only a
-  downloader long ago. The `DC_` environment prefix stays, so existing
-  installs keep their configuration.
+  downloader long ago. The `DC_` environment prefix and the Pi's config
+  folder stayed for now, so the deploy touched no configuration; retiring
+  them is on the Next list.
 - **2026-10-04 — Two user-facing docs.** SETUP.md for installing, FEATURES.md
   for what everything does and how. The handoff document went stale within
   weeks of being written; the code and these two are what stay true.
