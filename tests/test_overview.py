@@ -559,9 +559,9 @@ def test_sessions_are_scoped_to_where_they_started(state_db):
     assert september["count"] == 0
 
 
-def test_top_album_is_the_album_with_most_plays_and_its_loudest_track():
-    # Two albums under the same artist name but different album artists must
-    # not merge, and the cover comes from the album's own most played track.
+def test_cover_albums_are_ranked_by_plays_each_with_its_loudest_track():
+    # Two albums under the same name but different album artists must not
+    # merge, and each cover comes from that album's own most played track.
     recent = {"a1": 5, "a2": 4, "a3": 3, "b1": 6}
     named = {
         "a1": {"album": "Kid A", "album_artist": "Radiohead", "id": "mf-1"},
@@ -569,12 +569,22 @@ def test_top_album_is_the_album_with_most_plays_and_its_loudest_track():
         "a3": {"album": "Kid A", "album_artist": "Radiohead", "id": "mf-3"},
         "b1": {"album": "Kid A", "album_artist": "Someone Else", "id": "mf-9"},
     }
-    top = overview._top_album(recent, named)
-    assert top == {"artist": "Radiohead", "album": "Kid A", "plays": 12,
-                   "cover_track_id": "mf-1"}
+    assert overview._cover_albums(recent, named) == [
+        {"artist": "Radiohead", "album": "Kid A", "plays": 12,
+         "cover_track_id": "mf-1"},
+        {"artist": "Someone Else", "album": "Kid A", "plays": 6,
+         "cover_track_id": "mf-9"},
+    ]
 
 
-def test_top_album_is_none_when_nothing_has_an_album():
+def test_cover_albums_stop_at_the_limit():
+    recent = {f"t{i}": i + 1 for i in range(overview.COVER_ALBUMS + 5)}
+    named = {f"t{i}": {"album": f"A{i}", "album_artist": "X", "id": f"mf-{i}"}
+             for i in range(overview.COVER_ALBUMS + 5)}
+    assert len(overview._cover_albums(recent, named)) == overview.COVER_ALBUMS
+
+
+def test_cover_albums_are_empty_when_nothing_has_an_album():
     named = {"x": {"album": "", "album_artist": "", "id": "mf-x"}}
-    assert overview._top_album({"x": 3}, named) is None
-    assert overview._top_album({}, {}) is None
+    assert overview._cover_albums({"x": 3}, named) == []
+    assert overview._cover_albums({}, {}) == []

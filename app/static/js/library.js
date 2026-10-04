@@ -619,7 +619,7 @@ function albumRow(album) {
     actions.append(review);
   }
 
-  const quarantine = el("button", "ghost primary", "Quarantine");
+  const quarantine = el("button", "ghost danger", "Quarantine");
   quarantine.title = "Set this whole album aside - the wrong record "
     + "entirely, not a worse copy of a right one.";
   quarantine.addEventListener("click", (event) => {

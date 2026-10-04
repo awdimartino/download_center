@@ -58,6 +58,12 @@
   --s-5: 24px;
   --s-6: 32px;
 
+  /* The floating burger and LIVE pill: touch-target size, their distance
+     from the screen edge, and the shadow that lifts them off the page. */
+  --tap: 44px;
+  --float-gap: var(--s-5);
+  --float-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+
   /* Type. Thirteen distinct sizes were in use - 10.5, 11.5, 12, 12.5, 13,
      13.5, 14, 15, 16, 17, 18, 20 and 21 - most of them a half-pixel apart
      from a neighbour, which is not a decision anyone can see and is exactly
@@ -134,11 +140,12 @@ button {
   min-height: 38px;
   padding: 0 var(--s-4);
   border: 1px solid transparent;
-  border-radius: var(--r-md);
+  /* Pills, the shape every control on the home page has. */
+  border-radius: 999px;
   background: var(--accent);
   color: var(--on-accent);
   font: inherit;
-  font-size: var(--t-md);
+  font-size: var(--t-sm);
   font-weight: var(--w-medium);
   line-height: 1;
   white-space: nowrap;
@@ -152,32 +159,34 @@ button:active { background: color-mix(in srgb, var(--accent) 88%, #000); }
 button:focus-visible { outline: none; box-shadow: var(--ring); }
 button:disabled { opacity: .4; cursor: default; background: var(--accent); }
 
+/* A quiet button: a faint fill on the page, no outline - the same surface as
+   the home page's range switch. */
 .ghost {
   min-height: 34px;
   padding: 0 var(--s-3);
-  background: var(--panel-2);
-  border-color: var(--line);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border-color: transparent;
   color: var(--text);
   font-size: var(--t-sm);
   font-weight: var(--w-normal);
 }
-.ghost:hover { background: var(--panel-3); border-color: var(--faint); }
-.ghost:active { background: var(--panel-2); }
-.ghost:disabled { background: var(--panel-2); }
+.ghost:hover { background: color-mix(in srgb, var(--text) 12%, transparent); border-color: transparent; }
+.ghost:active { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.ghost:disabled { background: color-mix(in srgb, var(--text) 7%, transparent); }
 
-.ghost.cancel:hover { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 55%, transparent); }
+.ghost.cancel:hover,
+.ghost.danger:hover { color: var(--bad); background: var(--tint-bad); }
 .ghost.retry:hover,
-.ghost.queue:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.ghost.queue:hover { color: var(--accent); background: var(--tint-accent); }
 
 /* The affirmative action in a card - keep this copy, file this album. Filled,
    because beside a plain outlined button it has to read as the answer. */
 .ghost.primary {
-  background: var(--ok);
-  border-color: var(--ok);
-  color: var(--on-ok);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: var(--w-medium);
 }
-.ghost.primary:hover { background: color-mix(in srgb, var(--ok) 86%, #fff); border-color: transparent; }
+.ghost.primary:hover { background: color-mix(in srgb, var(--accent) 86%, #fff); }
 
 .remove {
   min-height: 30px;
@@ -206,10 +215,11 @@ input:not([type="radio"]):not([type="checkbox"]),
 select {
   min-height: 38px;
   padding: 0 var(--s-3);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: 1px solid transparent;
   border-radius: var(--r-md);
   color: var(--text);
+  color-scheme: dark;
   font: inherit;
   /* Never below 16px: iOS Safari zooms the page when a smaller field takes
      focus, and does not zoom back out afterwards. */
@@ -218,7 +228,7 @@ select {
 select { cursor: pointer; }
 input::placeholder { color: var(--faint); }
 input:not([type="radio"]):not([type="checkbox"]):hover,
-select:hover { border-color: var(--panel-3); }
+select:hover { border-color: color-mix(in srgb, var(--text) 14%, transparent); }
 input:focus-visible,
 select:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
 
@@ -232,28 +242,33 @@ input[type="radio"], input[type="checkbox"] {
 
 /* --- header --------------------------------------------------------------- */
 
+/* No bar. The page title is the first line of the page and scrolls away
+   with it; the burger and the LIVE indicator are fixed, solid buttons
+   floating in the top corners. A sticky bar cut the page off at a hard edge
+   as it scrolled under, and a translucent one let it show through. */
 header {
-  position: sticky;
-  top: 0;
-  z-index: 30;
+  /* No z-index: that would make the header a stacking context, trapping the
+     floating buttons below the menu overlay so the cross could not close it. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: var(--s-3) var(--s-5);
-  /* Opaque, and deliberately not backdrop-filtered. A filtered element
-     becomes the containing block for every `position: fixed` descendant.
-     The bottom tab bar this once broke is gone, but the menu overlay is
-     fixed too and the trap is the same one. */
-  background: var(--bg);
+  /* Room on the left for the floating burger, so the title starts beside it
+     rather than under it. */
+  padding: var(--s-3) var(--float-gap) var(--s-3) calc(var(--float-gap) + var(--tap) + var(--s-3));
   /* Clears the notch, so the title is not under the status bar. */
   padding-top: calc(var(--s-3) + env(safe-area-inset-top, 0px));
-  border-bottom: 1px solid var(--line);
+  min-height: calc(var(--tap) + var(--s-3) * 2);
 }
 
-h1 { font-size: var(--t-xl); margin: 0; font-weight: var(--w-bold); letter-spacing: .2px; }
+h1 { font-size: var(--t-2xl); margin: 0; font-weight: var(--w-bold); letter-spacing: -.01em; }
 
 .conn {
-  margin-left: auto;
+  position: fixed;
+  z-index: 40;
+  /* Centred on the burger's line: 44px button, this pill about 20px. */
+  top: calc(var(--s-3) + env(safe-area-inset-top, 0px) + 12px);
+  right: var(--float-gap);
   font-size: var(--t-xs);
   font-weight: var(--w-medium);
   text-transform: uppercase;
@@ -263,8 +278,10 @@ h1 { font-size: var(--t-xl); margin: 0; font-weight: var(--w-bold); letter-spaci
   border: 1px solid var(--line);
   color: var(--faint);
 }
-.conn.online { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 38%, transparent); background: var(--tint-ok); }
-.conn.offline { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 38%, transparent); background: var(--tint-bad); }
+/* Opaque, so nothing scrolling behind it shows through. */
+.conn { background: var(--panel-2); box-shadow: var(--float-shadow); }
+.conn.online { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 38%, transparent); background: color-mix(in srgb, var(--ok) 14%, var(--panel-2)); }
+.conn.offline { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 38%, transparent); background: color-mix(in srgb, var(--bad) 14%, var(--panel-2)); }
 
 .whoami { font-size: var(--t-sm); color: var(--muted); }
 
@@ -282,20 +299,25 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
    desktop tabs wanted, and all of which had to be kept working twice. */
 
 .menu-toggle {
-  position: relative;
+  position: fixed;
+  z-index: 40;
+  top: calc(var(--s-3) + env(safe-area-inset-top, 0px));
+  left: var(--float-gap);
   display: flex;
   align-items: center;
   justify-content: center;
   /* Past the 44px touch minimum in both directions. */
-  width: 44px;
-  height: 44px;
+  width: var(--tap);
+  height: var(--tap);
   padding: 0;
-  background: none;
+  /* Solid, with a soft shadow: it floats over whatever is scrolling past,
+     and a translucent disc let that show through its lines. */
+  background: var(--panel-2);
   border-color: transparent;
-  border-radius: var(--r-md);
-  flex-shrink: 0;
+  border-radius: 999px;
+  box-shadow: var(--float-shadow);
 }
-.menu-toggle:hover { background: var(--panel-2); }
+.menu-toggle:hover { background: var(--panel-3); }
 
 /* Three lines from one element: the bar itself plus its two pseudo-elements.
    No image request, and it scales with the box rather than a fixed asset. */
@@ -332,93 +354,77 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   height: 8px;
   border-radius: 999px;
   background: var(--warn);
-  /* Rings the dot in the header colour so it stays legible over a line. */
-  box-shadow: 0 0 0 2px var(--bg);
+  /* Rings the dot in the button's colour so it stays legible on it. */
+  box-shadow: 0 0 0 2px var(--panel-2);
 }
 
-#current-view { font-size: var(--t-xl); margin: 0; font-weight: var(--w-bold); letter-spacing: .2px; }
+#current-view { font-size: var(--t-2xl); margin: 0; font-weight: var(--w-bold); letter-spacing: -.01em; }
 
 /* --- the menu overlay ----------------------------------------------------- */
 
-/* Hangs from the bottom edge of the header rather than covering it. The
-   first version was inset:0 with a title bar of its own, so opening the menu
-   swapped one header for a different one in the same place - two bars in the
-   same spot, which is the jarring part. Now the header never moves, its
-   burger animates to a cross, and the panel drops out from under it.
-
-   z-index below the header, which is opaque and sticky at 30, so the header
-   paints over the backdrop and stays legible. */
+/* The whole screen darkens and the sections float on it - no side panel.
+   The burger stays on top, as the cross that closes it. */
 .menu {
   position: fixed;
-  top: var(--header-h, 56px);
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
+  inset: 0;
+  z-index: 35;
   display: flex;
 }
 
 .menu-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, .55);
-  /* No backdrop-filter. A filtered element becomes the containing block for
-     every position:fixed descendant, which is the trap that pinned the old
-     tab bar inside the header. */
+  /* Dim, not blacked out: the blur below does most of the work of keeping
+     the page from competing with the menu. */
+  background: rgba(0, 0, 0, .72);
+  /* Safe here: the trap with a filter is that it becomes the containing
+     block for fixed descendants, and the backdrop has none. */
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .menu-panel {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(20rem, 84vw);
-  padding: var(--s-3) var(--s-3) var(--s-4);
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  width: min(24rem, 100%);
+  /* Starts under the burger and lines up with it. */
+  padding: calc(var(--s-3) + env(safe-area-inset-top, 0px) + var(--tap) + var(--s-5))
+           var(--float-gap)
+           calc(var(--s-5) + env(safe-area-inset-bottom, 0px));
+  background: none;
   /* Its own scroller, so a long menu never chains its scroll to the page
      behind it and leaves you somewhere else when it closes. */
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* The notch is the header's problem now - this starts below it. The home
-     indicator is still ours, since the panel runs to the bottom. */
-  padding-bottom: calc(var(--s-4) + env(safe-area-inset-bottom, 0px));
-  /* Square against the header, so the two read as one surface rather than a
-     card floating under a bar. */
-  border-radius: 0;
 }
 
-
+/* Large type straight on the darkened screen: a list of places, not rows in
+   a panel. The current one is in the accent. */
 .nav-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--s-3);
   width: 100%;
-  /* A full-width row is a generous target on a phone and reads as a list on
-     a desktop, which is the parity the two layouts never had. */
-  min-height: 46px;
-  padding: 0 var(--s-3);
-  margin-bottom: var(--s-0);
+  min-height: 48px;
+  padding: 0;
   background: none;
   border-color: transparent;
-  border-radius: var(--r-md);
+  border-radius: 0;
   color: var(--muted);
-  font-size: var(--t-md);
-  font-weight: var(--w-normal);
+  font-size: var(--t-2xl);
+  font-weight: var(--w-bold);
+  letter-spacing: -.01em;
   text-align: left;
 }
-.nav-item:hover { background: var(--panel-2); color: var(--text); }
-.nav-item.active {
-  background: var(--panel-3);
-  color: var(--text);
-  font-weight: var(--w-medium);
-}
-.nav-item.active:hover { background: var(--panel-3); }
+.nav-item:hover { background: none; color: var(--text); }
+.nav-item.active,
+.nav-item.active:hover { background: none; color: var(--accent); }
 
 .menu-rule {
   height: 1px;
-  margin: var(--s-3) var(--s-2);
+  margin: var(--s-3) 0;
   border: 0;
   background: var(--line-soft);
 }
@@ -430,7 +436,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   gap: var(--s-3);
   /* Pushed to the bottom of the panel however short the list is. */
   margin-top: auto;
-  padding: var(--s-4) var(--s-2) 0;
+  padding: var(--s-5) 0 0;
 }
 
 /* A count, not a status. Kept apart from the job pills below, which share
@@ -510,8 +516,11 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 .empty {
   color: var(--faint);
-  text-align: center;
-  padding: var(--s-6) 0;
+  text-align: left;
+  /* Padding only: a paragraph's default margin on top of it doubled every
+     gap, and two empty lines in a row sat 66px apart. */
+  margin: 0;
+  padding: var(--s-4) 0;
   font-size: var(--t-md);
 }
 
@@ -523,10 +532,9 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   align-items: center;
   gap: var(--s-4);
   flex-wrap: wrap;
-  padding: var(--s-3) var(--s-4);
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r-lg);
+  /* On the page, not in a box: the same muted note the home page sets under
+     a heading. */
+  padding: 0;
 }
 .panel-note p {
   flex: 1;
@@ -544,12 +552,11 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 #quarantine {
   margin-top: var(--s-5);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--panel);
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 }
 #quarantine > summary {
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) 0;
   cursor: pointer;
   font-size: var(--t-md);
   font-weight: var(--w-medium);
@@ -567,7 +574,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   font-variant-numeric: tabular-nums;
 }
 .panel-sub {
-  margin: var(--s-3) var(--s-4);
+  margin: var(--s-3) 0;
   font-size: var(--t-sm);
   color: var(--faint);
 }
@@ -713,6 +720,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
    first the way the old per-panel colours did. */
 
 #drop-zone {
+  margin-top: var(--s-5);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -720,8 +728,8 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   gap: var(--s-2);
   width: 100%;
   padding: var(--s-6) var(--s-4);
-  background: var(--panel);
-  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--text) 18%, transparent);
   border-radius: var(--r-lg);
   color: var(--muted);
   font-weight: var(--w-normal);
@@ -729,7 +737,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   white-space: normal;
 }
 #drop-zone:hover,
-#drop-zone:focus-visible { border-color: var(--accent); outline: none; }
+#drop-zone:focus-visible { border-color: var(--accent); background: var(--tint-accent); outline: none; }
 #drop-zone.drag-over {
   background: var(--tint-accent);
   border-color: var(--accent);
@@ -751,21 +759,15 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   /* Both margins. It had only the lower one, so the box sat flush against
      the paragraph explaining it while every other panel stood clear of its
      note - the same value as #library, #dupes and #health above. */
-  margin: var(--s-4) 0;
-  padding: var(--s-5);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow);
+  margin: var(--s-5) 0;
 }
 
 #settings label {
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  font-size: var(--t-xs);
+  font-size: var(--t-sm);
   font-weight: var(--w-normal);
-  letter-spacing: .02em;
   color: var(--muted);
 }
 
@@ -789,24 +791,22 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
    each other - which is how they read when each carried its own border. */
 .kinds {
   display: flex;
-  gap: var(--s-0);
+  gap: 0;
   padding: var(--s-0);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border-radius: 999px;
 }
 .kind {
-  min-height: 30px;
+  min-height: 34px;
   padding: 0 var(--s-3);
   background: none;
   border-color: transparent;
-  border-radius: var(--r-sm);
   color: var(--muted);
   font-size: var(--t-sm);
   font-weight: var(--w-normal);
 }
-.kind:hover { background: var(--panel-2); color: var(--text); }
-.kind.active { background: var(--panel-3); color: var(--text); }
+.kind:hover { background: none; color: var(--text); }
+.kind.active { background: var(--accent); color: var(--on-accent); }
 
 .crumb { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-4) 0 0; }
 .crumb-text { color: var(--muted); font-size: var(--t-md); }
@@ -817,6 +817,9 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   gap: var(--s-4);
   margin-top: var(--s-4);
 }
+/* No results yet: no box, so its margin does not sit as a gap between the
+   two empty lines above and below it. */
+.grid:empty { display: none; }
 
 .card {
   display: flex;
@@ -926,18 +929,18 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 /* The heading of a card, not a heading floating above one - it sits inside
    the border with a rule under it, so the rows beneath are visibly its. */
+/* A section's title, set on the page above its rows the way the home page
+   sets "Top albums": sentence case and the text colour, not a tracked-out
+   label inside a box. */
 .section-head {
   display: flex;
   align-items: baseline;
   gap: var(--s-2);
   margin: 0;
-  padding: var(--s-3) var(--s-4);
-  border-bottom: 1px solid var(--line-soft);
-  font-size: var(--t-xs);
+  padding: var(--s-4) 0 var(--s-2);
+  font-size: var(--t-xl);
   font-weight: var(--w-bold);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text);
 }
 .section-note { font-size: var(--t-sm); font-weight: var(--w-normal); text-transform: none; letter-spacing: 0; color: var(--faint); }
 
@@ -948,39 +951,28 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 #library, #dupes, #health { margin-top: var(--s-4); }
 
-#library {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-}
+#library { border-top: 1px solid var(--line-soft); }
 #library:empty { display: none; }
 
 /* --- health --------------------------------------------------------------- */
 
-.check-group {
-  margin-bottom: var(--s-4);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-}
+.check-group { margin-bottom: var(--s-5); }
 
 .check {
   display: grid;
   grid-template-columns: minmax(11rem, 1fr) 5rem 2fr;
   gap: var(--s-3);
   align-items: baseline;
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--s-3);
   border-bottom: 1px solid var(--line-soft);
-  border-left: 3px solid transparent;
+  border-radius: 0;
 }
 .check:last-child { border-bottom: 0; }
 
-.check.ok   { border-left-color: color-mix(in srgb, var(--ok) 45%, transparent); }
-.check.warn { border-left-color: var(--warn); background: var(--tint-warn); }
-.check.fail { border-left-color: var(--bad); background: var(--tint-bad); }
-.check.info { border-left-color: color-mix(in srgb, var(--info) 55%, transparent); }
+/* Only the rows that need something done are marked: a tinted row and a
+   coloured number. A healthy row is just a row. */
+.check.warn { background: var(--tint-warn); border-radius: var(--r-md); border: 0; color: inherit; }
+.check.fail { background: var(--tint-bad); border-radius: var(--r-md); }
 
 .check-label { cursor: help; font-size: var(--t-md); }
 .check-value { font-variant-numeric: tabular-nums; font-weight: var(--w-bold); text-align: right; }
@@ -992,14 +984,9 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 /* --- duplicates ----------------------------------------------------------- */
 
 .dupe {
-  margin-bottom: var(--s-3);
-  padding: var(--s-4);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-left: 3px solid color-mix(in srgb, var(--info) 55%, transparent);
-  border-radius: var(--r-lg);
+  padding: var(--s-5) 0;
+  border-bottom: 1px solid var(--line-soft);
 }
-.dupe.confident { border-left-color: var(--ok); }
 
 .dupe-head {
   display: flex;
@@ -1010,6 +997,8 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 }
 .dupe-title { font-weight: var(--w-bold); font-size: var(--t-md); }
 .dupe-reason { font-size: var(--t-sm); color: var(--muted); }
+/* What the green edge used to say: this group is safe to resolve. */
+.dupe.confident .dupe-reason { color: var(--ok); }
 .dupe-why { font-size: var(--t-sm); font-weight: var(--w-normal); color: var(--ok); }
 
 /* Shown when the copies in a group are not titled the same - matching
@@ -1038,12 +1027,8 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   font-size: var(--t-md);
   transition: background .14s ease;
 }
-.dupe-copy:hover { background: var(--panel-2); }
-.dupe-copy:has(input:checked) {
-  background: var(--tint-ok);
-  border-color: color-mix(in srgb, var(--ok) 28%, transparent);
-}
-.dupe-copy input { accent-color: var(--ok); }
+.dupe-copy:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.dupe-copy:has(input:checked) { background: var(--tint-accent); }
 
 /* The field the decision actually turns on, so it leads the row. */
 .dupe-copy-title {
@@ -1279,30 +1264,28 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
      The old value reserved 5.5rem plus the safe-area inset on every panel. */
   main { padding: var(--s-3); }
 
-  header { gap: var(--s-2); padding: var(--s-2) var(--s-3); }
-  header { padding-top: calc(var(--s-2) + env(safe-area-inset-top, 0px)); }
-  #current-view { font-size: var(--t-lg); white-space: nowrap; }
+  :root { --float-gap: var(--s-3); }
+  header { gap: var(--s-2); }
+  #current-view { font-size: var(--t-xl); white-space: nowrap; }
 
-  /* Full width on a phone: a drawer that leaves a sliver of the page behind
-     it invites a mis-tap on whatever is under that sliver. */
-  .menu-panel { width: 100%; border-right: 0; }
-
-  /* Comfortably past the touch minimum, and roomier than the desktop rows
-     because this is the primary way to move around on a phone. */
-  .nav-item { min-height: 52px; font-size: var(--t-lg); }
+  /* Comfortably past the touch minimum: this is the primary way to move
+     around on a phone. */
+  .nav-item { min-height: 52px; }
 
 
   /* One thing per row, full width, thumb-sized. */
   #search-form { flex-direction: column; align-items: stretch; }
-  #search-form input, #search-form button { width: 100%; min-height: 44px; }
+  /* The Go button only: the filter options are buttons inside this form too,
+     and taking the 44px with them made the switch taller than the field. */
+  #search-form input, #search-form > button { width: 100%; min-height: 44px; }
   #query { min-width: 0; }
   .kinds { width: 100%; }
-  .kind { flex: 1; min-height: 38px; }
+  /* 40px options in the 2px track: 44px, level with the field and Go. */
+  .kind { flex: 1; min-height: 40px; }
 
-  .panel-note { padding: var(--s-3); }
   .panel-note button { width: 100%; min-height: 40px; }
 
-  #settings { padding: var(--s-4); gap: var(--s-3); }
+  #settings { gap: var(--s-3); }
 
   /* The value is the point of the row, so it goes beside the label rather
      than in a third column that falls off the screen. */
@@ -1361,7 +1344,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   /* The tab rule that used to live here shrank five labels to fit across the
      screen. A vertical menu has no such constraint, so only the title needs
      to give way. */
-  #current-view { font-size: var(--t-md); }
+  #current-view { font-size: var(--t-lg); }
 }
 
 /* --- health: the demoted rows ---------------------------------------------
@@ -1595,7 +1578,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 .album-edit { border-bottom: 1px solid var(--line-soft); margin-bottom: var(--s-2); }
 
 .edit-field { display: flex; flex-direction: column; gap: var(--s-0); }
-.edit-label { color: var(--muted); }
+.edit-label { color: var(--muted); font-size: var(--t-sm); }
 .edit-field input { min-width: 9rem; }
 .edit-field input[type="number"] { max-width: 5rem; }
 
@@ -1634,7 +1617,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 .album-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-md); }
 .album-meta { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
-.album-library { font-size: var(--t-xs); font-weight: var(--w-medium); letter-spacing: .07em; color: var(--faint); text-transform: uppercase; }
+.album-library { font-size: var(--t-sm); color: var(--faint); }
 
 /* The last column of the head: the one thing to do to a whole album. */
 .album-actions {
@@ -1680,7 +1663,8 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 .album-merge-results {
   margin-top: var(--s-1);
   background: var(--panel-2);
-  border: 1px solid var(--line);
+  border: 0;
+  box-shadow: var(--float-shadow);
   border-radius: var(--r-md);
   overflow: hidden;
 }
@@ -1710,15 +1694,21 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 @media (max-width: 720px) {
   main:has(#view-library:not([hidden])) { max-width: 100%; }
-  .album-head { grid-template-columns: auto auto 1fr auto; gap: var(--s-2); }
+  /* Arrow and cover on the left, the name with its details stacked beside
+     the cover, the actions in a row underneath. Giving the name a row of its
+     own left the arrow alone on a line and the cover pushed to the right. */
+  .album-head { grid-template-columns: auto auto 1fr; gap: var(--s-1) var(--s-3); }
   .album-head .album-library { display: none; }
-  .album-name { grid-column: 1 / -1; }
+  .album-caret { grid-column: 1; grid-row: 1 / span 2; }
+  .album-head .art { grid-column: 2; grid-row: 1 / span 2; }
+  .album-name { grid-column: 3; grid-row: 1; white-space: normal; }
+  .album-meta { grid-column: 3; grid-row: 2; }
   /* Four columns are not enough for a name and a button as well, so the
      actions take a row of their own rather than squeezing the name off
      screen. */
   .album-actions {
     grid-column: 1 / -1;
-    justify-content: space-between;
+    justify-content: flex-start;
     flex-wrap: wrap;
     gap: var(--s-2);
     margin-top: var(--s-1);
@@ -1765,26 +1755,18 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   margin: var(--s-2) 0 var(--s-4);
 }
 
-/* The headline. A button, because it goes somewhere - but it should read as
-   a sentence somebody wrote, not as a control, so it borrows the panel
-   rather than a button's chrome. */
+/* The headline: a sentence, not a control. It used to be a button that
+   scrolled to the detail, but the detail is directly below it now. Without a
+   cover it sits in the panel colour; on the cover the rule further down
+   strips that back to plain text. */
 .home-hero {
   display: block;
-  width: 100%;
-  text-align: left;
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-lg);
   padding: var(--s-5);
   margin-bottom: var(--s-5);
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  transition: border-color .15s ease, background .15s ease;
 }
-
-.home-hero:hover { background: var(--panel-2); border-color: var(--line); }
-.home-hero:focus-visible { outline: none; box-shadow: var(--ring); }
 
 .home-hero-lead,
 .home-hero-tail {
@@ -1804,20 +1786,12 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   overflow-wrap: anywhere;
 }
 
-.home-hero-more {
-  display: block;
-  margin-top: var(--s-3);
-  font-size: var(--t-sm);
-  font-weight: var(--w-medium);
-  color: var(--accent);
-}
-
 /* --- home cover -----------------------------------------------------------
-   The most played album of the last year is the header of this page. Its
-   cover is darkened so the copy on it is legible and fades into the page
-   colour, which is the cover's own most common colour (set on :root by
-   home.js). Without a cover, `has-art` is off and none of this applies: the
-   intro is ordinary text and the page is the stylesheet's background. */
+   One of the year's most played albums, picked at random on each visit, is
+   the header of this page. Its cover is darkened so the copy on it is
+   legible, and fades to the page grey. Its colour becomes the accent (set on
+   :root by home.js). Without a cover, `has-art` is off and none of this
+   applies: the intro is ordinary text on the stylesheet's background. */
 
 :root { --cover-h: clamp(380px, 72vw, 560px); }
 
@@ -1831,24 +1805,14 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
    removed while it shows, so nothing sits above the image. */
 body:has(#view-home:not([hidden]) .home-cover.has-art) main { padding-top: 0; }
 
-/* On the home view the notices go to the bottom of the screen. At the top
-   they sat over the head and shoulders of the cover art. */
-body:has(#view-home:not([hidden])) main > #error,
-body:has(#view-home:not([hidden])) main > #warn {
-  top: auto;
-  bottom: var(--s-4);
-}
-
-/* On the home view the top bar is gone: no fill, no rule. The burger and the
-   LIVE indicator float over the cover, and the view's name is kept for screen
-   readers only, since it is no longer visible on screen. */
+/* On the home view the header leaves the flow so the cover starts at the
+   very top of the page, and the view's name is kept for screen readers only:
+   the cover is the title here. */
 body:has(#view-home:not([hidden])) > header {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  background: none;
-  border-bottom-color: transparent;
 }
 body:has(#view-home:not([hidden])) #current-view {
   position: absolute;
@@ -1857,21 +1821,6 @@ body:has(#view-home:not([hidden])) #current-view {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
-}
-/* A dark, translucent disc behind the burger so its lines read over bright
-   artwork, without a bar behind it. */
-body:has(#view-home:not([hidden])) .menu-toggle {
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  border-radius: 999px;
-}
-body:has(#view-home:not([hidden])) .menu-toggle:hover {
-  background: color-mix(in srgb, var(--bg) 75%, transparent);
-}
-/* The LIVE indicator's own tint is too faint to read over bright artwork, so
-   it sits on the same dark backing as the burger. */
-body:has(#view-home:not([hidden])) #conn {
-  background: color-mix(in srgb, var(--bg) 75%, transparent);
-  backdrop-filter: blur(6px);
 }
 
 .home-cover { position: relative; text-shadow: 0 1px 14px rgba(0, 0, 0, .55); }
@@ -1887,14 +1836,16 @@ body:has(#view-home:not([hidden])) #conn {
   margin-right: calc(50% - 50vw);
 }
 
-/* The home view takes its colours from the cover. Redefining --accent here
-   means every chart, bar, link and stat that already reads it picks up the
-   cover's colour, and the tints derived from it are recomputed against that
-   colour rather than the app's blue. Outside this view nothing changes. */
-#view-home.themed {
+/* The whole site takes its colours from the home page's cover. Redefining
+   --accent here means every chart, bar, link, button and
+   focus ring that already reads it picks up the cover's colour, and the
+   tokens derived from it are recomputed against it rather than the app's
+   blue. Without a cover, `themed` is off and the defaults stand. */
+body.themed {
   --accent: var(--home-accent);
   --tint-accent: color-mix(in srgb, var(--accent) 12%, transparent);
   --on-accent: var(--home-on);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 /* The home view is its own stacking context, so the picture can sit behind
@@ -1961,20 +1912,11 @@ body:has(#view-home:not([hidden])) #conn {
   transform: none;
 }
 
-.home-cover-caption {
-  font-size: var(--t-sm);
-  font-weight: var(--w-medium);
-  color: var(--text);
-  opacity: .85;
-  margin: 0 0 var(--s-3);
-}
-
 .home-cover .home-greeting { margin: var(--s-1) 0 var(--s-3); }
 
 /* On the cover the fact is text, not a panel. The button keeps its behaviour
    and loses its chrome. */
-.home-cover .home-hero,
-.home-cover .home-hero:hover {
+.home-cover .home-hero {
   background: none;
   border-color: transparent;
   padding: 0;
@@ -1998,10 +1940,7 @@ body:has(#view-home:not([hidden])) #conn {
 
 /* Empty states on the home view: one style, aligned with the text beside
    them, instead of a centred block that sat differently in each panel. */
-#view-home .empty {
-  text-align: left;
-  padding: var(--s-3) 0;
-}
+#view-home .empty { padding: var(--s-3) 0; }
 
 /* The three headline numbers float on the cover's fade rather than sitting in
    cards. The cover is a positioned element, so without a stacking context
@@ -2030,14 +1969,15 @@ body:has(#view-home:not([hidden])) #conn {
 }
 #home-stats .stat-value { font-size: clamp(1.6rem, 5vw, 2.3rem); }
 
-/* Page-level notices (the Spotify and sign-in warnings) float under the
-   header instead of taking a place in the flow. Before, one appearing pushed
-   the whole page down, and on the home view that moved the cover off the top
-   of the screen. Panels' own banners are still in-flow. */
+/* Page-level notices (the Spotify and sign-in warnings) float at the bottom
+   of the screen instead of taking a place in the flow. In the flow, one
+   appearing pushed the whole page down; floating at the top, it sat over each
+   page's opening line and the home cover's art. Panels' own banners are still
+   in-flow. */
 main > #error,
 main > #warn {
   position: fixed;
-  top: calc(var(--header-h, 60px) + var(--s-2));
+  bottom: var(--s-4);
   left: 50%;
   transform: translateX(-50%);
   width: min(720px, calc(100% - var(--s-5)));
@@ -2263,7 +2203,7 @@ main > #error { background: color-mix(in srgb, var(--bad) 16%, var(--panel-2)); 
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-hero, .stat-link, .chart-crosshair { transition: none; }
+  .stat-link, .chart-crosshair { transition: none; }
 }
 
 /* --- home: below the cover ----------------------------------------------
@@ -2280,6 +2220,7 @@ main > #error { background: color-mix(in srgb, var(--bad) 16%, var(--panel-2)); 
   letter-spacing: -.01em;
 }
 #view-home .home-figure-note {
+  font-size: var(--t-md);
   color: var(--muted);
   margin: var(--s-1) 0 var(--s-4);
 }
@@ -2307,7 +2248,7 @@ main > #error { background: color-mix(in srgb, var(--bad) 16%, var(--panel-2)); 
   border-radius: 999px;
   background: none;
   color: var(--muted);
-  min-height: 32px;
+  min-height: 34px;
   padding: 0 var(--s-3);
 }
 #view-home .listen-range .range:hover { color: var(--text); }
@@ -2465,3 +2406,7 @@ main > #error { background: color-mix(in srgb, var(--bad) 16%, var(--panel-2)); 
   }
   #view-home .listen-dates .range { flex: 1 0 100%; }
 }
+
+/* A field's help text, on the type scale rather than the browser's own
+   "smaller" of an already small label (it came out at 10.4px). */
+#settings small { font-size: var(--t-xs); line-height: 1.45; color: var(--faint); }

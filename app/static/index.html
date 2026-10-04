@@ -91,9 +91,9 @@
        type, three numbers and two charts. Everything here is a door to a
        section that holds the real detail, and nothing here is a control. -->
   <section id="view-home">
-    <!-- The most played album of the last year is the header. Its cover is
-         darkened for the text on it, and the most common colour in it tints
-         the page behind everything below. With no cover (or none that loads)
+    <!-- One of the year's most played albums, picked at random on each visit,
+         is the header. Its cover is darkened for the text on it, and its
+         brightest strong colour becomes the site's accent. With no cover (or none that loads)
          the class stays off and this is an ordinary stack of text. -->
     <div id="home-cover" class="home-cover">
       <!-- The whole sleeve at full width and its natural height, never
@@ -104,17 +104,15 @@
       </div>
 
       <div class="home-intro">
-        <p id="home-cover-caption" class="home-cover-caption" hidden></p>
         <p id="home-greeting" class="home-greeting"></p>
 
         <!-- One fact, chosen at random by the browser from the several the
              server sends, so the page is not the same page every morning. -->
-        <button id="home-hero" class="home-hero" type="button" hidden>
+        <div id="home-hero" class="home-hero" hidden>
           <span class="home-hero-lead"></span>
           <span class="home-hero-value"></span>
           <span class="home-hero-tail"></span>
-          <span class="home-hero-more">See the detail &rsaquo;</span>
-        </button>
+        </div>
       </div>
     </div>
 

@@ -217,7 +217,7 @@ def listening(identity: navidrome.Identity) -> dict[str, Any]:
         known = named.get(track_uuid)
         if known and known["artist"]:
             by_artist[known["artist"]] += n
-    top_album = _top_album(recent, named)
+    cover_albums = _cover_albums(recent, named)
 
     this_month = by_month.get(wanted[-1], 0)
     last_month = by_month.get(wanted[-2], 0) if len(wanted) > 1 else 0
@@ -253,7 +253,7 @@ def listening(identity: navidrome.Identity) -> dict[str, Any]:
         "last_month": last_month,
         "tracked_since": min((day for day, _, _ in plays), default=""),
         "artists_heard": len(by_artist),
-        "top_album": top_album,
+        "cover_albums": cover_albums,
         "year": {"year": year, "plays": plays_this_year,
                  "tracks": len(played_this_year),
                  "seconds": round(seconds_this_year)},
@@ -354,13 +354,18 @@ def highlights(heard: dict[str, Any], counted: dict[str, Any]) -> list[dict[str,
     return facts
 
 
-def _top_album(recent: dict[str, int],
-               named: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
-    """The most played album in the window, and the track to draw its cover from.
+# How many of the most played albums the home cover is drawn from. The
+# browser picks one at random on every visit, so the header changes without
+# reaching beyond music somebody actually listens to.
+COVER_ALBUMS = 20
+
+
+def _cover_albums(recent: dict[str, int],
+                  named: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """The most played albums in the window, each with a track to draw its cover from.
 
     Grouped the way `playcounts.top_albums` groups - by album artist and album
-    together - so the cover shown here is the same album the Listening panel
-    ranks first. The cover comes from that album's most played track, which is
+    together. Each cover comes from that album's most played track, which is
     the one most likely to be a file with its art embedded.
     """
     by_album: dict[tuple[str, str], int] = collections.Counter()
@@ -373,12 +378,9 @@ def _top_album(recent: dict[str, int],
         by_album[key] += n
         if key not in loudest or n > loudest[key][0]:
             loudest[key] = (n, track_uuid)
-    if not by_album:
-        return None
-    (artist, album), plays = by_album.most_common(1)[0]
-    _, track_uuid = loudest[(artist, album)]
-    return {"artist": artist, "album": album, "plays": plays,
-            "cover_track_id": named[track_uuid].get("id")}
+    return [{"artist": artist, "album": album, "plays": plays,
+             "cover_track_id": named[loudest[(artist, album)][1]].get("id")}
+            for (artist, album), plays in by_album.most_common(COVER_ALBUMS)]
 
 
 def overview(identity: navidrome.Identity) -> dict[str, Any]:

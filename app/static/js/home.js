@@ -25,10 +25,8 @@ const homeArtists = document.getElementById("home-artists");
 const homeListening = document.getElementById("home-listening");
 const homeSnapshots = document.getElementById("home-snapshots");
 const homeEmpty = document.getElementById("home-empty");
-const homeView = document.getElementById("view-home");
 const homeCover = document.getElementById("home-cover");
 const homeCoverArt = document.getElementById("home-cover-art");
-const homeCoverCaption = document.getElementById("home-cover-caption");
 
 
 function greeting() {
@@ -136,12 +134,14 @@ function paletteFrom(h, s, l) {
 // page as it was: no cover shows the text alone, and no colour keeps the
 // stylesheet's own background.
 const PALETTE_VARS = ["--home-accent", "--home-tint", "--home-on"];
+const PALETTE_KEY = "cover-palette";
 
-function setPalette(palette) {
+// The whole site takes its accent from the cover, not just Home. The class
+// on <body> is what tells the stylesheet to; with no palette every page keeps
+// the app's own accent.
+function applyPalette(palette) {
   const root = document.documentElement;
-  // The class is what tells the stylesheet to take the cover's accent; with
-  // no palette the home view keeps the app's own accent.
-  homeView.classList.toggle("themed", Boolean(palette));
+  document.body.classList.toggle("themed", Boolean(palette));
   if (!palette) {
     PALETTE_VARS.forEach((name) => root.style.removeProperty(name));
     return;
@@ -151,27 +151,47 @@ function setPalette(palette) {
   root.style.setProperty("--home-on", palette.on);
 }
 
-function setCover(album) {
-  if (!album || !album.cover_track_id) {
-    homeCover.classList.remove("has-art");
-    setPalette(null);
-    return;
-  }
+// Remembered between visits, so a page opened before Home has loaded (or a
+// reload on Library) is already in the cover's colour rather than flashing
+// the default blue first. A convenience only: storage can be unavailable.
+function setPalette(palette) {
+  applyPalette(palette);
+  try {
+    if (palette) localStorage.setItem(PALETTE_KEY, JSON.stringify(palette));
+    else localStorage.removeItem(PALETTE_KEY);
+  } catch (err) { /* private window or blocked storage */ }
+}
 
-  homeCover.classList.add("has-art");
-  homeCoverCaption.hidden = false;
-  homeCoverCaption.textContent = "Most played in the last year: "
-    + album.album + " by " + album.artist;
-  homeCoverArt.alt = album.album + " by " + album.artist;
+try {
+  const saved = JSON.parse(localStorage.getItem(PALETTE_KEY) || "null");
+  if (saved && saved.accent) applyPalette(saved);
+} catch (err) { /* nothing remembered */ }
 
-  homeCoverArt.onload = () => setPalette(coverPalette(homeCoverArt));
-  homeCoverArt.onerror = () => {
-    homeCover.classList.remove("has-art");
-    homeCoverCaption.hidden = true;
-    setPalette(null);
+// One of the year's most played albums, picked at random on every visit so
+// the header is not the same cover every time. Picked here rather than on the
+// server, the same as the headline fact. An album whose cover will not load
+// (none embedded, none in the folder) is skipped for another; only when none
+// load does the page fall back to text on the plain background.
+function setCover(albums) {
+  const left = (albums || []).filter((album) => album.cover_track_id);
+
+  const tryNext = () => {
+    if (!left.length) {
+      homeCover.classList.remove("has-art");
+      setPalette(null);
+      return;
+    }
+    const [album] = left.splice(Math.floor(Math.random() * left.length), 1);
+    homeCoverArt.alt = album.album + " by " + album.artist;
+    homeCoverArt.onload = () => setPalette(coverPalette(homeCoverArt));
+    homeCoverArt.onerror = tryNext;
+    homeCoverArt.src = "/api/library/art?id="
+      + encodeURIComponent(album.cover_track_id) + "&size=600";
   };
-  homeCoverArt.src = "/api/library/art?id="
-    + encodeURIComponent(album.cover_track_id) + "&size=600";
+  // The space is held from the start, so the copy does not jump down when
+  // the image arrives.
+  homeCover.classList.toggle("has-art", left.length > 0);
+  tryNext();
 }
 
 function homeTiles(data) {
@@ -222,7 +242,7 @@ export async function loadHome() {
     homeEmpty.hidden = true;
     homeGreeting.textContent = greeting() + ", " + data.username + ".";
     heroFact(data.highlights || []);
-    setCover(heard.top_album);
+    setCover(heard.cover_albums);
     homeTiles(data);
     homeMonths.replaceChildren(monthlyChart(heard.months || []));
     homeArtists.replaceChildren(...artistBars(heard.top_artists || []));
@@ -243,5 +263,3 @@ export async function loadHome() {
   }
 }
 
-homeHero.addEventListener("click",
-  () => homeListening.scrollIntoView({ behavior: "smooth", block: "start" }));
