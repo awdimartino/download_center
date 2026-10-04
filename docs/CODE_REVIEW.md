@@ -483,7 +483,7 @@ it less likely.
 
 ### Getting music in
 
-- [ ] **M16. One unexpected exception orphans the rest of a job.**
+- [x] **M16. One unexpected exception orphans the rest of a job.**
       `app/worker.py:255-259`, `app/downloader.py:58, 101`. `gather` without
       `return_exceptions` re-raises the first stray error (say, `mkdir` on a
       full disk) without cancelling the siblings, which keep downloading and
@@ -491,6 +491,8 @@ it less likely.
       — uncancellable, undeletable, items stuck animating, Retry says
       "nothing to retry".
       *Fix:* catch-all in `_process` that fails the item.
+      **Fixed** as suggested; cancellation still propagates. Reproduced
+      first with a download raising `OSError`.
 
 - [ ] **M17. Non-audio files are never removed from the inbox.**
       `app/inbox.py:213-279`. Covers, `.cue`, `.nfo` stay for ever and their

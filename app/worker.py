@@ -119,6 +119,26 @@ async def _match_with_retries(item: dict[str, Any]) -> Any:
 
 async def _process(item: dict[str, Any], space: workspace.Workspace,
                    job_id: str, gate: asyncio.Semaphore) -> None:
+    """One item, whatever goes wrong with it.
+
+    Every error is this item's failure, with its message. One that escaped
+    used to reach `gather`, which re-raised it without cancelling the other
+    items: they went on downloading and holding slots after the job had been
+    marked failed and dropped - uncancellable, undeletable, stuck animating,
+    and Retry said there was nothing to retry.
+    """
+    try:
+        await _process_item(item, space, job_id, gate)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.exception("unexpected error on %s", item.get("title"))
+        _mark(item, "failed", error=f"{type(exc).__name__}: {exc}"[:200],
+              progress=0)
+
+
+async def _process_item(item: dict[str, Any], space: workspace.Workspace,
+                        job_id: str, gate: asyncio.Semaphore) -> None:
     # Already in the library. A retry resets the failures and re-runs the
     # whole job, so without this every track that succeeded the first time is
     # downloaded and filed again - one duplicate per completed track, per

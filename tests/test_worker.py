@@ -354,3 +354,29 @@ async def test_a_retry_does_not_re_download_what_already_finished(library,
     folder = library.library_path / "The Beatles" / "Abbey Road"
     assert sorted(p.name for p in folder.iterdir()) == [
         "01 - Come Together.mp3", "02 - Something.mp3"]
+
+
+# --- an error nobody expected (CODE_REVIEW M16) -----------------------------
+# gather without return_exceptions re-raised the first stray error without
+# cancelling the other items, which kept downloading and holding slots after
+# the job was marked failed and dropped - uncancellable and stuck animating.
+
+@pytest.mark.asyncio
+async def test_an_unexpected_error_fails_one_item_and_the_job_finishes(
+        library, monkeypatch):
+    real = worker.downloader.download
+
+    def download(url, destination, on_progress=None):
+        if destination.stem == "item1":
+            raise OSError("No space left on device")
+        return real(url, destination, on_progress)
+
+    monkeypatch.setattr(worker.downloader, "download", download)
+    items = [_track(1, "Come Together"), _track(2, "Something")]
+
+    job = await _run(library, items)
+
+    assert items[0]["status"] == "failed"
+    assert "No space left" in items[0]["error"]
+    assert items[1]["status"] == "complete"
+    assert job["status"] == "partial"
