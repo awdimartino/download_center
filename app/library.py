@@ -309,14 +309,17 @@ def _songs(connection: sqlite3.Connection, identity: navidrome.Identity,
 def listing(identity: navidrome.Identity, limit: int = PAGE, offset: int = 0,
             show: str = "all", search: str = "",
             newest_first: bool = True, kind: str = "all",
-            sort: str | None = None, artist: str = "") -> dict[str, Any]:
+            sort: str | None = None, artist: str = "",
+            library_id: int | None = None) -> dict[str, Any]:
     """The albums this person owns, filtered and paged.
 
     `show` is one of FILTERS and `kind` one of KINDS. `search` is a plain
     substring of the artist or the album - no ranking, because the answer to
     "where is Abbey Road" should not depend on a scoring function - and on
     the first page it also brings back the songs whose titles hold it.
-    `artist` narrows to one album artist exactly, for the artist page.
+    `artist` narrows to one album artist exactly, for the artist page, and
+    `library_id` to one library, for the editor's merge search: a merge
+    happens inside one library.
     """
     if show not in FILTERS:
         raise ValueError(f"There is no {show!r} filter.")
@@ -359,6 +362,7 @@ def listing(identity: navidrome.Identity, limit: int = PAGE, offset: int = 0,
     shown = [a for a in every
              if keep(a) and of_kind(a)
              and (not by or a.artist.casefold() == by)
+             and (library_id is None or a.library_id == int(library_id))
              and (not needle or _matches(a, needle))]
     key, descending = SORTS[sort]
     shown.sort(key=key, reverse=descending)

@@ -894,9 +894,11 @@ it less likely.
       anything larger or anything Pillow cannot verify as an image, so
       every caller (downloads, Fetch cover, combine) gets an image or
       nothing. Reproduced first.
-- [ ] **L23.** The album editor's merge search spans every library; picking
+- [x] **L23.** The album editor's merge search spans every library; picking
       another library's album makes a new album instead of merging
       (`library.js:1159`).
+      **Fixed:** `GET /api/library` takes `library_id`, and the merge
+      search passes the album's own. Reproduced first.
 - [ ] **L24.** An artist page stops silently at 200 records (`library.js:414`).
 - [ ] **L25.** `GET /api/playcounts` is not admin-only and shows imported
       totals summed across accounts — on a two-person install, one person's

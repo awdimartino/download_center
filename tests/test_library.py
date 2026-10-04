@@ -806,3 +806,34 @@ def test_a_track_says_whether_it_has_an_album_artist(db, identity):
     items = library.tracks(identity, 1, "X/Y")["items"]
 
     assert {t["id"]: t["has_albumartist"] for t in items} == {"a": False, "b": True}
+
+
+# --- the merge search stays in one library (L23) -------------------------------
+
+def test_the_listing_narrows_to_one_library(db, identity):
+    """The album editor's merge search spanned every library, and picking
+    another library's album only made a new album here with its name."""
+    both = navidrome.Identity(
+        user_id=identity.user_id, username=identity.username,
+        is_admin=identity.is_admin, token="t", subsonic_token="st",
+        subsonic_salt="ss",
+        libraries=identity.libraries + [{"id": 2, "name": "Kelly", "path": "/k"}])
+    make_album(db, "The Beatles/Abbey Road", 2, album="Abbey Road",
+               album_artist="The Beatles")
+    make_album(db, "The Beatles/Abbey Road (Kelly)", 2, library_id=2,
+               album="Abbey Road", album_artist="The Beatles",
+               album_id="al-kelly")
+
+    every = library.listing(both, search="abbey")["albums"]
+    mine = library.listing(both, search="abbey", library_id=1)["albums"]
+
+    assert sorted(a["library_id"] for a in every) == [1, 2]
+    assert [a["library_id"] for a in mine] == [1]
+
+
+def test_the_merge_search_asks_for_the_albums_own_library():
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent / "app" / "static" / "js"
+          / "library.js").read_text(encoding="utf-8")
+    assert "&library_id=${album.library_id}&limit=8" in js

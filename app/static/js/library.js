@@ -1184,7 +1184,9 @@ function albumEditor(album) {
   // Retagging to an album name that already exists is what merges into it,
   // but that meant retyping an existing artist and title exactly right - one
   // typo made a new album instead of joining the one you meant. This searches
-  // the whole library and fills the two fields from a real match.
+  // the album's own library - a merge happens inside one; picking another
+  // library's album only made a new album here with its name - and fills
+  // the two fields from a real match.
   const mergeLabel = el("span", "edit-label", "Merge into an existing album");
   const mergeInput = el("input", "album-merge-input");
   mergeInput.type = "search";
@@ -1199,7 +1201,8 @@ function albumEditor(album) {
     const mine = ++mergeRequest;
     let data;
     try {
-      data = await getJSON(`/api/library?q=${encodeURIComponent(query)}&limit=8`);
+      data = await getJSON(`/api/library?q=${encodeURIComponent(query)}`
+        + `&library_id=${album.library_id}&limit=8`);
     } catch (err) {
       if (mine !== mergeRequest) return;
       mergeResults.replaceChildren(

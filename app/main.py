@@ -1492,6 +1492,7 @@ async def library_list(
     kind: str = "all",
     sort: str = "recent",
     artist: str = "",
+    library_id: int | None = None,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
     """Every album this person owns, newest first unless `sort` says not.
@@ -1507,7 +1508,7 @@ async def library_list(
         return await asyncio.to_thread(
             functools.partial(library.listing, session.identity, limit,
                               offset, show, q, kind=kind, sort=sort,
-                              artist=artist))
+                              artist=artist, library_id=library_id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
