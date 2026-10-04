@@ -1567,19 +1567,6 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 .lib-seg button[aria-pressed="true"] { background: var(--panel-3); color: var(--text); }
 #library-select[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 
-.lib-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  margin-top: var(--s-3);
-  padding-left: var(--s-3);
-  border-radius: 999px;
-  background: var(--tint-accent);
-  color: var(--accent);
-  font-size: var(--t-sm);
-}
-.lib-filter button { min-height: 30px; background: transparent; color: var(--accent); }
-
 .lib-section-title {
   display: flex;
   flex-wrap: wrap;

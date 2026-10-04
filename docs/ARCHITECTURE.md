@@ -376,7 +376,9 @@ the whole editor folded inside each, which made the list hard to read and
 the editor hard to use. It is now three tabs:
 
 - **Albums** - a cover grid (or a dense list), with All / Albums / Singles
-  chips, a sort (recently added, artist, album, year, most played) and a
+  chips, a status filter that keeps **Needs review** and **No MusicBrainz
+  match** as two separate entries (they are different questions - see
+  below), a sort (recently added, artist, album, year, most played) and a
   search that also returns **songs** whose titles match
   (`library._songs`, first page only, `LIKE` with its wildcards escaped).
   A *single* is a folder of one track, which is what every YouTube download

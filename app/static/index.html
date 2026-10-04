@@ -278,15 +278,21 @@
           <option value="plays">Most played</option>
         </select>
       </label>
+      <label class="field-inline lib-sort">
+        <span class="sr-only">Status</span>
+        <select id="library-show">
+          <option value="all">Any status</option>
+          <option value="review">Needs review</option>
+          <option value="unmatched">No MusicBrainz match</option>
+          <option value="nogain">No ReplayGain</option>
+        </select>
+      </label>
       <div id="library-layout" class="lib-seg" role="group" aria-label="Layout">
         <button type="button" data-layout="grid" title="Covers" aria-label="Covers">▦</button>
         <button type="button" data-layout="list" title="List" aria-label="List">☰</button>
       </div>
       <button id="library-select" class="ghost" type="button" aria-pressed="false">Select</button>
     </div>
-    <!-- A narrowing reached from Needs attention ("see all"), shown as a
-         chip that clears it rather than as a select nobody would find. -->
-    <div id="library-filter" class="lib-filter" hidden></div>
     <p id="library-count" class="panel-sub" hidden></p>
     <!-- Pinned under the header while the list scrolls, and carried into
          the album panel while one is open: everything here is about

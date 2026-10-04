@@ -39,7 +39,7 @@ const libraryKind = document.getElementById("library-kind");
 const librarySort = document.getElementById("library-sort");
 const libraryLayout = document.getElementById("library-layout");
 const librarySelect = document.getElementById("library-select");
-const libraryFilter = document.getElementById("library-filter");
+const libraryShow = document.getElementById("library-show");
 const librarySuggest = document.getElementById("library-suggest");
 const libraryDrawer = document.getElementById("library-drawer");
 const libraryBar = document.getElementById("library-bar");
@@ -68,16 +68,10 @@ const view = {
   kind: remembered("kind", "all", ["all", "album", "single"]),
   sort: remembered("sort", "recent", ["recent", "artist", "album", "year", "plays"]),
   layout: remembered("layout", "grid", ["grid", "list"]),
-  // A narrowing reached from Needs attention, cleared from its chip.
+  // Needs review, no MusicBrainz match, no ReplayGain - or none of them.
   show: "all",
   // The artist whose page is open, on the Artists tab.
   artist: null,
-};
-
-const SHOW_LABELS = {
-  review: "Needs review",
-  unmatched: "No MusicBrainz match",
-  nogain: "No ReplayGain",
 };
 
 // One page. The server clamps at MAX_PAGE, so a refresh of more than that
@@ -259,6 +253,7 @@ function flags(album) {
   const box = el("span", "lib-flags");
   if (album.kind === "single") box.append(el("span", "lib-flag", "Single"));
   if (isBarred(album)) box.append(el("span", "lib-flag tone-warn", "Cover"));
+  if (album.needs_review) box.append(el("span", "lib-flag tone-warn", "Review"));
   return box;
 }
 
@@ -438,8 +433,11 @@ async function loadAlbums(mode, anchor) {
 
     // About the whole library, not the filtered page, so they do not move
     // when the filter does.
-    libraryCount.textContent =
-      `${plural(data.albums_total, "album")} · ${plural(data.tracks, "track")}`;
+    libraryCount.textContent = [
+      `${plural(data.albums_total, "album")} · ${plural(data.tracks, "track")}`,
+      `${plural(data.review_albums, "album")} need${data.review_albums === 1 ? "s" : ""} review`,
+      `${plural(data.unmatched_albums, "album")} with no MusicBrainz match`,
+    ].join(" · ");
     libraryCount.hidden = !data.tracks || !!view.artist;
 
     const filtered = view.show !== "all" || view.kind !== "all"
@@ -767,8 +765,9 @@ async function loadAttention() {
     todoSection({
       title: "Needs review",
       count: data.review.count,
-      why: "No MusicBrainz match, and nobody has looked yet. Open one to find a "
-        + "match, or mark it reviewed if it is right as it is.",
+      why: "Everything that arrives starts here. An album leaves when it gets a "
+        + "MusicBrainz match, or when you mark it reviewed - some music is simply "
+        + "not in MusicBrainz, and that is fine.",
       albums: data.review.albums,
       actions: [button("See all", "ghost", () => setShow("review"))],
     }),
@@ -1301,10 +1300,17 @@ function statusPills(album) {
   // Opened from a song in the search results, which says nothing about the
   // album's state - better no pills than wrong ones.
   if (album.stub) return box;
+  // Two separate questions. Whether MusicBrainz knows it is a fact about
+  // MusicBrainz, and some music will never be in it. Whether it still needs
+  // review is the queue: everything arrives needing it, and it leaves by
+  // getting a match or by somebody marking it reviewed.
   if (album.matched) box.append(pill("MusicBrainz ✓", "tone-ok"));
-  else if (album.partial) box.append(pill(`${album.untagged} of ${album.tracks} unmatched`, "tone-warn"));
-  else if (album.reviewed) box.append(pill("Reviewed"));
-  else box.append(pill("No MusicBrainz match", "tone-warn"));
+  else if (album.partial) box.append(pill(`MusicBrainz: ${album.untagged} of ${album.tracks} unmatched`));
+  else box.append(pill("No MusicBrainz match"));
+  if (!album.matched) {
+    box.append(album.reviewed ? pill("Reviewed ✓", "tone-ok")
+                              : pill("Needs review", "tone-warn"));
+  }
   box.append(album.no_gain ? pill("No ReplayGain", "tone-warn") : pill("ReplayGain ✓", "tone-ok"));
   if (isBarred(album)) box.append(pill("Cover has bars", "tone-warn"));
   return box;
@@ -1325,6 +1331,34 @@ function albumMeta(album) {
   ].filter(Boolean).join(" · ");
 }
 
+// The way out of the review queue for music MusicBrainz does not have.
+// Only offered where there is something to decide - a match already took
+// the album out - and undoable, because a tap on the wrong album should not
+// lose it from the queue for good. The panel stays open: marking one and
+// moving on to the next is the whole point.
+function reviewButton(album, statusHolder) {
+  if (album.matched || album.stub) return document.createTextNode("");
+  const b = button("", "", () => saveEdit("/api/library/reviewed", {
+    library_id: album.library_id, folder: album.folder,
+    reviewed: !album.reviewed,
+  }, b, () => {
+    album.reviewed = !album.reviewed;
+    album.needs_review = !album.reviewed;
+    statusHolder.querySelector(".lib-pills").replaceWith(statusPills(album));
+    refreshLibrary(album);
+  // After, not inside: saveEdit puts the button's old words back when it
+  // finishes, which would undo the new label.
+  }).then(label));
+  function label() {
+    b.textContent = album.reviewed ? "Needs review" : "Mark reviewed";
+    b.className = album.reviewed ? "ghost" : "";
+    b.title = album.reviewed ? "Put this album back in the review queue"
+      : "Tagged the way you want it, MusicBrainz or not";
+  }
+  label();
+  return b;
+}
+
 function moreMenu(album) {
   const wrap = el("div", "lib-more");
   const toggle = el("button", "ghost", "More ▾");
@@ -1339,20 +1373,6 @@ function moreMenu(album) {
     items.push(button("Measure ReplayGain", "ghost", () =>
       startOperation("replaygain", "/api/library/replaygain",
                      { library_id: album.library_id, folder: album.folder })));
-  }
-  // Only offered where there is something to decide: a matched album is
-  // done by definition. Undoable, because a tap on the wrong one should not
-  // lose an album from the list for good.
-  if (!album.matched) {
-    items.push(button(album.reviewed ? "Put back on the review list" : "Mark reviewed",
-      "ghost", (b) => saveEdit("/api/library/reviewed", {
-        library_id: album.library_id, folder: album.folder,
-        reviewed: !album.reviewed,
-      }, b, () => {
-        album.reviewed = !album.reviewed;
-        closeDrawer();
-        refreshLibrary(album);
-      })));
   }
   items.push(button("Combine with other albums…", "ghost", () => {
     closeDrawer();
@@ -1415,7 +1435,7 @@ function openDrawer(album) {
   cover.title = "Replace only the cover art - every tag stays as it is";
   const match = button("Find matches", "ghost", (b) => askForCandidates(album, b));
   match.title = "Ask MusicBrainz, then retag every track from the one you pick";
-  actions.append(edit, cover, match, moreMenu(album));
+  actions.append(reviewButton(album, words), edit, cover, match, moreMenu(album));
 
   drawerTracksHead = el("div", "lib-tracks-head");
   drawerTracksEl = el("div", "lib-tracks");
@@ -2010,18 +2030,11 @@ function syncControls() {
   libraryKind.hidden = !albumsTab;
   libraryLayout.hidden = !albumsTab;
   librarySort.parentElement.hidden = view.tab === "todo" || !!view.artist;
-
-  if (view.show !== "all" && albumsTab) {
-    const clear = button("✕", "ghost", () => {
-      view.show = "all";
-      loadLibrary();
-    });
-    clear.setAttribute("aria-label", "Show everything again");
-    libraryFilter.replaceChildren(el("span", "", `Showing: ${SHOW_LABELS[view.show]}`), clear);
-    libraryFilter.hidden = false;
-  } else {
-    libraryFilter.hidden = true;
-  }
+  // Artists cannot be ticked - Select there read as "merge these artists",
+  // which it is not. On one artist's page it ticks their albums as usual.
+  librarySelect.hidden = view.tab === "artists" && !view.artist;
+  libraryShow.value = view.show;
+  libraryShow.parentElement.hidden = !albumsTab;
 }
 
 libraryTabs.addEventListener("click", (event) => {
@@ -2032,6 +2045,11 @@ libraryTabs.addEventListener("click", (event) => {
   view.artist = null;
   if (view.tab !== "albums") view.show = "all";
   remember("tab", view.tab);
+  loadLibrary();
+});
+
+libraryShow.addEventListener("change", () => {
+  view.show = libraryShow.value;
   loadLibrary();
 });
 
