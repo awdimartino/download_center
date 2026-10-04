@@ -600,6 +600,18 @@ async def _run(job: dict[str, Any], space: workspace.Workspace) -> None:
         RUNNING.pop(job_id, None)
 
 
+def _check_room(owner: str) -> None:
+    """Refuse a sixth job running at once for one person."""
+    active = sum(1 for job in JOBS.values()
+                 if job.get("owner") == owner
+                 and job.get("status") not in FINISHED)
+    if active >= MAX_ACTIVE_JOBS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You already have {active} downloads going. Let some "
+                   "finish before queuing more.")
+
+
 @app.post("/api/jobs")
 async def create_job(
     request: JobRequest,
@@ -620,21 +632,15 @@ async def create_job(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    active = sum(1 for job in JOBS.values()
-                 if job.get("owner") == session.identity.username
-                 and job.get("status") not in FINISHED)
-    if active >= MAX_ACTIVE_JOBS:
-        raise HTTPException(
-            status_code=429,
-            detail=f"You already have {active} downloads going. Let some "
-                   "finish before queuing more.")
-    _evict_old_jobs(session.identity.username)
-
     def prepare() -> None:
         beets_runner.ensure_config(space)
 
     await asyncio.to_thread(prepare)
 
+    # From the count to the new job with no await between them, so two
+    # requests at once cannot both see room for one more.
+    _check_room(session.identity.username)
+    _evict_old_jobs(session.identity.username)
     job = new_job(url, space)
     await push_job(job)
     # Tracked from the moment it exists, not from when downloading starts.
@@ -773,14 +779,16 @@ async def retry_job(
     retryable = [i for i in job["items"] if i["status"] in ("failed", "cancelled")]
     if not retryable:
         raise HTTPException(status_code=409, detail="Nothing to retry.")
-    for item in retryable:
-        item.update(status="pending", error=None, progress=0, attempts=0)
-
+    # Everything that can refuse comes before anything is reset, so a
+    # refused retry leaves the job as it was, failures and all.
     try:
         space = workspace.for_session(session.identity, job.get("library_id"))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _check_room(session.identity.username)
 
+    for item in retryable:
+        item.update(status="pending", error=None, progress=0, attempts=0)
     job.update(status="queued", error=None)
     await push_job(job)
     asyncio.create_task(_run(job, space))

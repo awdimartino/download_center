@@ -268,3 +268,99 @@ async def test_a_cancelled_download_gives_its_gate_slot_back(monkeypatch):
     # Free again, immediately: the next job is not queued behind a ghost.
     await asyncio.wait_for(worker.gate().acquire(), timeout=1)
     worker.gate().release()
+
+
+# --- the active-job cap holds (L8) ------------------------------------------
+
+from types import SimpleNamespace
+
+from fastapi import HTTPException
+
+SESSION = SimpleNamespace(identity=SimpleNamespace(username="alex"))
+LINK = "https://open.spotify.com/album/4yP0hdKOZPNshxUOjY0cZj"
+
+
+@pytest.fixture
+def queueing(monkeypatch):
+    import time
+
+    space = SimpleNamespace(username="alex", library_name="Music", library_id=1)
+    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
+    # Slow enough that two requests are both inside it at once.
+    monkeypatch.setattr(main.beets_runner, "ensure_config",
+                        lambda space: time.sleep(0.05))
+
+    async def resolved(job, url, space):
+        return None
+
+    async def ran(job, space):
+        return None
+
+    monkeypatch.setattr(main, "_resolve_job", resolved)
+    monkeypatch.setattr(main, "_run", ran)
+    monkeypatch.setattr(main, "push_job", lambda job: asyncio.sleep(0))
+    return space
+
+
+@pytest.mark.asyncio
+async def test_two_requests_at_once_cannot_both_take_the_last_slot(queueing):
+    for n in range(main.MAX_ACTIVE_JOBS - 1):
+        _job(f"busy{n}", status="running")
+
+    outcomes = await asyncio.gather(
+        main.create_job(main.JobRequest(url=LINK), SESSION),
+        main.create_job(main.JobRequest(url=LINK), SESSION),
+        return_exceptions=True)
+
+    refused = [o for o in outcomes if isinstance(o, HTTPException)]
+    assert len(refused) == 1 and refused[0].status_code == 429
+    active = [j for j in main.JOBS.values() if j["status"] not in main.FINISHED]
+    assert len(active) == main.MAX_ACTIVE_JOBS
+
+
+def _failed_job():
+    job = _job("old", status="failed")
+    job["library_id"] = 1
+    job["items"] = [{"id": "i1", "status": "failed", "error": "no audio",
+                     "progress": 0, "attempts": 3}]
+    return job
+
+
+@pytest.mark.asyncio
+async def test_retry_counts_against_the_cap(queueing):
+    job = _failed_job()
+    for n in range(main.MAX_ACTIVE_JOBS):
+        _job(f"busy{n}", status="running")
+
+    with pytest.raises(HTTPException) as refused:
+        await main.retry_job("old", SESSION)
+
+    assert refused.value.status_code == 429
+    assert job["status"] == "failed"
+    assert job["items"][0]["status"] == "failed"
+    assert job["items"][0]["error"] == "no audio"
+
+
+@pytest.mark.asyncio
+async def test_a_retry_that_cannot_start_leaves_the_failures_alone(queueing,
+                                                                   monkeypatch):
+    def gone(identity, lid):
+        raise ValueError("That library is no longer yours.")
+
+    monkeypatch.setattr(main.workspace, "for_session", gone)
+    job = _failed_job()
+
+    with pytest.raises(HTTPException):
+        await main.retry_job("old", SESSION)
+
+    assert job["items"][0]["status"] == "failed"
+    assert job["items"][0]["error"] == "no audio"
+
+
+@pytest.mark.asyncio
+async def test_a_retry_with_room_starts(queueing):
+    job = _failed_job()
+
+    assert await main.retry_job("old", SESSION) == {"retrying": 1}
+    assert job["status"] == "queued"
+    assert job["items"][0]["status"] == "pending"

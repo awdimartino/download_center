@@ -796,9 +796,14 @@ it less likely.
       only downloads do.
       **Fixed:** the inbox loop and `finish_upload` call `navidrome.notify`
       when they filed something. Reproduced first.
-- [ ] **L8.** Retry ignores the five-active-jobs limit (`main.py:744-768`); the
+- [x] **L8.** Retry ignores the five-active-jobs limit (`main.py:744-768`); the
       limit check itself races across concurrent requests (`main.py:604-619`);
       retry resets items before it can fail (`main.py:757-763`).
+      **Fixed:** `_check_room` is shared by create and retry; create runs it
+      after its one await, so the count and the new job have no await
+      between them; retry resolves the workspace and checks room before
+      resetting anything. Reproduced first (two concurrent creates both
+      admitted).
 - [ ] **L9.** Changing `concurrency` mid-job builds a second semaphore, so
       old and new jobs together exceed it (`worker.py:51-56`).
 - [ ] **L10.** An item's error survives a successful in-run retry and shows
