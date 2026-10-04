@@ -82,3 +82,29 @@ async def test_finishing_an_upload_asks_for_a_scan(monkeypatch, tmp_path):
 
     assert out["filed"] == ["a.mp3"]
     assert asked == [1]
+
+
+# --- a forced reading warms Home like a timed one (L30) ------------------------
+
+@pytest.mark.asyncio
+async def test_a_forced_snapshot_warms_home_for_whoever_played(monkeypatch):
+    warmed = []
+    monkeypatch.setattr(main.playcounts, "take",
+                        lambda: {"users": ["u-alex"], "rows": 3})
+    monkeypatch.setattr(main.overview, "warm", lambda users: warmed.append(users))
+
+    taken = await main.playcount_snapshot(session=None)
+
+    assert taken["rows"] == 3
+    assert warmed == [["u-alex"]]
+
+
+@pytest.mark.asyncio
+async def test_a_forced_snapshot_with_nothing_new_warms_nothing(monkeypatch):
+    warmed = []
+    monkeypatch.setattr(main.playcounts, "take", lambda: {"users": []})
+    monkeypatch.setattr(main.overview, "warm", lambda users: warmed.append(users))
+
+    await main.playcount_snapshot(session=None)
+
+    assert warmed == []

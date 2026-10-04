@@ -929,7 +929,9 @@ it less likely.
       **Fixed:** the tile opens the statistics on its calendar year through
       a new `listening.selectDates`. Checked in headless Chromium: it asked
       for `days=365` before and `start=2026-01-01&end=2026-12-31` after.
-- [ ] **L30.** A forced snapshot does not warm Home's cache (`main.py:2176-2182`).
+- [x] **L30.** A forced snapshot does not warm Home's cache (`main.py:2176-2182`).
+      **Fixed:** `POST /api/playcounts/snapshot` warms Home for the people
+      it found new plays for, as the timed reading does. Reproduced first.
 - [ ] **L31.** An empty monthly chart labels its peak "1" (`charts.js:32, 138`).
 
 ### Platform

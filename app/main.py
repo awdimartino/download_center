@@ -2427,8 +2427,16 @@ async def playcount_snapshot(
     session: auth.Session = Depends(admin_session),
 ) -> dict[str, Any]:
     """Take one now rather than waiting for the timer. Admin only: it reads
-    every account's listening, not just the caller's."""
-    return await asyncio.to_thread(playcounts.take)
+    every account's listening, not just the caller's.
+
+    Warms Home for whoever it found new plays for, as the timed reading
+    does - otherwise their next visit pays for the statistics this just
+    made stale.
+    """
+    taken = await asyncio.to_thread(playcounts.take)
+    if taken.get("users"):
+        await asyncio.to_thread(overview.warm, taken["users"])
+    return taken
 
 
 @app.get("/api/status")
