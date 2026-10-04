@@ -374,9 +374,10 @@ def quarantined_track_ids() -> set[str]:
             "  WHERE restored_at IS NULL")}
 
 
-def quarantined(limit: int = 200,
+def quarantined(limit: int | None = 200,
                 include_restored: bool = False) -> list[dict[str, Any]]:
-    """Everything set aside, newest first. The list you undo from."""
+    """Everything set aside, newest first. The list you undo from. A limit
+    of None reads every row."""
     assert _conn is not None, "state.db not connected"
     where = "" if include_restored else " WHERE restored_at IS NULL"
     with _lock:
@@ -385,7 +386,8 @@ def quarantined(limit: int = 200,
             "       source_path, target_path, keeper_id, keeper_path,"
             "       decided_by, moved_at, restored_at"
             f"  FROM duplicate_quarantined{where}"
-            "  ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            "  ORDER BY id DESC LIMIT ?",
+            (-1 if limit is None else limit,)).fetchall()
     keys = ("id", "group_key", "track_id", "library_id", "title", "artist",
             "album", "source_path", "target_path", "keeper_id", "keeper_path",
             "decided_by", "moved_at", "restored_at")

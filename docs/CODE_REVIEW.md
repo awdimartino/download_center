@@ -684,12 +684,16 @@ it less likely.
       library), signs out an account that no longer exists, and keeps what
       it had on a read failure. Sessions end 30 days after sign-in.
 
-- [ ] **M34. The set-aside list mislabels older entries.**
+- [x] **M34. The set-aside list mislabels older entries.**
       `app/duplicates.py:596-658`. Only the newest 2,000 ledger rows are
       joined, and the walk is cut at 500 in alphabetical order before sorting
       by date — older files read "no record", and the list is an alphabetical
       slice, not the latest. *Fix:* look up the files found; sort before
       cutting.
+      **Fixed** a little differently: every ledger row is joined (not a
+      lookup per file - the ledger is small), and the full list is built,
+      sorted newest first, then cut; totals describe everything.
+      Reproduced first.
 
 - [ ] **M35. `unfuse --plan FILE` keeps only the last library's plan.**
       `app/unfuse.py:501-502`. The "reversible" plan is overwritten per

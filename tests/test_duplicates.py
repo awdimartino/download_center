@@ -660,3 +660,54 @@ def test_a_note_is_capped():
 
     with pytest.raises(ValidationError):
         main.DismissRequest(key="files:abc", note="x" * 501)
+
+
+# --- the set-aside list, whole (CODE_REVIEW M34) -----------------------------
+# Only the newest 2,000 records were joined, so older files read "no record";
+# and the walk stopped at the limit in alphabetical order before sorting by
+# date, so the list was an A-to-M slice, not the latest.
+
+def _set_aside(root, name, moved_at=None, title=""):
+    path = root / duplicates.QUARANTINE_NAME / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x")
+    if moved_at:
+        store.connection().execute(
+            "INSERT INTO duplicate_quarantined (group_key, track_id, library_id,"
+            " title, artist, album, source_path, target_path, decided_by, moved_at)"
+            " VALUES ('g', ?, 1, ?, '', '', '', ?, 'alex', ?)",
+            (name, title, str(path), moved_at))
+        store.connection().commit()
+    return path
+
+
+def test_the_set_aside_list_is_the_newest_not_the_first_alphabetically(
+        tmp_path, state_db, identity):
+    root = tmp_path / "music"
+    for name in ("a.mp3", "b.mp3"):
+        _set_aside(root, name, moved_at="2026-01-01T00:00:00+00:00")
+    _set_aside(root, "z.mp3", moved_at="2026-10-01T00:00:00+00:00")
+
+    survey = duplicates.quarantine_survey(identity, limit=1)
+
+    assert [e["name"] for e in survey["entries"]] == ["z.mp3"]
+    assert survey["total"] == 3
+    assert survey["truncated"] is True
+
+
+def test_an_old_record_is_still_found_behind_two_thousand_newer_ones(
+        tmp_path, state_db, identity):
+    root = tmp_path / "music"
+    _set_aside(root, "old.mp3", moved_at="2025-01-01T00:00:00+00:00", title="Old")
+    store.connection().executemany(
+        "INSERT INTO duplicate_quarantined (group_key, track_id, library_id,"
+        " title, artist, album, source_path, target_path, decided_by, moved_at)"
+        " VALUES ('g', ?, 1, '', '', '', '', ?, 'alex', '2026-01-01')",
+        [(f"t{n}", f"/elsewhere/{n}.mp3") for n in range(2001)])
+    store.connection().commit()
+
+    survey = duplicates.quarantine_survey(identity, limit=5000)
+
+    old = next(e for e in survey["entries"] if e["name"] == "old.mp3")
+    assert old["recorded"] is True
+    assert old["title"] == "Old"

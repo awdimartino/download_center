@@ -606,21 +606,20 @@ def quarantine_survey(identity: navidrome.Identity,
     job on purpose - it means deciding what to do about the copy that was
     kept, and that is not a decision to make from a list.
     """
-    recorded = {row["target_path"]: row for row in store.quarantined(limit=2000)}
+    # Every row, not the newest 2,000: an older file looked up against a
+    # truncated record read "no record" although it had one.
+    recorded = {row["target_path"]: row
+                for row in store.quarantined(limit=None)}
     visible = {lib["id"] for lib in identity.libraries}
 
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
-    truncated = False
 
     for library in identity.libraries:
         root = Path(library["path"]) / QUARANTINE_NAME
         if not root.is_dir():
             continue
         for path in sorted(root.rglob("*")):
-            if len(entries) >= limit:
-                truncated = True
-                break
             # The two files this app puts there itself are not quarantined
             # music and must not be counted as any.
             if not path.is_file() or path.name in (NDIGNORE,
@@ -668,14 +667,17 @@ def quarantine_survey(identity: navidrome.Identity,
             "moved_at": row["moved_at"] or "", "recorded": True,
         })
 
+    # Sorted, then cut - not cut while walking. Stopping the walk at the
+    # limit kept the first files alphabetically, so the list was an A-to-M
+    # slice rather than the latest, and the totals described only that.
     entries.sort(key=lambda e: (e["moved_at"] or "", e["name"]), reverse=True)
     return {
-        "entries": entries,
+        "entries": entries[:limit],
         "total": len(entries),
         "bytes": sum(e["size"] for e in entries),
         "missing": sum(1 for e in entries if not e["present"]),
         "unrecorded": sum(1 for e in entries if not e["recorded"]),
-        "truncated": truncated,
+        "truncated": len(entries) > limit,
     }
 
 
