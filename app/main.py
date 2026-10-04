@@ -1938,8 +1938,10 @@ async def library_track_edit(
 
 # Long, because a cover does not change without the file changing, and the
 # id is derived from the file. A page of fifty of these is otherwise fifty
-# round trips every time somebody scrolls back up.
-ART_CACHE = "public, max-age=604800"
+# round trips every time somebody scrolls back up. Private: each cover is
+# checked against who is asking, and a shared cache in between - a proxy -
+# would hand one person's art to anybody asking for the same URL.
+ART_CACHE = "private, max-age=604800"
 
 
 @app.get("/api/library/art")

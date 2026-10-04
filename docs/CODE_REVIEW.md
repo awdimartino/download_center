@@ -994,8 +994,9 @@ it less likely.
       message, the reason going to the log; ten failed sign-ins from one
       address in ten minutes get a 429 until the window passes, and a
       success clears the count. Reproduced first.
-- [ ] **L40.** Cover art is served `Cache-Control: public` though it is
+- [x] **L40.** Cover art is served `Cache-Control: public` though it is
       owner-checked (`main.py:1692`); use `private`.
+      **Fixed** as suggested.
 - [ ] **L41.** Blocking filesystem and database work runs on the event loop
       inside `async` routes and the auth middleware (`_library_roots`,
       `album_dir`, `audio_in`, `settled`, `auth.py:130-137`).

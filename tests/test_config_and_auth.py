@@ -562,3 +562,10 @@ def test_repeated_failed_sign_ins_are_slowed_down(monkeypatch, no_failures):
     with pytest.raises(HTTPException) as other:
         _sign_in(monkeypatch, navidrome.LoginFailed("x"), address="10.0.0.10")
     assert other.value.status_code == 401
+
+
+def test_owner_checked_cover_art_is_not_cached_for_everyone():
+    """A shared cache would serve one person's art to another (L40)."""
+    from app import main
+
+    assert main.ART_CACHE.startswith("private,")
