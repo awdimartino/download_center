@@ -680,19 +680,36 @@ def quarantine_survey(identity: navidrome.Identity,
 
 
 def auto_resolve(connection: sqlite3.Connection, identity: navidrome.Identity,
-                 apply: bool = False) -> dict[str, Any]:
-    """Act only on groups a shared MusicBrainz id makes unambiguous."""
+                 chosen: dict[str, str] | None = None) -> dict[str, Any]:
+    """Act only on groups a shared MusicBrainz id makes unambiguous.
+
+    Without `chosen`, a preview: every eligible group's key and the copy it
+    would keep. With it, exactly those groups and nothing else. Applying used
+    to recompute the list, so groups that appeared after the preview - during
+    an import, say - were resolved without ever being shown. A group whose
+    keeper has changed since is skipped, not resolved differently.
+    """
     groups = [g for g in find(connection, identity) if g.confident]
-    if not apply:
+    if chosen is None:
         return {"eligible": len(groups),
+                "groups": [{"key": g.dismiss_key, "keeper": g.keeper.id}
+                           for g in groups],
                 "preview": [g.as_dict() for g in groups[:20]]}
 
-    resolved, failures = 0, []
-    for group in groups:
+    resolved, failures, skipped = 0, [], []
+    current = {g.dismiss_key: g for g in groups}
+    for key, keeper in chosen.items():
+        group = current.get(key)
+        if group is None:
+            skipped.append(f"{key}: no longer a confident group")
+            continue
+        if group.keeper.id != keeper:
+            skipped.append(f"{key}: the copy to keep has changed")
+            continue
         try:
-            outcome = resolve(group, group.keeper.id, identity)
+            outcome = resolve(group, keeper, identity)
             failures.extend(outcome["failed"])
             resolved += 1
         except Exception as exc:
             failures.append(f"{group.key}: {type(exc).__name__}: {exc}")
-    return {"resolved": resolved, "failed": failures}
+    return {"resolved": resolved, "failed": failures, "skipped": skipped}

@@ -863,8 +863,10 @@ goes. Then:
 
 **Keep both** records the decision against a hash of the copies' track ids,
 so it survives regrouping. **Resolve MusicBrainz matches** previews every
-confident group, confirms, and resolves them all with their pre-selected
-copy.
+confident group, confirms, and resolves exactly those groups with their
+pre-selected copy, as an operation; a group that appeared or changed since
+the preview is left for the next look. It is refused while a download or
+drop is still filing into your library.
 
 Do not bulk-resolve while music is still being filed: importing is what
 creates duplicates, so a list taken beforehand is stale by the end. About 50
@@ -1059,7 +1061,7 @@ administrator.
 | GET | `/api/operations` | long operations' status |
 | GET | `/api/health` · POST `/api/health/audit` | Health / re-read files |
 | GET | `/api/duplicates` · `/api/duplicates/quarantined` | groups / set-aside list |
-| POST | `/api/duplicates/resolve` · `/dismiss` · `/auto` | resolve / keep both / resolve confident |
+| POST | `/api/duplicates/resolve` · `/dismiss` · `/auto` · `/auto/apply` | resolve / keep both / preview confident / resolve exactly those |
 | GET · POST | `/api/playlists` | list / create smart playlists |
 | PUT · DELETE | `/api/playlists/{id}` | save / delete |
 | WS | `/ws` | job and operation events, to their owner only |

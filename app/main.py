@@ -1248,25 +1248,65 @@ async def list_quarantined(
 
 
 @app.post("/api/duplicates/auto")
-async def auto_resolve_duplicates(
-    apply: bool = False,
+async def auto_resolve_preview(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
+    """What resolving the confident groups would do: their keys and keepers,
+    which /auto/apply then acts on exactly."""
     def run() -> dict[str, Any]:
         connection = navidrome.open_db()
         with connection:
-            return duplicates.auto_resolve(connection, session.identity,
-                                           apply=apply)
+            return duplicates.auto_resolve(connection, session.identity)
 
     try:
-        outcome = await asyncio.to_thread(run)
+        return await asyncio.to_thread(run)
     except navidrome.Unavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    # Once for the whole run rather than once per group: a scan per
-    # resolved duplicate would be a hundred scans of the same library.
-    if outcome.get("resolved"):
-        await asyncio.to_thread(navidrome.notify)
-    return outcome
+
+
+class AutoResolve(BaseModel):
+    # The preview's groups, as it returned them: {"key": ..., "keeper": ...}.
+    groups: list[dict[str, str]]
+
+
+@app.post("/api/duplicates/auto/apply")
+async def auto_resolve_apply(
+    body: AutoResolve,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Resolve exactly the previewed groups, as an operation.
+
+    Refused while music is still arriving: importing is what creates
+    duplicates, so a list taken mid-import is stale by the end. An operation
+    because it is up to two Navidrome calls per group, which for a few
+    hundred groups is far longer than a request should be held open.
+    """
+    identity = session.identity
+    busy = [job for job in JOBS.values()
+            if job.get("owner") == identity.username and job["id"] in RUNNING]
+    arriving = any(inbox.receiving(Path(lib["path"]))
+                   for lib in identity.libraries)
+    if busy or arriving:
+        raise HTTPException(
+            status_code=409,
+            detail="Music is still being filed into your library. Resolve "
+                   "duplicates once it has finished - importing is what "
+                   "creates them.")
+    chosen = {g["key"]: g["keeper"] for g in body.groups
+              if g.get("key") and g.get("keeper")}
+
+    def run() -> dict[str, Any]:
+        connection = navidrome.open_db()
+        with connection:
+            outcome = duplicates.auto_resolve(connection, identity, chosen)
+        # Once for the whole run rather than once per group: a scan per
+        # resolved duplicate would be a hundred scans of the same library.
+        if outcome.get("resolved"):
+            navidrome.notify()
+        return outcome
+
+    operation, started = operations.start("dupes-auto", identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
 
 
 # --- smart playlists -----------------------------------------------------

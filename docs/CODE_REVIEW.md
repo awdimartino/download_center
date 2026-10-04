@@ -648,13 +648,19 @@ it less likely.
       and protects the copy; each copy carries your own `plays`, and the
       confirm states the count lost from Navidrome. Reproduced first.
 
-- [ ] **M31. Auto-resolve applies a different set than it previewed.**
+- [x] **M31. Auto-resolve applies a different set than it previewed.**
       `app/main.py:1200-1219`, `app/duplicates.py:669-685`. `?apply=true`
       recomputes, so groups that appeared since the preview — for instance
       during an import — are resolved unseen. Synchronous in the request,
       with up to two Navidrome calls per group.
       *Fix:* resolve only the previewed keys; refuse during an active job or
       drain; run it as an operation.
+      **Fixed** as suggested: the preview returns every group's key and
+      keeper; `POST /api/duplicates/auto/apply` takes them as a JSON body,
+      resolves only those (skipping any whose keeper changed), runs as the
+      `dupes-auto` operation, and answers 409 while a job runs or the inbox
+      is filing into the person's libraries. Reproduced first (one group
+      previewed, two resolved). Not clicked through in a browser.
 
 - [ ] **M32. "Keep both" is not scoped to the caller and its input is
       unbounded.** `app/main.py:1177-1183`, `app/store.py:224-233`. Any user

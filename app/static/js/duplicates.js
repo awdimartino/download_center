@@ -5,6 +5,7 @@
 // place - so the better file wins even when the worse one is the starred one.
 
 import { el, action, setBanner, showError } from "./core.js";
+import { registerOperation, startOperation } from "./operations.js";
 import { setBadge } from "./nav.js";
 
 const dupesEl = document.getElementById("dupes");
@@ -268,19 +269,33 @@ document.getElementById("dupe-auto").addEventListener("click", async (event) => 
       return;
     }
     if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/ inside its own library. This cannot be undone from here.`)) return;
-    const result = await fetch("/api/duplicates/auto?apply=true", { method: "POST" })
-      .then((r) => r.json());
-    // Reported rather than discarded: a run that resolved nothing and a run
-    // that resolved everything used to look identical from here.
-    const failed = result.failed || [];
-    setBanner(
-      dupeResult,
-      `Resolved ${result.resolved || 0} group(s).`
-      + (failed.length
-         ? ` ${failed.length} problem(s): ${failed.slice(0, 3).join("; ")}` : ""),
-      failed.length ? "warn" : "notice");
-    await loadDupes();
+    // Exactly the groups just previewed: anything that has appeared since
+    // is left for the next look rather than resolved unseen.
+    await startOperation("dupes-auto", "/api/duplicates/auto/apply",
+                         { groups: preview.groups });
   } finally {
     button.disabled = false;
   }
+});
+
+// The result arrives over the socket. Reported rather than discarded: a run
+// that resolved nothing and one that resolved everything used to look the
+// same from here.
+registerOperation("dupes-auto", {
+  note: "dupe-result",
+  button: "dupe-auto",
+  busy: "Resolving…",
+  idle: "Resolve MusicBrainz matches",
+  onResult(result) {
+    const failed = result.failed || [];
+    const skipped = result.skipped || [];
+    setBanner(
+      dupeResult,
+      `Resolved ${result.resolved || 0} group(s).`
+      + (skipped.length ? ` ${skipped.length} changed since the preview and were left.` : "")
+      + (failed.length
+         ? ` ${failed.length} problem(s): ${failed.slice(0, 3).join("; ")}` : ""),
+      failed.length ? "warn" : "notice");
+    loadDupes();
+  },
 });

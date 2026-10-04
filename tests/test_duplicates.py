@@ -567,3 +567,69 @@ def test_a_copy_someone_else_rated_is_refused(tmp_path, state_db, identity):
 
     with pytest.raises(ValueError, match="rated or played by kelly"):
         duplicates.resolve(_group([keeper, rated], keeper), "keep", identity)
+
+
+# --- auto-resolve acts on what it previewed (CODE_REVIEW M31) ----------------
+
+def _confident_pair(db, mbid, a, b):
+    # Same album, same length, and one clearly better: a confident group.
+    add_track(db, a, library_id=1, mbz_recording_id=mbid, path=f"{a}.flac",
+              suffix="flac", bit_rate=900)
+    add_track(db, b, library_id=1, mbz_recording_id=mbid, path=f"{b}.mp3",
+              suffix="mp3", bit_rate=128)
+
+
+def test_auto_resolve_applies_only_the_previewed_groups(navidrome_db, identity,
+                                                         state_db, monkeypatch):
+    import sqlite3
+
+    _confident_pair(navidrome_db, "mb-1", "one", "two")
+    connection = sqlite3.connect(navidrome_db)
+    preview = duplicates.auto_resolve(connection, identity)
+    assert preview["eligible"] == 1
+
+    _confident_pair(navidrome_db, "mb-2", "three", "four")   # arrives later
+    resolved = []
+    monkeypatch.setattr(duplicates, "resolve",
+                        lambda group, keeper, identity: resolved.append(keeper)
+                        or {"failed": []})
+    chosen = {g["key"]: g["keeper"] for g in preview["groups"]}
+    outcome = duplicates.auto_resolve(connection, identity, chosen)
+    connection.close()
+
+    assert resolved == ["one"]
+    assert outcome["resolved"] == 1
+
+
+def test_a_group_whose_keeper_changed_is_skipped(navidrome_db, identity,
+                                                  state_db, monkeypatch):
+    import sqlite3
+
+    _confident_pair(navidrome_db, "mb-1", "one", "two")
+    connection = sqlite3.connect(navidrome_db)
+    preview = duplicates.auto_resolve(connection, identity)
+    monkeypatch.setattr(duplicates, "resolve",
+                        lambda *a: pytest.fail("resolved a changed group"))
+
+    key = preview["groups"][0]["key"]
+    outcome = duplicates.auto_resolve(connection, identity, {key: "two"})
+    connection.close()
+
+    assert outcome["resolved"] == 0
+    assert outcome["skipped"]
+
+
+@pytest.mark.asyncio
+async def test_auto_resolve_waits_while_music_is_arriving(monkeypatch, identity):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app import main
+
+    monkeypatch.setattr(main.inbox, "receiving", lambda path: True)
+    session = SimpleNamespace(identity=identity)
+
+    with pytest.raises(HTTPException) as refused:
+        await main.auto_resolve_apply(main.AutoResolve(groups=[]), session)
+    assert refused.value.status_code == 409
