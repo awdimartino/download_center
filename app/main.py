@@ -518,9 +518,9 @@ MAX_TRACKS_PER_JOB = 500
 def _resolve(url: str) -> tuple[str, str, list[dict[str, Any]]]:
     """Dispatch a link to whichever resolver handles it."""
     if generic.looks_like_url(url) and not spotify.is_spotify(url):
-        title, items = generic.resolve(url)
+        title, items = generic.resolve(url, MAX_TRACKS_PER_JOB)
         return "generic", title, items
-    return spotify.resolve_link(url)
+    return spotify.resolve_link(url, MAX_TRACKS_PER_JOB)
 
 
 def validate(url: str) -> None:

@@ -841,9 +841,14 @@ it less likely.
       file lost before, both kept after. The inbox hop keeps
       `unused_name`, since its names are unique item ids and a placeholder
       there could be picked up by the poller.
-- [ ] **L15.** An oversized playlist is fully resolved (≈200 requests for
+- [x] **L15.** An oversized playlist is fully resolved (≈200 requests for
       10,000 tracks) before the 500-track limit refuses it
       (`main.py:537`, `spotify.py:185-193`).
+      **Fixed:** `spotify.resolve` refuses from the first page's `total`
+      and `generic.resolve` from the flat list's length, before any further
+      request; the job resolver passes `MAX_TRACKS_PER_JOB`, and its own
+      check stays as a backstop. Reproduced first (paging and hydrating
+      ran before the refusal).
 - [ ] **L16.** The same cover is fetched and squared once per track
       (`tagger.py:65-72`).
 - [ ] **L17.** An upload path segment starting with `.` is never filed —

@@ -211,9 +211,26 @@ def _hydrate(sp: spotipy.Spotify, track_ids: list[str]) -> list[dict[str, Any]]:
     return tracks
 
 
-def resolve(kind: str, spotify_id: str) -> tuple[str, list[dict[str, Any]]]:
-    """Return (job title, tracks) for a parsed link."""
+def too_many(title: str, count: int, limit: int) -> ResolveError:
+    return ResolveError(
+        f"{title} has {count} tracks, more than the {limit} this can queue "
+        "at once. Queue it in parts - by album, say.")
+
+
+def resolve(kind: str, spotify_id: str,
+            limit: int | None = None) -> tuple[str, list[dict[str, Any]]]:
+    """Return (job title, tracks) for a parsed link.
+
+    Over `limit` tracks is refused from the first page's total, before
+    the rest is fetched: a 10,000-track playlist was about 200 requests
+    to Spotify only to be turned down afterwards.
+    """
     sp = client()
+
+    def check(title: str, page: dict) -> None:
+        total = page.get("total") or 0
+        if limit is not None and total > limit:
+            raise too_many(title, total, limit)
 
     if kind == "track":
         full = sp.track(spotify_id)
@@ -222,13 +239,15 @@ def resolve(kind: str, spotify_id: str) -> tuple[str, list[dict[str, Any]]]:
 
     if kind == "album":
         album = sp.album(spotify_id)
-        ids = [t["id"] for t in _paginate(album["tracks"], sp) if t and t.get("id")]
         title = f"{_artist_names(album.get('artists'))} - {album['name']}"
+        check(title, album["tracks"])
+        ids = [t["id"] for t in _paginate(album["tracks"], sp) if t and t.get("id")]
         return title, _hydrate(sp, ids)
 
     # Playlist entries may be podcast episodes or local files, neither of which
     # can be downloaded; both surface with a null or non-track payload.
     playlist = sp.playlist(spotify_id)
+    check(playlist["name"], playlist["tracks"])
     ids = [
         entry["track"]["id"]
         for entry in _paginate(playlist["tracks"], sp)
@@ -239,12 +258,13 @@ def resolve(kind: str, spotify_id: str) -> tuple[str, list[dict[str, Any]]]:
     return playlist["name"], _hydrate(sp, ids)
 
 
-def resolve_link(text: str) -> tuple[str, str, list[dict[str, Any]]]:
+def resolve_link(text: str, limit: int | None = None,
+                 ) -> tuple[str, str, list[dict[str, Any]]]:
     """Parse then resolve. Returns (kind, title, tracks)."""
     if is_short(text):
         text = expand_short(text)
     kind, spotify_id = parse_link(text)
-    title, tracks = resolve(kind, spotify_id)
+    title, tracks = resolve(kind, spotify_id, limit)
     if not tracks:
         raise ResolveError("That link resolved to zero downloadable tracks.")
     return kind, title, tracks

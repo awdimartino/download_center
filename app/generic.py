@@ -175,8 +175,12 @@ def _in_full(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return list(pool.map(one, entries))
 
 
-def resolve(url: str) -> tuple[str, list[dict[str, Any]]]:
-    """Return (job title, items) for any yt-dlp supported URL."""
+def resolve(url: str, limit: int | None = None) -> tuple[str, list[dict[str, Any]]]:
+    """Return (job title, items) for any yt-dlp supported URL.
+
+    A playlist over `limit` entries is refused from the flat list, before
+    each entry is read in full - one request per track.
+    """
     # The list is read flat, to learn what is in it quickly; each entry is
     # then read in full by `_in_full`. Nothing fetches more metadata at
     # download time - what is resolved here is what gets tagged.
@@ -196,7 +200,13 @@ def resolve(url: str) -> tuple[str, list[dict[str, Any]]]:
         raise ResolveError("Nothing found at that URL.")
 
     if info.get("_type") == "playlist":
-        entries = _in_full([e for e in (info.get("entries") or []) if e])
+        entries = [e for e in (info.get("entries") or []) if e]
+        if limit is not None and len(entries) > limit:
+            raise ResolveError(
+                f"{info.get('title') or 'That playlist'} has {len(entries)} "
+                f"tracks, more than the {limit} this can queue at once. "
+                "Queue it in parts - by album, say.")
+        entries = _in_full(entries)
         items = [item for item in (_to_item(e) for e in entries) if item]
         title = info.get("title") or "Playlist"
     else:

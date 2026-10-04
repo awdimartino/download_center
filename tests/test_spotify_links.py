@@ -38,12 +38,12 @@ def test_every_form_parses_to_the_same_album(link):
                                   "spotify.link/AbC123xyz"])
 def test_a_short_link_goes_to_spotify_not_yt_dlp(link, monkeypatch):
     monkeypatch.setattr(generic, "resolve",
-                        lambda url: pytest.fail("handed to yt-dlp"))
+                        lambda url, limit=None: pytest.fail("handed to yt-dlp"))
     followed = []
     monkeypatch.setattr(spotify, "expand_short", lambda text: followed.append(text)
                         or "https://open.spotify.com/track/abc")
     monkeypatch.setattr(spotify, "resolve",
-                        lambda kind, sid: ("A song", [{"id": sid, "kind": kind}]))
+                        lambda kind, sid, limit=None: ("A song", [{"id": sid, "kind": kind}]))
     main.validate(link)
     assert main._resolve(link) == ("track", "A song", [{"id": "abc", "kind": "track"}])
     assert followed == [link]
@@ -97,3 +97,56 @@ def test_the_page_queues_every_form_instead_of_searching(link):
 @pytest.mark.parametrize("text", ["thriller", "spotify", "michael jackson bad"])
 def test_the_page_still_searches_words(text):
     assert not _page_test().match(text)
+
+
+# --- an oversized playlist is refused before it is fetched (L15) ---------------
+
+class Client:
+    def __init__(self, total):
+        self.total = total
+        self.calls = []
+
+    def playlist(self, pid):
+        self.calls.append("playlist")
+        return {"name": "Everything", "tracks": {
+            "total": self.total, "next": "page2",
+            "items": [{"track": {"id": "t1", "type": "track"}}]}}
+
+    def next(self, page):
+        self.calls.append("next")
+        return None
+
+    def tracks(self, ids):
+        self.calls.append("tracks")
+        return {"tracks": []}
+
+
+def test_a_playlist_over_the_limit_is_refused_from_its_first_page(monkeypatch):
+    sp = Client(total=10_000)
+    monkeypatch.setattr(spotify, "client", lambda: sp)
+
+    with pytest.raises(spotify.ResolveError, match="Everything has 10000 tracks"):
+        spotify.resolve("playlist", "p1", limit=500)
+
+    assert sp.calls == ["playlist"]
+
+
+def test_a_playlist_within_the_limit_is_fetched(monkeypatch):
+    sp = Client(total=1)
+    monkeypatch.setattr(spotify, "client", lambda: sp)
+
+    spotify.resolve("playlist", "p1", limit=500)
+
+    assert sp.calls == ["playlist", "next", "tracks"]
+
+
+def test_the_job_resolver_passes_the_limit(monkeypatch):
+    seen = {}
+
+    def resolve(kind, sid, limit=None):
+        seen["limit"] = limit
+        return "x", [{"id": "t"}]
+
+    monkeypatch.setattr(spotify, "resolve", resolve)
+    main._resolve("https://open.spotify.com/playlist/abc")
+    assert seen["limit"] == main.MAX_TRACKS_PER_JOB

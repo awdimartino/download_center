@@ -104,3 +104,20 @@ def test_no_cookies_file_means_no_cookie_option(monkeypatch):
     monkeypatch.setattr(type(generic.settings), "cookies_file",
                         property(lambda self: None))
     assert "cookiefile" not in generic._options()
+
+
+# --- an oversized playlist is refused before each entry is read (L15) ----------
+
+def test_a_playlist_over_the_limit_is_refused_from_the_flat_list(monkeypatch):
+    seen = []
+
+    class Recording(FakeYDL):
+        def extract_info(self, url, download=False):
+            seen.append(url)
+            return super().extract_info(url, download)
+
+    monkeypatch.setattr(generic.yt_dlp, "YoutubeDL", Recording)
+    with pytest.raises(generic.ResolveError, match="has 2 tracks, more than the 1"):
+        generic.resolve(PLAYLIST, limit=1)
+
+    assert seen == [PLAYLIST]
