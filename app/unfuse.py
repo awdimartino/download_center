@@ -469,6 +469,13 @@ def run(library_id: int, root: Path, apply: bool = False,
     return plan, apply_plan(plan, dry_run=not apply)
 
 
+def plan_path(base: Path, library_id: int) -> Path:
+    """One plan file per library. A single --plan FILE was rewritten for
+    each workspace in turn, so only the last library's plan - the thing
+    that makes a run reversible - survived."""
+    return base.with_name(f"{base.stem}-{library_id}{base.suffix}")
+
+
 def main() -> int:
     import argparse
     import sys
@@ -498,9 +505,13 @@ def main() -> int:
     store.connect(settings.state_db)
     failed = False
     for space in spaces:
+        plan_file = (plan_path(Path(args.plan), space.library_id)
+                     if args.plan else None)
         plan, outcome = run(space.library_id, space.library_path, args.apply,
-                            Path(args.plan) if args.plan else None)
+                            plan_file)
         print(report(plan))
+        if plan_file:
+            print(f"  plan saved to {plan_file}")
         if plan.blocked:
             failed = True
             continue

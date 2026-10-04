@@ -695,9 +695,11 @@ it less likely.
       sorted newest first, then cut; totals describe everything.
       Reproduced first.
 
-- [ ] **M35. `unfuse --plan FILE` keeps only the last library's plan.**
+- [x] **M35. `unfuse --plan FILE` keeps only the last library's plan.**
       `app/unfuse.py:501-502`. The "reversible" plan is overwritten per
       workspace. *Fix:* one file per library.
+      **Fixed** as suggested: `plan.json` becomes `plan-<library id>.json`,
+      and each path is printed.
 
 ### Performance
 

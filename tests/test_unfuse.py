@@ -370,3 +370,11 @@ def test_an_album_in_two_fused_groups_still_gets_unified(state_db, library):
         "left split because its only partner was settled elsewhere")
     assert survey.collect(library).split == []
     assert survey.collect(library).fused == []
+
+
+def test_each_library_gets_its_own_plan_file(tmp_path):
+    """--plan FILE was rewritten per workspace, keeping only the last
+    library's plan (CODE_REVIEW M35)."""
+    base = tmp_path / "plan.json"
+    assert unfuse.plan_path(base, 1) != unfuse.plan_path(base, 2)
+    assert unfuse.plan_path(base, 2).name == "plan-2.json"
