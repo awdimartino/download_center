@@ -315,11 +315,13 @@ it less likely.
       cutoff is the next local midnight; the old code dropped that day's
       scrobbles. Tests cover the cutoff and the count, not the exit itself.
 
-- [ ] **M3. Two files sharing a UUID can make phantom plays.**
+- [x] **M3. Two files sharing a UUID can make phantom plays.**
       `app/playcounts.py:191-201`. `_current` keeps whichever annotation row
       comes last, in no fixed order; counts of 5 and 2 can alternate, and
       each rise back to 5 counts three plays.
       *Fix:* combine duplicates deterministically (max).
+      **Fixed:** `_current` keeps the higher count. Reproduced first: with
+      the 5 row first, the reading was 2.
 
 - [ ] **M4. "Plays in view" sums only the top 50 tracks.**
       `app/overview.py:235`. *Fix:* sum the full range.

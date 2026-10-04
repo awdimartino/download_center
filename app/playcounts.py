@@ -211,6 +211,13 @@ def _current(connection: sqlite3.Connection) -> tuple[dict, int]:
         if not track_uuid:
             unidentifiable += 1
             continue
+        # Two files carrying one UUID each have a count. Taking whichever
+        # row came last, in no fixed order, let 5 and 2 alternate between
+        # readings and every rise back to 5 counted as three plays. The
+        # higher one, every time.
+        known = counts.get((track_uuid, user_id))
+        if known is not None and known["play_count"] >= (play_count or 0):
+            continue
         counts[(track_uuid, user_id)] = {
             "username": username,
             "play_count": play_count or 0,

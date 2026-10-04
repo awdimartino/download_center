@@ -744,3 +744,23 @@ def test_an_existing_history_learns_when_collection_began(tmp_path):
 
     assert store.connection().execute(
         "SELECT began FROM play_collection").fetchone() == ("2026-09-06",)
+
+
+# Two files carrying one UUID (a duplicate not yet resolved) each have their
+# own Navidrome count. Keeping whichever row came last, in no fixed order,
+# let 5 and 2 alternate, and every rise back to 5 counted three phantom
+# plays (CODE_REVIEW M3).
+
+@pytest.mark.parametrize("order", [(5, 2), (2, 5)])
+def test_two_files_with_one_uuid_read_as_the_higher_count(wired, order):
+    add_track(wired, "t1", tags=UUID_A)
+    add_track(wired, "t2", tags=UUID_A, path="copy.mp3")
+    played(wired, "t1", ALEX, order[0])
+    played(wired, "t2", ALEX, order[1])
+
+    connection = sqlite3.connect(wired)
+    with connection:
+        current, _ = playcounts._current(connection)
+    connection.close()
+
+    assert current[("uuid-a", ALEX)]["play_count"] == 5
