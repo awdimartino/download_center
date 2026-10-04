@@ -397,7 +397,13 @@ export async function loadLibrary(mode = "reset", anchor = null) {
   return loadAlbums(mode, anchor);
 }
 
+// Which load is the latest. Typing a search starts one per pause, and a
+// slow early answer used to arrive last and replace the list for what was
+// typed after it - or append a stale "more" page to a new search.
+let albumsRequest = 0;
+
 async function loadAlbums(mode, anchor) {
+  const mine = ++albumsRequest;
   const keepScroll = mode === "refresh";
   const anchorNode = anchor
     ? libraryEl.querySelector(`[data-key="${CSS.escape(anchor)}"]`) : null;
@@ -424,6 +430,7 @@ async function loadAlbums(mode, anchor) {
       } while (albums.length < want && albums.length < data.total
                && (data.albums || []).length);
     }
+    if (mine !== albumsRequest) return;
 
     if (mode === "more") {
       listEl.append(...albums.map(renderAlbum));
@@ -479,6 +486,7 @@ async function loadAlbums(mode, anchor) {
     showSuggestions();
     surveyCovers();
   } catch (err) {
+    if (mine !== albumsRequest) return;
     if (mode !== "more") {
       libraryEl.replaceChildren();
       libraryShownCount = 0;
@@ -1171,16 +1179,21 @@ function albumEditor(album) {
   const mergeResults = el("div", "album-merge-results");
   mergeResults.hidden = true;
 
+  // Only the newest search's answer is drawn; see loadAlbums.
+  let mergeRequest = 0;
   async function searchMergeTargets(query) {
+    const mine = ++mergeRequest;
     let data;
     try {
       data = await getJSON(`/api/library?q=${encodeURIComponent(query)}&limit=8`);
     } catch (err) {
+      if (mine !== mergeRequest) return;
       mergeResults.replaceChildren(
         el("p", "album-merge-empty", `Could not search: ${err.message}`));
       mergeResults.hidden = false;
       return;
     }
+    if (mine !== mergeRequest) return;
     const matches = (data.albums || []).filter((a) => !(
       a.library_id === album.library_id && a.folder === album.folder));
     if (!matches.length) {
@@ -1213,6 +1226,7 @@ function albumEditor(album) {
     clearTimeout(mergeTimer);
     const query = mergeInput.value.trim();
     if (query.length < 2) {
+      mergeRequest += 1;  // so a search still in flight does not reopen it
       mergeResults.hidden = true;
       mergeResults.replaceChildren();
       return;

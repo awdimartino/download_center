@@ -100,7 +100,13 @@ function listeningRow(track, rank, most) {
   return row;
 }
 
+// Which load is the latest. Each range click starts a request, and a slow
+// one (Year) used to arrive after a fast cached one (All time) and be drawn
+// under it. Only the newest answer is drawn.
+let listeningRequest = 0;
+
 export async function loadListening() {
+  const mine = ++listeningRequest;
   try {
     const query = listeningDates
       ? `start=${listeningDates.start}&end=${listeningDates.end}`
@@ -108,6 +114,7 @@ export async function loadListening() {
     const data = await fetch(
       `/api/playcounts/top?${query}&limit=50`
     ).then((r) => r.json());
+    if (mine !== listeningRequest) return;
     if (data.detail) {
       setBanner(listeningError, data.detail, "warn");
       return;
@@ -135,6 +142,7 @@ export async function loadListening() {
     listeningAlbums.replaceChildren(...albumBars(albums));
     listeningGenres.replaceChildren(...genreBars(genres));
   } catch (err) {
+    if (mine !== listeningRequest) return;
     listeningEmpty.hidden = false;
     listeningEmpty.textContent = `Could not read play counts: ${err.message}`;
   }

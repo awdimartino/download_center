@@ -328,11 +328,15 @@ it less likely.
       **Fixed:** summed from `plays_between` over the range. Reproduced
       first (3 for 6 with a limit of 1).
 
-- [ ] **M5. A slow Listening response can overwrite a newer one.**
+- [x] **M5. A slow Listening response can overwrite a newer one.**
       `app/static/js/listening.js:103-141`. Click Year, then All time (cached,
       fast): Year's answer arrives last and is drawn under "All time".
       *Fix:* a request counter or `AbortController`. Library search
       (`loadAlbums`) and its merge search have the same race.
+      **Fixed:** a request counter in `loadListening`, `loadAlbums` (which
+      also stops a stale "more" page being appended to a new search) and the
+      merge search, which also drops an answer once the box is cleared.
+      Found by reading; not reproduced in a browser.
 
 - [ ] **M6. The Dates button does not look selected until a range is
       submitted** (reported by the user). `app/static/js/listening.js:162-175`.
