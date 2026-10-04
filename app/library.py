@@ -30,6 +30,7 @@ would materialise 6,800 track objects to show fifty rows.
 
 from __future__ import annotations
 
+import collections
 import logging
 import sqlite3
 from dataclasses import dataclass, field
@@ -640,23 +641,32 @@ def tracks(identity: navidrome.Identity, library_id: int,
                 select mf.id, mf.path, coalesce(mf.title, ''),
                        coalesce(mf.artist, ''), coalesce(mf.track_number, 0),
                        coalesce({disc}, 0),
-                       coalesce(mf.mbz_recording_id, '')
+                       coalesce(mf.mbz_recording_id, ''),
+                       coalesce(nullif(mf.album_artist, ''), mf.artist, ''),
+                       coalesce(mf.album, '')
                   from media_file mf
                  where {navidrome.live_clause(connection, [int(library_id)])}
                 """).fetchall()
     except (navidrome.Unavailable, sqlite3.Error) as exc:
         raise ValueError(f"Navidrome's database is unreadable: {exc}") from exc
 
+    mine = [row for row in rows if folder_of(row[1]) == folder]
     found = [
         Track(id=row[0], path=row[1], title=row[2], artist=row[3],
               track_no=row[4] or 0, disc_no=row[5] or 0, tagged=bool(row[6]))
-        for row in rows if folder_of(row[1]) == folder
+        for row in mine
     ]
     if not found:
         raise ValueError("That album is not in one of your libraries.")
 
     found.sort(key=lambda t: (t.disc_no, t.track_no, t.title))
+    # The album's own names, as the listing would give them. An album opened
+    # from a song in search results only knew the *track* artist, and saving
+    # Edit details then wrote "A feat. B" as every file's album artist.
+    names = collections.Counter((row[7], row[8]) for row in mine)
+    (artist, album), _ = names.most_common(1)[0]
     return {"library_id": int(library_id), "folder": folder,
+            "artist": artist, "album": album,
             "items": [t.as_dict() for t in found]}
 
 

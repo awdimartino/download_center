@@ -779,3 +779,17 @@ def test_measuring_may_reach_a_disc_folder_editing_may_not(tmp_path, identity):
         library.album_dir(identity, 1, "Artist/Album/CD1")
     assert library.album_dir(identity, 1, "Artist/Album/CD1",
                              any_depth=True).name == "CD1"
+
+
+def test_an_opened_album_says_its_own_artist_not_a_tracks(db, identity):
+    """An album opened from a song in search results only knew the track
+    artist, and Edit details saved it as every file's album artist
+    (CODE_REVIEW M8). The album's own names come back with its tracks."""
+    add_track(db, "a", path="Artist/Record/1.mp3", album="Record",
+              album_artist="Artist", artist="Artist feat. Guest")
+    add_track(db, "b", path="Artist/Record/2.mp3", album="Record",
+              album_artist="Artist", artist="Artist")
+
+    opened = library.tracks(identity, 1, "Artist/Record")
+
+    assert (opened["artist"], opened["album"]) == ("Artist", "Record")

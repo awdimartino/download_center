@@ -1483,6 +1483,13 @@ function openDrawer(album) {
 
   const actions = el("div", "lib-actions");
   const edit = button("Edit details", "ghost", () => {
+    if (album.tracks === undefined) {
+      // A song-search stub before its tracks arrive: the names the editor
+      // would start from are not the album's yet.
+      setNote("library-op", "Still reading this album; try again in a moment.",
+              "warn");
+      return;
+    }
     if (!editWrap.childElementCount) editWrap.append(albumEditor(album));
     editWrap.hidden = !editWrap.hidden;
     edit.textContent = editWrap.hidden ? "Edit details" : "Close editor";
@@ -1527,8 +1534,13 @@ async function loadTracks(album) {
     if (openAlbum !== asked) return;
     drawerTracks = data.items;
     // Opened from a song in search results, which knows less than a listing
-    // row: fill in what the panel's header can now say.
+    // row: fill in what the panel's header can now say - and the album's
+    // own names, since the song only knew its track artist.
     if (album.tracks === undefined) album.tracks = data.items.length;
+    if (album.stub) {
+      album.artist = data.artist || album.artist;
+      album.album = data.album || album.album;
+    }
     renderTracks();
   } catch (err) {
     if (openAlbum !== asked) return;

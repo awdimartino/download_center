@@ -375,7 +375,7 @@ it less likely.
       count can reach zero; editing and matching stay at exactly
       `artist/album`. Reproduced first (`Artist/.` resolved to `Artist`).
 
-- [ ] **M8. Editing an album opened from a song search writes the track
+- [x] **M8. Editing an album opened from a song search writes the track
       artist as the album artist.** `app/static/js/library.js:341-344, 1114-1135`.
       The stub album is built with `artist: song.artist`. Change only the
       title in *Edit details* and every file's album artist becomes, say,
@@ -383,6 +383,10 @@ it less likely.
       throws (`plural(undefined)`).
       *Fix:* have `/api/library/album` return the album-level names and fill
       the stub from them.
+      **Fixed:** `library.tracks` returns the album's most common album
+      artist and album; `loadTracks` puts them on a stub, and Edit details
+      waits until the tracks have arrived. Server half tested; the page half
+      checked in a browser with the M5/M6 batch.
 
 - [ ] **M9. Changing a track's artist can move the file without the
       confirm, and the panel goes stale.** `app/static/js/library.js:1629`,
