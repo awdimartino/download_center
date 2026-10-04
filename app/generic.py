@@ -116,7 +116,7 @@ def _to_item(info: dict[str, Any]) -> dict[str, Any] | None:
         "album_artist": artist_name,
         "album": info.get("album") or title or "Unknown Title",
         # No album grouping: without a reliable track count there is no way to
-        # know a release is complete, so these are always staged as singles.
+        # know a release is complete, so these are always filed as singles.
         "album_id": None,
         "album_total": None,
         "track_no": None,

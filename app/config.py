@@ -63,13 +63,13 @@ class Settings(BaseModel):
         raise ValueError("audio_bitrate must be a bitrate from 32 to 320 "
                          "(kbps), or a VBR level from 0 to 9")
 
-    # Whether the review page offers to match an album against MusicBrainz.
+    # Whether Library offers to match an album against MusicBrainz.
     # Beets no longer files anything: a download goes into the library on its
     # own, and this only decides whether the "Find matches" button does
     # something when you press it.
     beets_enabled: bool = True
 
-    # The tagged library beets files into, and which Navidrome serves.
+    # The library the filer files into, and which Navidrome serves.
     music_dir: Path = Path("/music")
 
     # Navidrome's database, mounted read-only. Health reporting reads it;
@@ -134,7 +134,7 @@ class Settings(BaseModel):
 
 # Settings a user may change from the browser. Everything else needs a file
 # edit, either because it is a secret or because changing it mid-flight would
-# leave the staging tree inconsistent.
+# leave the workspace or the library inconsistent.
 EDITABLE = (
     "spotify_client_id", "spotify_client_secret", "concurrency",
     "audio_bitrate", "max_attempts", "rate_limit_sleep", "beets_enabled",

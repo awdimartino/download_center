@@ -8,8 +8,7 @@ not. Stars, ratings and play counts then survive any retag or reorganisation.
 The tag lives in a different place in every container format, which is the
 only reason this module exists.
 
-`tools/ensure_uuid.py` deliberately duplicates the write side. It runs on a
-host with nothing installed but mutagen, so it stays a standalone script.
+Writing goes through `filer`, which stamps every track it files.
 """
 
 from __future__ import annotations

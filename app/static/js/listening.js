@@ -1,11 +1,10 @@
 "use strict";
 
 /* --- listening -------------------------------------------------------------
-   The snapshots have been running since before there was anywhere to read
-   them, which made four years of imported history and a nightly job look
-   from the outside exactly like nothing happening at all. This is that
-   record, and the first thing it shows is what has been captured - because
-   the number that matters most is still "is this collecting or not". */
+   Home's listening detail: the play-count readings and imported Last.fm
+   history, broken down by range. The first thing it shows is what has been
+   captured - because the number that matters most is still "is this
+   collecting or not". */
 
 import { el, setBanner } from "./core.js";
 import { stat, hourlyBars, albumBars, genreBars, sessionStats } from "./charts.js";

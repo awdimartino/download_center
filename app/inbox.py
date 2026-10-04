@@ -183,11 +183,11 @@ def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
     it immediately is only the worker saying so, rather than waiting for the
     poller to work out what it already knows.
 
-    The two cannot collide over the same file. A rename keeps the file's
-    mtime, so what lands here is seconds old and `settled` is false for it
-    for the whole quiet period - by which time this has long since filed it.
-    And if the application dies in between, that same quiet period is what
-    hands the file to the poller on the next start instead of losing it.
+    The two cannot collide over the same file: it is claimed in
+    `_delivering` before it arrives, and the poller skips anything claimed.
+    The quiet period alone is not enough, since it can be set to 0. If the
+    application dies in between, the claim dies with it, and the poller
+    files the file on the next start instead of losing it.
 
     If filing fails, the file goes back where it was built. Left in the
     inbox, the poller filed it a couple of minutes after the item had been

@@ -1,8 +1,8 @@
 "use strict";
 
-// Import and audit are started, not awaited - beets gets 900s per path and
-// an audit reads every file in the library, both far longer than a browser
-// will hold a request open. The server pushes the outcome over the socket.
+// Long operations - a retag, ReplayGain, a combine, the disk audit - are
+// started, not awaited: each can take far longer than a browser will hold a
+// request open. The server pushes the outcome over the socket.
 //
 // Panels register what an operation means to them rather than this module
 // knowing about panels: `library.js` and `health.js` each call

@@ -1,15 +1,17 @@
-"""Where each person's downloads are staged, tagged and filed.
+"""Where each person's music arrives, and which library it is filed into.
 
-One shared staging area cannot work once more than one person uses this. The
-sweep imports whatever it finds without a job to explain it - dropped in by
-hand, or left behind by a job that finished while beets was busy - so the
-folder itself has to say who the files belong to. There is nowhere else for
-that fact to live by the time the sweep runs.
+One shared inbox cannot work once more than one person uses this. The poller
+files whatever it finds without a job to explain it - dropped in by hand, or
+delivered by a download - so the folder itself has to say who the files
+belong to. There is nowhere else for that fact to live by the time the
+poller, which runs with nobody signed in, gets to them.
 
 Beets needs splitting the same way, and not for tidiness: it stores item
 paths relative to its `directory`, so one library database genuinely cannot
 describe two roots. Each person gets their own configuration and their own
 database, generated from one template with their library path filled in.
+Beets files nothing; it is only asked to match and retag, from Library's
+*Find matches*.
 
 Nothing here is configured per user. The destination comes from Navidrome's
 own record of which library that account can see, so a new person needs no
@@ -41,7 +43,7 @@ def slug(username: str) -> str:
 
 @dataclass(frozen=True)
 class Workspace:
-    """One person's staging area, beets installation and destination."""
+    """One person's inbox, beets configuration and destination library."""
 
     username: str
     library_id: int
@@ -183,11 +185,9 @@ def require_mounted(space: Workspace) -> None:
     to Navidrome and forget the matching bind mount here and the path exists
     for Navidrome and not for us.
 
-    Nothing used to check. beets would be configured with `directory:
-    /wherever`, create it inside the container's own writable layer, file the
-    music into it, and report success - and the next `docker compose pull`
-    would take the lot. The download appeared to work and the tracks went
-    into the ledger, so nothing ever asked for them again.
+    Nothing used to check. Music would be filed under a path that existed
+    only in the container's own writable layer, the download would report
+    success, and the next `docker compose pull` would take the lot.
 
     That is the same shape as the duplicates quarantine writing to an
     unmounted `/duplicates-removed`. A path that resolves is not a path that
@@ -207,9 +207,9 @@ def require_mounted(space: Workspace) -> None:
 def existing() -> list[Workspace]:
     """Workspaces already on disk, for work that runs with nobody signed in.
 
-    The staging sweep has no session - it runs on a timer - so it reads back
+    The inbox poller has no session - it runs on a timer - so it reads back
     what previous sessions created. A person who has never signed in has no
-    staging directory and so nothing that could need importing.
+    workspace and so no inbox to drain.
     """
     root = settings.output_dir
     if not root.is_dir():
@@ -230,8 +230,7 @@ def existing() -> list[Workspace]:
 
         # A marker that does not say which library, or where it is, is not
         # enough to act on. It used to be: the missing id became 0 and the
-        # missing path became `music_dir`, which was survivable when these
-        # fed a beets sweep and is not now. The inbox poller passes this
+        # missing path became `music_dir`. The inbox poller passes this
         # workspace to the filer, so a guessed id partitions the album
         # registry under a library that does not exist - the same album
         # filed twice, once by the poller and once by the signed-in session,
@@ -249,7 +248,7 @@ def existing() -> list[Workspace]:
 
 
 def _owner_of(marker: Path) -> tuple[str, Path] | None:
-    """Who a staging directory says it belongs to, and where its music goes."""
+    """Who a workspace directory says it belongs to, and where its music goes."""
     if not marker.is_file():
         return None
     lines = marker.read_text(encoding="utf-8").splitlines()

@@ -249,11 +249,11 @@ async def lifespan(app: FastAPI):
 async def _inbox_loop() -> None:
     """File whatever has been dropped into an inbox, as soon as it settles.
 
-    Nothing like the nightly sweep this sits beside. The sweep ran beets,
-    which does a MusicBrainz lookup per item and moves files about, and on a
-    machine serving music over one link that was felt as stuttering playback
-    - so it was pushed to once a night and everything waited hours. Filing
-    reads tags and renames, so it can run whenever something appears.
+    It replaced a nightly sweep. The sweep ran beets, which does a
+    MusicBrainz lookup per item and moves files about, and on a machine
+    serving music over one link that was felt as stuttering playback - so it
+    was pushed to once a night and everything waited hours. Filing reads tags
+    and renames, so it can run whenever something appears.
     """
     while True:
         try:
@@ -267,13 +267,9 @@ async def _inbox_loop() -> None:
         await asyncio.sleep(inbox.POLL_SECONDS)
 
 
-# How often to check whether today's snapshot has been taken. Not a clock
-# time: a container that was restarting at 3am would simply miss the day, and
-# a day of listening history cannot be recovered afterwards. Checking on a
-# short cycle for "has today been done" catches up whenever the process
-# happens to be alive.
-# Every five minutes, not nightly. Navidrome records the moment of a
-# track's most recent play beside its running total, so a reading that
+# How often the play counts are read: every five minutes, not nightly.
+# Navidrome records the moment of a track's most recent play beside its
+# running total, so a reading that
 # catches a count rising by one has that play's exact time - and reading
 # this often means the rise is almost always one. The cost is a single
 # indexed join over a few thousand annotation rows, measured at 34ms on the
@@ -787,7 +783,7 @@ async def delete_job(
     # still on disk and no event telling any browser it went.
     try:
         # The library need not be mounted: this only removes scratch files
-        # under the staging root. Refusing would strand the job in memory
+        # under the workspace root. Refusing would strand the job in memory
         # with its files on disk.
         space = await asyncio.to_thread(functools.partial(
             workspace.for_session, session.identity, job.get("library_id"),

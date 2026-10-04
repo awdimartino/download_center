@@ -41,7 +41,7 @@ DURATION_TOLERANCE = 15.0
 
 # Minimum total score required to accept a match. Below this the track is
 # failed rather than downloaded, because a wrong file is more expensive to
-# undo than a missing one once beets has imported it.
+# undo than a missing one once it has been filed into the library.
 SCORE_FLOOR = 0.70
 
 # Title and artist are necessary conditions, not tradeable ones. Without these

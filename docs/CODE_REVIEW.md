@@ -1063,7 +1063,7 @@ it less likely.
       `showProgress` instead of special-casing the string "ReplayGain"; share
       the duplicated cover-survey fetch; use the existing `button()` helper in
       `renderBar`.
-- [ ] **R3. Stale text describing the removed staging, ledger, nightly and
+- [x] **R3. Stale text describing the removed staging, ledger, nightly and
       beets-files-everything design.**
       - User-facing: "nightly" at `index.html:130, 148`; the Settings note
         "New downloads are fingerprinted without it" (`index.html:477-478`);
@@ -1081,6 +1081,18 @@ it less likely.
       - `library.js:2233-2246` handles a beets lock and `busy` result that no
         longer exist; `importSummary` says "keeps the album identity it had"
         even after a merge.
+      **Fixed:** every cited spot reworded to what happens now. Home says
+      "play-count readings", not nightly snapshots; the AcoustID note says
+      Find matches works without a key; Health's unstamped hint says to save
+      the album in Library (filing stamps it) since the stamper script is
+      gone, and the stale-index hint no longer claims stamping keeps mtime
+      (only tools/fingerprint.py does now). The workspace, operations,
+      playcounts and overview docstrings describe the inbox poller and
+      five-minute readings; inbox.deliver now credits the `_delivering` claim,
+      not the quiet period, for keeping the poller off a delivered file. In
+      library.js the dead `busy` branch is gone and a retag's notice no longer
+      promises the album kept its identity, since after_retag can join it to
+      an existing one. Historical notes that say "used to" were left.
 - [ ] **R4. Dead code:** `playcounts.last_complete_day` and `taken_on()`,
       `registry.album_uuid_for` (tests only), the `filing` item status (only
       the front end knows it — set it before `deliver`, or drop it).

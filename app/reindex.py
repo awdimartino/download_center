@@ -37,7 +37,7 @@ from .beets_runner import ensure_config
 
 # Moving and copying are both disabled: the files are already where they
 # belong, and this must not reorganise a library it is only reading. The
-# overlay is temporary so the real config keeps `move: yes` for imports.
+# overlay is temporary so the person's real config is left as it is.
 OVERLAY = """\
 import:
   copy: no

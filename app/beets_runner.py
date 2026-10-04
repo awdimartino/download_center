@@ -67,8 +67,8 @@ import:
   quiet: yes
   quiet_fallback: skip
   # Downloading a track from an album already held is the ordinary case, not
-  # an error. `skip` would leave every such track sitting in staging for a
-  # human; `merge` files it alongside its siblings, where it also inherits
+  # an error. `skip` would leave every such track untagged for a human;
+  # `merge` keeps it alongside its siblings, where it also inherits
   # the album UUID they already share instead of founding a second copy.
   duplicate_action: merge
   log: __LOG__
@@ -94,8 +94,8 @@ import:
 # staging: correctly identified, then discarded for being one track short.
 #
 # unmatched_tracks stays capped. That penalty is what stops a folder holding
-# extra, unrelated tracks from being filed as an album, and staging is full of
-# loose tracks that would hit exactly that case.
+# extra, unrelated tracks from being matched as an album, and a library
+# folder can hold loose tracks that would hit exactly that case.
 match:
   max_rec:
     missing_tracks: strong

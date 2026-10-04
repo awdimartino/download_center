@@ -138,8 +138,8 @@ def _identity_section(connection: sqlite3.Connection, live: str,
         f"{stamped} of {total - untaggable} taggable tracks carry one"
         + (f", {untaggable} cannot hold tags" if untaggable else "")
         + f" ({source})",
-        "Run the stamper, then a full scan - stamping preserves mtime, so an "
-        "incremental scan will not notice the new tags.",
+        "Save the album in Library: filing writes a UUID onto every track, "
+        "and Navidrome reads it on its next scan.",
     ))
 
     # This person's own annotations only. It used to count every user's, so
@@ -391,8 +391,9 @@ def _disk_section(audit) -> Section:
 def _stale_index_check(connection_stamped: int | None, audit) -> Check | None:
     """Whether Navidrome has caught up with the tags on disk.
 
-    Stamping preserves mtime deliberately, so an incremental scan does not
-    re-read the files and Navidrome keeps using the fallback identity. The
+    A tool that restores a file's mtime after tagging it - the old stamper
+    did, and `tools/fingerprint.py` still does - leaves an incremental scan
+    never re-reading the file, so Navidrome keeps the fallback identity. The
     database alone cannot distinguish that from files that were never
     stamped, and the two need opposite responses.
     """
@@ -405,8 +406,8 @@ def _stale_index_check(connection_stamped: int | None, audit) -> Check | None:
         "stale_index", "Stamped but not yet scanned", behind,
         WARN,
         "on disk but not in Navidrome's index",
-        "Stamping preserves mtime, so incremental scans skip these. "
-        "Run a full scan.",
+        "Whatever tagged these kept their modification time, so "
+        "incremental scans skip them. Run a full scan.",
     )
 
 

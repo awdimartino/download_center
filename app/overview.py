@@ -8,9 +8,9 @@ that the thing it sits beside does not.
 
 Two sources, covering disjoint periods by construction:
 
-  * `play_snapshot` - a nightly reading of the cumulative counter. Plays are
-    the *increase* between one reading and the next, so a month's listening
-    is the sum of those increases.
+  * `play_snapshot` - a five-minute reading of the cumulative counter
+    (daily before 2026-09-26). Plays are the *increase* between one reading
+    and the next, so a month's listening is the sum of those increases.
   * `play_imported` - listening from before the snapshots began, already
     stored as plays per day rather than as a running total.
 
@@ -18,9 +18,9 @@ A track's **first** reading is a baseline, never plays. It is whatever the
 counter already said the day this started watching, and counting it would
 put a lifetime of listening into whichever month the snapshots began.
 
-An increase is attributed to the day of the *later* reading. With nightly
-snapshots that smears a play by at most a day, and only across a month
-boundary does it show at all.
+An increase is dated by Navidrome's `play_date` for it - the play's own
+time - or, failing that, by the *later* reading. Rows from the daily era
+carry only that reading's date, which smears a play by at most a day.
 """
 
 from __future__ import annotations

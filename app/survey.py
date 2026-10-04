@@ -20,11 +20,12 @@ transcribable, and this exists to count them before anything is written:
     them.
 
   * **fused** - one UUID carried by files that belong to different albums.
-    `tools/ensure_uuid.py` assigned per *directory*, so a flat dump of loose
-    tracks came out as one album; the note in this project's history puts it
-    at 101 albums sharing a UUID. Recording that verbatim would give every
-    one of those albums the same identity and Navidrome would show them as a
-    single enormous record.
+    The old standalone stamper, `tools/ensure_uuid.py` (since deleted),
+    assigned per *directory*, so a flat dump of loose tracks came out as one
+    album; the note in this project's history puts it at 101 albums
+    sharing a UUID. Recording that verbatim would give every one of those
+    albums the same identity and Navidrome would show them as a single
+    enormous record.
 
 Both need a person to choose, and the choice costs something real - a fresh
 UUID for an album is a fresh Navidrome identity, which loses that album's

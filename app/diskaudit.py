@@ -1,14 +1,14 @@
 """Auditing identity tags on disk, rather than through Navidrome's index.
 
 Navidrome's view and the files themselves can disagree, and the disagreement
-is not academic. Stamping a file preserves its mtime on purpose, so that
-tagging an entire library does not look to a scanner like the entire library
-changed. The cost is that an incremental scan then never re-reads those files:
+is not academic. A tool that restores a file's mtime after tagging it - so
+that tagging an entire library does not look to a scanner like the entire
+library changed - leaves an incremental scan never re-reading those files:
 the tags are on disk and Navidrome does not know it.
 
 Reading the database alone cannot tell "never stamped" from "stamped but not
-yet scanned", and those need opposite responses - run the stamper, or run a
-full scan. So this walks the files.
+yet scanned", and those need opposite responses - file the tracks so they
+get a UUID, or run a full scan. So this walks the files.
 
 It is slow enough that it cannot happen inside a request. The result is cached
 with the time it was taken, refreshed on a timer, and can be asked for.

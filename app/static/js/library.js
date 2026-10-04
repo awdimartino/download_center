@@ -2298,8 +2298,9 @@ function importSummary(result) {
   const failed = result.failed || [];
   if (failed.length) return [`Retagging problems: ${failed.join("; ")}`, "warn"];
   if (result.imported) {
-    return ["Retagged. It keeps the album identity it had, so nothing "
-            + "starred was lost.", "notice"];
+    return ["Retagged. Its tracks keep their stars and plays; if that "
+            + "release was already in the library, the album joined it.",
+            "notice"];
   }
   // Nothing changed and nothing failed: beets ran and refused. Said plainly,
   // because the album looking untouched is exactly how this used to hide.
@@ -2309,19 +2310,16 @@ function importSummary(result) {
   return ["", "notice"];
 }
 
-// The album's own buttons run the same beets lock, so they cannot be live
-// while a retag is in flight.
+// The album's own buttons take the same folder lock, so they cannot be
+// live while a retag is in flight.
 registerOperation("import", {
   note: "library-op",
   onButtonState(running) {
     libraryDrawer.querySelectorAll(".lib-actions button").forEach((b) => { b.disabled = running; });
   },
   onResult(result) {
-    if (result.busy) {
-      setNote("library-op",
-              "An import is already running; this one was not started.", "warn");
-    } else if (!result.ran) {
-      setNote("library-op", `Nothing to import: ${result.reason}`, "warn");
+    if (!result.ran) {
+      setNote("library-op", `Nothing to retag: ${result.reason}`, "warn");
     } else {
       const [message, tone] = importSummary(result);
       setNote("library-op", message, tone);

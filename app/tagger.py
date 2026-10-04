@@ -1,9 +1,10 @@
-"""Writes Spotify metadata onto a downloaded file, as seed data for beets.
+"""Writes Spotify metadata onto a downloaded file before it is filed.
 
-These tags are not the final product. Beets re-tags everything against
-MusicBrainz on import, but it decides *which* release to match using the tags
-already present. Handing it the real album, track number and ISRC is the
-difference between an unattended import and one that stops to ask.
+These are the tags the file enters the library with. The filer reads them to
+decide where it lives and which album it joins, and nothing retags it later
+unless someone picks a release in Library's *Find matches* - which also
+starts from them. Handing over the real album, track number and ISRC is the
+difference between a track filed under its album and a stray single.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ def tag(path: Path, item: dict[str, Any], embed_cover: bool = True) -> None:
     try:
         tags = ID3(path)
         # yt-dlp and ffmpeg leave YouTube-derived frames behind; none of them
-        # should survive into what beets reads. Cleared in memory, not on
+        # should survive into the library. Cleared in memory, not on
         # disk: `delete()` stripped the file at once, so any failure before
         # the save below left it with no tags at all.
         tags.clear()

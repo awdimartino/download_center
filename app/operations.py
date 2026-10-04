@@ -1,9 +1,9 @@
-"""Long jobs that are not downloads: importing staging, auditing the disk.
+"""Long jobs that are not downloads: retagging, ReplayGain, combining
+albums, resolving duplicates, auditing the disk.
 
-Both used to run inside their request handler. Importing walks every waiting
-path through beets with a 900-second timeout *per path*, and auditing reads
-the tags of every file in the library. A browser gives up long before either
-finishes, so the button looked broken while the work carried on invisibly -
+The first two used to run inside their request handler. A retag through
+beets can take minutes, and auditing reads the tags of every file in the
+library. A browser gives up long before either finishes, so the button looked broken while the work carried on invisibly -
 and because both held a process-wide lock from inside a threadpool worker, a
 second click did not queue politely behind the first. It occupied another of
 the forty threads FastAPI has, blocking on a lock, for as long as the first
@@ -20,8 +20,8 @@ and its result went to him - and every person's results, folder names and
 candidate lists included, were readable by everyone.
 
 This deliberately does not persist. An operation that was interrupted by a
-restart has no meaningful "resume" - beets either moved the files or it did
-not, and the next sweep finds whatever is left.
+restart has no meaningful "resume" - each file was either written or it was
+not, and starting the same thing again from the page picks up the rest.
 """
 
 from __future__ import annotations

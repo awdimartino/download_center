@@ -1,4 +1,4 @@
-"""Nightly snapshots of what has been played, so history stops being lost.
+"""Snapshots of what has been played, so history stops being lost.
 
 Navidrome's `annotation` table holds a *cumulative* `play_count` and only the
 *most recent* `play_date`. That answers "how many times have I played this,
@@ -6,9 +6,11 @@ ever" and nothing else. There is no way to ask what was played in March,
 because the information was never kept - each play overwrites the only date
 there is and increments a running total.
 
-So this reads that table once a day and records what changed. Two snapshots
-either side of a day give the plays in that day; a year of them gives a year
-of history. Nothing recovers the part before the first snapshot, which is
+So this reads that table every five minutes and records what changed. The
+rise between two readings is the plays between them, and the `play_date`
+beside a rise of one is that play's exact time; a year of them gives a year
+of history. (Until 2026-09-26 it read once a day, and those rows carry a
+bare date.) Nothing recovers the part before the first snapshot, which is
 why this is the one item on the plan with a clock on it.
 
 Three decisions worth stating, because each is a place the obvious version
@@ -20,10 +22,11 @@ alignment with the track it described. The UUID is on the file itself and
 survives re-tagging, moving and a rebuilt database - which is the entire
 reason it exists.
 
-**Only changed counts are stored.** A full nightly capture of this library
-is a few thousand rows, almost all identical to the night before. Most
-nights a few dozen tracks are played. Storing every row would put a year at
-close to a million; storing the changes puts it in the tens of thousands.
+**Only changed counts are stored.** A full capture of this library is a
+few thousand rows, almost all identical to the reading before - five
+minutes apart, usually nothing changed at all. Storing every row would put
+a year in the hundreds of millions; storing the changes puts it at about
+one row per play.
 Reading a day's value means taking the most recent row at or before it,
 which the index is shaped for.
 

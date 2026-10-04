@@ -129,7 +129,8 @@ function paletteFrom(h, s, l) {
   };
 }
 
-// The cover is set from the most played album, and the page takes its colour
+// The cover is one of the year's most played albums, picked at random on
+// each visit, and the page takes its colour
 // from the cover once the image has loaded. Either step failing leaves the
 // page as it was: no cover shows the text alone, and no colour keeps the
 // stylesheet's own background.
@@ -264,7 +265,7 @@ export async function loadHome() {
     homeMonths.replaceChildren(monthlyChart(heard.months || []));
     homeArtists.replaceChildren(...artistBars(heard.top_artists || []));
 
-    // Only when it is wrong. A tick saying the nightly job ran is noise on
+    // Only when it is wrong. A tick saying the counts were read is noise on
     // a page whose job is to look calm; a job that stopped three weeks ago
     // is the one thing here worth interrupting for, because every day it
     // does not run is a day of listening nobody can recover.

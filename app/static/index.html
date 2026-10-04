@@ -89,9 +89,9 @@
   <p id="error" class="error" hidden></p>
   <p id="warn" class="warn" hidden></p>
 
-  <!-- The landing panel. Deliberately thin: a greeting, one fact in large
-       type, three numbers and two charts. Everything here is a door to a
-       section that holds the real detail, and nothing here is a control. -->
+  <!-- The landing panel: a greeting, one fact in large type, a row of
+       numbers and two charts, then the listening detail they summarise.
+       Nothing above the detail is a control. -->
   <section id="view-home">
     <!-- One of the year's most played albums, picked at random on each visit,
          is the header. Its cover is darkened for the text on it, and its
@@ -120,15 +120,15 @@
 
     <div id="home-stats" class="stats"></div>
 
-    <!-- Below the stats rather than on the cover: a notice about the nightly
-         counts is not part of the header, and on the cover it sat over the
+    <!-- Below the stats rather than on the cover: a notice that play counts
+         have stopped being read is not part of the header, and on the cover it sat over the
          art and pushed the copy around. -->
     <p id="home-snapshots" class="warn" hidden></p>
 
     <section id="home-chart" class="home-figure">
       <h2 class="home-figure-title">Plays by month</h2>
-      <p class="home-figure-note">Last two years. Counted from the nightly
-        snapshots, which Navidrome does not keep.</p>
+      <p class="home-figure-note">Last two years. Counted from the play-count
+        readings, which Navidrome does not keep.</p>
       <div id="home-months"></div>
     </section>
 
@@ -145,7 +145,7 @@
       <div class="home-figure-head">
         <div>
           <h2 class="home-figure-title">Listening</h2>
-          <p class="home-figure-note">Nightly snapshots plus your Last.fm
+          <p class="home-figure-note">Play-count readings plus your Last.fm
             history, kept per track so re-tagging never loses a play.</p>
         </div>
         <div class="listen-range" role="group" aria-label="Time range">
@@ -482,8 +482,8 @@
       <label>AcoustID key
         <input name="acoustid_key" type="password" placeholder="unchanged" spellcheck="false">
         <small>Only for the fingerprint backfill, which identifies already-filed
-        music by what it sounds like. New downloads are fingerprinted without
-        it. Free from <a href="https://acoustid.org/new-application"
+        music by what it sounds like. <em>Find matches</em> identifies music
+        without it. Free from <a href="https://acoustid.org/new-application"
         target="_blank" rel="noopener noreferrer">acoustid.org</a>.</small>
       </label>
       <label class="settings-check">

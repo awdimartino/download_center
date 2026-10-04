@@ -1,9 +1,9 @@
-"""Ask beets what it would match a staged path against, and print it as JSON.
+"""Ask beets what it would match an album folder against, and print it as JSON.
 
 Run as a subprocess with BEETSDIR pointing at one person's workspace:
 
     python -m app.beets_match <path>                 what would it match?
-    python -m app.beets_match --apply <id> <path>    file it as that release
+    python -m app.beets_match --apply <id> <path>    retag it as that release
 
 It is a subprocess rather than a function call because beets' configuration
 and its plugin registry are process-global singletons, read once from

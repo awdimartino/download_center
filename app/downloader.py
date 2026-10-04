@@ -120,8 +120,10 @@ def download(url: str, destination: Path, on_progress: ProgressHook | None = Non
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        # Keep the file's mtime as "now" rather than the upload date, so the
-        # staging directory sorts sensibly and beets sees fresh files.
+        # Keep the file's mtime as "now" rather than the upload date. A
+        # rename keeps it, and the inbox poller leaves a file alone until it
+        # has been quiet for a while - an upload date years old would hand a
+        # delivered file to the poller at once (see `inbox.deliver`).
         "updatetime": False,
         "retries": 3,
         "fragment_retries": 3,
