@@ -295,6 +295,7 @@ def retag_album(space: workspace.Workspace, folder: Path,
     files = audio_in(folder)
     if not files:
         raise NotEditable("there is nothing in that folder to edit")
+    require_one_album(folder)
 
     was = album_key_of(folder)
     for path in files:
@@ -340,6 +341,39 @@ def audio_in(folder: Path) -> list[Path]:
                   if p.is_file() and uuidtags.is_audio(p))
 
 
+def _by_album(paths: list[Path]) -> tuple[dict[str, list[Path]], dict[str, str]]:
+    """The files grouped by the album key their tags name, with a readable
+    label per key. A file with no album tag is its own record and is left
+    out: it is not part of any album here."""
+    named: dict[str, list[Path]] = {}
+    labels: dict[str, str] = {}
+    for path in paths:
+        meta = read_meta(path)
+        if not meta.names_album:
+            continue
+        key = registry.album_key(meta.albumartist, meta.album)
+        named.setdefault(key, []).append(path)
+        labels.setdefault(key, f"{meta.albumartist} - {meta.album}")
+    return named, labels
+
+
+def require_one_album(folder: Path) -> None:
+    """Refuse a folder-wide action on a folder holding more than one album.
+
+    Album actions treat a folder as one record. Older folders can hold two
+    (57 were found), and two names can sanitise to one folder - `AC/DC` and
+    `AC_DC`, or a case-insensitive filesystem. Renaming, matching or
+    combining such a folder silently absorbed the second album, and its
+    registry row was orphaned.
+    """
+    _, labels = _by_album(audio_in(folder))
+    if len(labels) > 1:
+        raise NotEditable(
+            f"{folder.name} holds more than one album "
+            f"({'; '.join(sorted(labels.values()))}). Move the tracks of one "
+            "of them out first, or edit them track by track.")
+
+
 def album_key_of(folder: Path) -> str:
     """The registry key the files in a folder currently answer to.
 
@@ -377,16 +411,7 @@ def after_retag(space: workspace.Workspace, paths: list[Path],
     # match untouched, and a download can land mid-operation: stamping the
     # settled UUID on those gave a file still tagged as the old album the new
     # album's identity - two names, two folders, one album UUID.
-    named: dict[str, list[Path]] = {}
-    labels: dict[str, str] = {}
-    for path in live:
-        meta = read_meta(path)
-        if not meta.names_album:
-            # No album tag: its own record, not part of this one.
-            continue
-        key = registry.album_key(meta.albumartist, meta.album)
-        named.setdefault(key, []).append(path)
-        labels.setdefault(key, f"{meta.albumartist} - {meta.album}")
+    named, labels = _by_album(live)
     if not named:
         # A retag that did not give these files an album is not a retag this
         # can follow - there is no record for them to be part of.

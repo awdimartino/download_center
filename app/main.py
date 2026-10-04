@@ -1746,6 +1746,14 @@ class AlbumTarget(BaseModel):
     folder: str
 
 
+def _one_album(path: Path) -> None:
+    """409 for a folder-wide action on a folder holding several albums."""
+    try:
+        filer.require_one_album(path)
+    except filer.NotEditable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.post("/api/library/match")
 async def library_match(
     body: AlbumTarget,
@@ -1768,6 +1776,7 @@ async def library_match(
         path = library.album_dir(session.identity, body.library_id, body.folder)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _one_album(path)
 
     target = {"library_id": body.library_id, "folder": body.folder}
 
@@ -1826,6 +1835,7 @@ async def library_match_apply(
             status_code=409,
             detail=f"That release was not offered for {path.name}; "
                    "find matches for it again.")
+    _one_album(path)
 
     if not inbox.settled(path):
         # A download of this album is still filing tracks into it.
@@ -1922,6 +1932,7 @@ async def library_cover_apply(
         raise HTTPException(
             status_code=409,
             detail=f"{path.name} is still arriving; try again shortly.")
+    _one_album(path)
 
     def run() -> dict[str, Any]:
         data = (covers.fetch(body.url) if body.url
@@ -2002,6 +2013,8 @@ async def library_combine(
             raise HTTPException(
                 status_code=409,
                 detail=f"{path.name} is still arriving; try again shortly.")
+    for path in folders.values():
+        _one_album(path)
 
     def run() -> dict[str, Any]:
         survivor = body.keep or next(iter(folders), None)

@@ -221,7 +221,7 @@ it less likely.
       a frontend test that every operator string in the JS exists in
       `playlists.OPERATORS`.
 
-- [ ] **H9. A folder holding two albums is retagged as one, with no guard.**
+- [x] **H9. A folder holding two albums is retagged as one, with no guard.**
       `app/filer.py:283-306, 343-358`, `app/main.py:1617-1632, 1814-1833`.
       `album_key_of` reads the first file only; *Save album*, *Use this*,
       *Combine* and ReplayGain treat the folder as one record. 57 such
@@ -232,6 +232,15 @@ it less likely.
       folder holds two Navidrome album ids.
       *Fix:* refuse folder-wide actions when the files' keys disagree, and
       flag those rows in the list.
+      **Fixed:** `filer.require_one_album` (files naming an album must
+      share one key; untagged strays don't count) guards `retag_album`
+      (*Save album* → 422), *Find matches*, *Use this*, *Combine* and cover
+      apply (409), and ReplayGain skips such folders. The list sends
+      `albums_here` (Navidrome album ids in the folder) and the page flags
+      it. Reproduced first: a rename absorbed the second album and orphaned
+      its registry row. The flag counts Navidrome ids and the guard counts
+      tag keys, so a split album (one name, two UUIDs) is flagged but not
+      refused.
 
 ---
 

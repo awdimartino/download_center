@@ -254,6 +254,9 @@ function flags(album) {
   if (album.kind === "single") box.append(el("span", "lib-flag", "Single"));
   if (isBarred(album)) box.append(el("span", "lib-flag tone-warn", "Cover"));
   if (album.needs_review) box.append(el("span", "lib-flag tone-warn", "Review"));
+  if (album.albums_here > 1) {
+    box.append(el("span", "lib-flag tone-warn", `${album.albums_here} albums`));
+  }
   return box;
 }
 
@@ -1347,6 +1350,12 @@ function statusPills(album) {
   }
   box.append(album.no_gain ? pill("No ReplayGain", "tone-warn") : pill("ReplayGain ✓", "tone-ok"));
   if (isBarred(album)) box.append(pill("Cover has bars", "tone-warn"));
+  // Renaming, matching, covers, combining and ReplayGain treat a folder as
+  // one album, so the server refuses them here; this says so first.
+  if (album.albums_here > 1) {
+    box.append(pill(`${album.albums_here} albums in this folder — edit track by track`,
+                    "tone-warn"));
+  }
   return box;
 }
 

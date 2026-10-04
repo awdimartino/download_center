@@ -91,10 +91,9 @@ has been done and written up; fixing what it found comes next.
       such a row as one record and merge or mis-measure it. Likely cause,
       unverified: `unfuse.py` split fused albums by tag without moving
       files. Plan: (1) a guard - flag those rows and refuse folder-wide
-      actions on them; (2) a throwaway script re-filing those tracks by
+      actions on them (**done**, CODE_REVIEW H9); (2) a throwaway script re-filing those tracks by
       their own tags, with the move list reviewed before it runs. UUIDs do
-      not change, so stars and plays are unaffected. Until then, avoid
-      renaming or matching a row whose tracks show different albums.
+      not change, so stars and plays are unaffected.
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
       tally alone. Reuse the album editor's merge-search pattern: a debounced
       search across the genre tally, picking a target folds the source

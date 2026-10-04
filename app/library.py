@@ -128,6 +128,9 @@ class Album:
             "duration": round(self.duration),
             "kind": self.kind,
             "barred": self.barred,
+            # More than one Navidrome album in one folder. Folder-wide
+            # actions refuse it, so the page says why before they are tried.
+            "albums_here": len(self.album_ids),
         }
 
     @property

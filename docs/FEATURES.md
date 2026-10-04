@@ -639,7 +639,10 @@ anything that lands outside the library root (resolving, not filtering
 `..`, so a symlink cannot walk out either).
 
 Some older folders hold more than one album (57 found in September 2026).
-Folder-wide actions treat them as one and would merge them; see PLAN.md.
+They are flagged (*2 albums* on the card, a pill in the panel), and
+folder-wide actions (rename, match, cover, combine) refuse them with the
+albums named; ReplayGain skips them. Edit them track by track, or move one
+album's tracks out first. See PLAN.md.
 
 Anything still arriving — modified within the quiet period — is refused with
 a message rather than edited mid-copy.

@@ -28,7 +28,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import inbox, library, navidrome, operations
+from . import filer, inbox, library, navidrome, operations
 
 log = logging.getLogger("navidrome_companion.replaygain")
 
@@ -94,6 +94,13 @@ def measure_all(identity: navidrome.Identity,
             continue
         if not inbox.settled(path):
             skipped.append(f"{folder}: still arriving")
+            continue
+        try:
+            # Album gain is measured across the folder, so two albums in
+            # one would each get a figure for the pair.
+            filer.require_one_album(path)
+        except filer.NotEditable:
+            skipped.append(f"{folder}: holds more than one album")
             continue
         try:
             measure(path)
