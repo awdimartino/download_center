@@ -220,7 +220,7 @@ it less likely.
       and a test checks quarantined files are not counted. Not yet checked
       against the live Health page on the Pi.
 
-- [ ] **H7. A stray cover image at the inbox root is copied into every
+- [x] **H7. A stray cover image at the inbox root is copied into every
       download's album folder.** `app/filer.py:586`, `app/inbox.py:133-134`.
       Downloads are moved to the inbox root and filed from there, so
       `_carry_cover(source.parent)` looks at the inbox root. Any
@@ -231,6 +231,11 @@ it less likely.
       any image there.
       *Fix:* only carry a cover from a subfolder of the inbox, never the
       inbox or library root; or deliver each job into its own subfolder.
+      **Fixed** the first way: `file_track` skips `_carry_cover` when the
+      source's folder is the inbox root or the library root. Reproduced
+      first for both. Albums that already received a stray cover on the Pi
+      keep it; that needs finding by hand (a `cover.jpg` identical across
+      unrelated albums).
 
 - [ ] **H8. Smart playlists: "in the last" shows a date picker and saves a
       date.** `app/static/js/playlists.js:80, 195`. The check is

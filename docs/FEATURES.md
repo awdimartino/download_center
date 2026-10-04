@@ -504,7 +504,9 @@ one folder, one album's art could be carried onto another's tracks.
   `(99)`, then it refuses.
 - Moving uses a rename, falling back to copy-and-delete when scratch space
   and the library are different filesystems.
-- A folder cover beside the source is copied along.
+- A folder cover beside the source is copied along, unless the source sits
+  at the top of the inbox or the library, where a cover belongs to no album
+  in particular.
 
 **Paths are frozen.** After filing, no automatic process moves a file.
 Navidrome identifies a track by its UUID and groups albums by tag, never by

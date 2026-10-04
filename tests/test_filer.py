@@ -839,3 +839,43 @@ def test_a_file_with_no_album_is_not_given_the_albums_identity(space, tmp_path):
 
     assert settled == filed[0].album_uuid
     assert uuidtags.read(stray)[1] != settled
+
+
+# A download is moved to the inbox root and filed from there, so a stray
+# cover.jpg dropped at the root over SMB was copied into every later album
+# with no folder cover - and Navidrome prefers it to the embedded art
+# (CODE_REVIEW H7). The same for a loose file at the library root.
+
+def test_a_cover_at_the_inbox_root_is_not_carried(space, tmp_path):
+    (space.inbox_dir / "cover.jpg").write_bytes(b"somebody else's")
+    arrived = space.inbox_dir / "download.mp3"
+    shutil.copy(track(tmp_path, albumartist="Boards", album="Geogaddi",
+                      title="Sixtyten"), arrived)
+
+    filed = filer.file_track(space, arrived)
+
+    assert not (filed.path.parent / "cover.jpg").exists()
+
+
+def test_a_cover_at_the_library_root_is_not_carried(space, tmp_path):
+    (space.library_path / "folder.jpg").write_bytes(b"somebody else's")
+    loose = space.library_path / "loose.mp3"
+    shutil.copy(track(tmp_path, albumartist="Boards", album="Geogaddi",
+                      title="Sixtyten"), loose)
+
+    filed = filer.file_track(space, loose)
+
+    assert not (filed.path.parent / "folder.jpg").exists()
+
+
+def test_a_cover_in_a_folder_dropped_into_the_inbox_is_carried(space, tmp_path):
+    dropped = space.inbox_dir / "upload-1" / "Geogaddi"
+    dropped.mkdir(parents=True)
+    (dropped / "cover.jpg").write_bytes(b"its own")
+    arrived = dropped / "01.mp3"
+    shutil.copy(track(tmp_path, albumartist="Boards", album="Geogaddi",
+                      title="Sixtyten"), arrived)
+
+    filed = filer.file_track(space, arrived)
+
+    assert (filed.path.parent / "cover.jpg").read_bytes() == b"its own"

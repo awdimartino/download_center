@@ -626,7 +626,14 @@ def file_track(space: workspace.Workspace, source: Path,
 
     target = destination(space, meta, source.suffix.lower())
     if source.resolve() != target.resolve():
-        _carry_cover(source.parent, target.parent)
+        # Only from a folder that belongs to the music. Downloads are filed
+        # from the inbox root, so a stray cover.jpg there was copied into
+        # every later album with no folder cover of its own - and Navidrome
+        # prefers a folder cover to the right embedded art. The library
+        # root is the same case for a loose file.
+        if source.parent.resolve() not in (space.inbox_dir.resolve(),
+                                           space.library_path.resolve()):
+            _carry_cover(source.parent, target.parent)
         target = _move_into_place(source, target)
 
     return Filed(path=target, track_uuid=track_uuid, album_uuid=album_uuid,
