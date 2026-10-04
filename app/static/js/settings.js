@@ -5,6 +5,14 @@ import { setBanner, warnEl } from "./core.js";
 const settingsForm = document.getElementById("settings");
 const settingsNote = document.getElementById("settings-note");
 
+// Text a person may want gone: an empty one is sent as empty and clears
+// the setting. A blank secret still means "unchanged", since the form never
+// holds one, and a blank number or bitrate is not a value at all - so those
+// are left out rather than sent.
+const CLEARABLE = ["spotify_client_id", "navidrome_url", "navidrome_user"];
+const NUMBERS = { concurrency: parseInt, max_attempts: parseInt,
+                  rate_limit_sleep: parseFloat };
+
 // A view like any other, loaded when it is shown. It used to be a form that
 // toggled on top of whichever panel you were looking at, which meant Settings
 // appeared above a list of duplicates and left you with no clear way back.
@@ -17,7 +25,9 @@ export async function loadSettings() {
   // is nothing here for them to see and something to leak.
   Object.entries(values).forEach(([key, value]) => {
     const field = settingsForm.elements[key];
-    if (field && !secrets.includes(key)) field.value = value ?? "";
+    if (!field || secrets.includes(key)) return;
+    if (field.type === "checkbox") field.checked = Boolean(value);
+    else field.value = value ?? "";
   });
   // Secrets are never sent back, only whether one is set.
   secrets.forEach((key) => {
@@ -43,13 +53,18 @@ export async function loadSettings() {
 settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = {};
+  // Disabled fields - set by the environment - are not in FormData, so
+  // nothing locked is ever sent.
   new FormData(settingsForm).forEach((value, key) => {
-    if (value === "") return;
-    payload[key] = ["concurrency", "max_attempts"].includes(key)
-      ? parseInt(value, 10)
-      : key === "rate_limit_sleep"
-      ? parseFloat(value)
-      : value;
+    const field = settingsForm.elements[key];
+    if (field.type === "checkbox") return;
+    if (value === "" && !CLEARABLE.includes(key)) return;
+    payload[key] = NUMBERS[key] ? NUMBERS[key](value, 10) : value;
+  });
+  // An unticked checkbox is absent from FormData, which would make it
+  // impossible to turn off.
+  settingsForm.querySelectorAll('input[type="checkbox"]').forEach((box) => {
+    if (!box.disabled) payload[box.name] = box.checked;
   });
   const response = await fetch("/api/settings", {
     method: "PUT",

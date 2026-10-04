@@ -960,9 +960,14 @@ it less likely.
       match and unreadable are checkpointed (`--retry-failed` asks again),
       a lookup that never answered is not. The walk already skipped the
       quarantine; `--from-list` now does too. Reproduced first.
-- [ ] **L35.** Settings has no `beets_enabled` control, and a non-secret
+- [x] **L35.** Settings has no `beets_enabled` control, and a non-secret
       field (Navidrome URL, Spotify id) can never be cleared
       (`index.html:466-476`, `settings.js:42`).
+      **Fixed:** a checkbox for `beets_enabled`, sent ticked or not; the
+      Spotify client id and the Navidrome URL and username are sent empty
+      when emptied, which clears them (the server already accepted that).
+      A blank secret, number or bitrate is still left out. Checked in
+      headless Chromium.
 - [ ] **L36.** CLI tools run as root under `docker exec`, leaving root-owned
       files in `/config`. *Fix:* warn or refuse when `geteuid() == 0`.
 - [ ] **L37.** Updating a playlist when Navidrome is unreachable is a 500,

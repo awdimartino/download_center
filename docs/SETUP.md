@@ -256,7 +256,7 @@ copy environment secrets into the file; check yours if you set
 | `max_attempts` | `3` | yes | tries per track before it fails (1–10) |
 | `rate_limit_sleep` | `2.0` | yes | seconds between downloads |
 | `inbox_quiet_seconds` | `120` | no | how long a dropped file must sit unchanged before it is filed |
-| `beets_enabled` | `true` | no field | offer MusicBrainz matching in Library |
+| `beets_enabled` | `true` | yes (checkbox) | offer MusicBrainz matching in Library |
 | `play_day_timezone` | `UTC` | no | which midnight ends a listening day, e.g. `America/New_York` |
 | `music_dir` | `/music` | no | fallback library root; where free space is measured |
 | `output_dir` | `/downloads` | no | where each person's inbox lives |
@@ -302,7 +302,8 @@ The settings in it that matter:
 `fpcalc` (Chromaprint) is in the image, which the `chroma` plugin uses to
 identify audio by fingerprint as well as by tags.
 
-To turn matching off entirely, set `beets_enabled = false`.
+To turn matching off entirely, untick *Find matches* in Settings (or set
+`beets_enabled = false`).
 
 ---
 

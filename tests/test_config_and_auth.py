@@ -402,3 +402,37 @@ def test_a_renewed_cookie_never_outlives_the_hard_cap(monkeypatch):
 def test_a_cookie_sent_today_is_not_sent_again(monkeypatch):
     session = _session(days_since_sign_in=3, days_since_cookie=0.1)
     assert "set-cookie" not in _request_with(session, monkeypatch).headers
+
+
+# --- clearing a setting, and turning beets off (L35) ----------------------------
+
+@pytest.mark.asyncio
+async def test_an_emptied_field_clears_the_setting(config_file, monkeypatch):
+    from types import SimpleNamespace
+
+    from app import main
+
+    monkeypatch.setattr(config.settings, "spotify_client_id", "abc123")
+    monkeypatch.setattr(config.settings, "beets_enabled", True)
+    monkeypatch.setattr(config, "FROM_ENV", set())
+    admin = SimpleNamespace(identity=SimpleNamespace(is_admin=True))
+
+    await main.put_settings(
+        main.SettingsUpdate(spotify_client_id="", beets_enabled=False), admin)
+
+    assert config.settings.spotify_client_id == ""
+    assert config.settings.beets_enabled is False
+    written = config_file.read_text(encoding="utf-8")
+    assert 'spotify_client_id = ""' in written
+    assert "beets_enabled = false" in written
+
+
+def test_the_form_can_clear_text_and_untick_beets():
+    from pathlib import Path
+
+    static = Path(__file__).resolve().parent.parent / "app" / "static"
+    js = (static / "js" / "settings.js").read_text(encoding="utf-8")
+    html = (static / "index.html").read_text(encoding="utf-8")
+    assert '<input name="beets_enabled" type="checkbox">' in html
+    assert 'const CLEARABLE = ["spotify_client_id", "navidrome_url", "navidrome_user"]' in js
+    assert "payload[box.name] = box.checked" in js

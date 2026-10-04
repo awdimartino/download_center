@@ -828,6 +828,14 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   border-top: 1px solid var(--line-soft);
 }
 #settings-note { font-size: var(--t-sm); color: var(--muted); }
+/* A checkbox reads beside its words, not above them like the fields. */
+#settings label.settings-check {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s-2);
+  cursor: pointer;
+}
 
 /* --- browse ---------------------------------------------------------------
    The search on the left with its results straight under it, the queue in a
