@@ -687,3 +687,35 @@ def test_plays_in_view_counts_every_track_not_just_the_ones_shown(state_db):
 
     assert len(shown["tracks"]) <= 1
     assert shown["plays"] == 6
+
+
+# --- "this month" is the listener's month (L26) --------------------------------
+
+def _frozen_at(moment):
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment.astimezone(tz) if tz else moment.replace(tzinfo=None)
+    return Frozen
+
+
+def test_the_last_evening_of_a_month_is_still_that_month(state_db,
+                                                         identity_with_db,
+                                                         monkeypatch):
+    """20:30 on 31 October in New York is already November in UTC. Cut in
+    UTC, Home showed November's empty bucket as "this month" and the
+    evening's plays as last month's."""
+    from app import playcounts
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "play_day_timezone", "America/New_York")
+    frozen = _frozen_at(datetime(2026, 11, 1, 0, 30, tzinfo=UTC))
+    monkeypatch.setattr(overview, "datetime", frozen)
+    monkeypatch.setattr(playcounts, "datetime", frozen)
+    imported("2026-10-31T19:00:00-04:00", "t1", 3)
+
+    page = overview.listening(identity_with_db)
+
+    assert page["months"][-1]["month"] == "2026-10"
+    assert page["this_month"] == 3
+    assert page["year"]["year"] == 2026

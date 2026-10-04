@@ -908,9 +908,13 @@ it less likely.
       total (`main.py:2093-2103`). Nothing in the UI uses it.
       **Fixed:** admin-only. Kept rather than removed: it is the one check
       that the collector is running.
-- [ ] **L26.** "This month" and "this year" come from UTC while plays are
+- [x] **L26.** "This month" and "this year" come from UTC while plays are
       local: from 8pm New York time on the last day of a month, Home shows
       next month's empty bucket (`overview.py:283, 341, 565`).
+      **Fixed:** `overview._now()` is local (`playcounts.zone()`), used
+      for the month list and the year; the cache key drops the UTC day.
+      Reproduced first with the clock frozen at 20:30 on 31 October in
+      New York.
 - [ ] **L27.** A play with no `play_date` falls back to the reading's UTC
       stamp, bucketed as if local (`overview.py:107`).
 - [ ] **L28.** The headline "You've played N tracks this month" counts plays

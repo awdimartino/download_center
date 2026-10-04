@@ -50,12 +50,19 @@ SESSION_GAP = timedelta(minutes=30)
 def _versions() -> tuple:
     """What every statistic here is computed from: the history, the names
     in the track index, and the day - "this month" and "this year" move at
-    midnight even when nothing else does. Both the local and the UTC day,
-    because the month buckets are cut in UTC and the windows in local time.
+    midnight even when nothing else does - the listener's midnight, since
+    every bucket here is cut in local time.
     """
     index_version, _tracks = playcounts.track_index()
-    return (playcounts.history_version(), index_version, playcounts.today(),
-            datetime.now(UTC).strftime("%Y-%m-%d"))
+    return (playcounts.history_version(), index_version, playcounts.today())
+
+
+def _now() -> datetime:
+    """Now, where the listener is. The plays are bucketed in local time
+    (`playcounts.local_stamp`), so "this month" has to be too: cut in UTC,
+    from 8pm on the last day of a month in New York Home showed the next
+    month's empty bucket."""
+    return datetime.now(playcounts.zone())
 
 
 def _increments(user_id: str) -> list[tuple[str, str, int]]:
@@ -235,7 +242,7 @@ def _months_back(count: int) -> list[str]:
     listened in is a gap in the line instead of vanishing and making the
     months either side look adjacent.
     """
-    now = datetime.now(UTC)
+    now = _now()
     months = []
     year, month = now.year, now.month
     for _ in range(count):
@@ -293,7 +300,7 @@ def _listening(user_id: str) -> dict[str, Any]:
     # The calendar year is always inside the twelve-month window above, so
     # `named` already covers every track in it and this needs no second
     # lookup - it is a second pass over a list that is already in hand.
-    year = datetime.now(UTC).year
+    year = _now().year
     played_this_year: set[str] = set()
     plays_this_year = 0
     seconds_this_year = 0.0
@@ -517,7 +524,7 @@ def overview(identity: navidrome.Identity) -> dict[str, Any]:
         heard = {"months": [], "top_artists": [], "total_plays": 0,
                  "this_month": 0, "last_month": 0, "tracked_since": "",
                  "artists_heard": 0, "busiest_month": {"month": "", "plays": 0},
-                 "year": {"year": datetime.now(UTC).year, "plays": 0,
+                 "year": {"year": _now().year, "plays": 0,
                           "tracks": 0, "seconds": 0}}
     counted = collection(identity)
     return {
