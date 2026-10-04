@@ -810,8 +810,9 @@ it less likely.
       read from the setting each time a download asks. Lowering it holds
       new downloads until enough finish; raising it lets more in as each
       finishes. Reproduced first (four at once after lowering 3 → 1).
-- [ ] **L10.** An item's error survives a successful in-run retry and shows
+- [x] **L10.** An item's error survives a successful in-run retry and shows
       as a tooltip on a Done row (`worker.py:88, 115, 188`).
+      **Fixed:** completing an item clears `error`. Reproduced first.
 - [ ] **L11.** Browse and Drop never send `library_id`: a multi-library
       account always uses its first library, with no way to choose.
 - [ ] **L12.** The Drop file picker's `accept="audio/*"` hides covers and,

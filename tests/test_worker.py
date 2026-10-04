@@ -427,3 +427,29 @@ async def test_a_download_that_cannot_be_tagged_fails_instead_of_filing(
     assert job["status"] == "failed"
     assert not list(library.library_path.rglob("*.mp3"))
     assert not inbox.scratch_root(library, "job1").exists()
+
+
+@pytest.mark.asyncio
+async def test_a_retry_that_succeeds_leaves_no_error_behind(library, monkeypatch):
+    """The failed attempt's message stayed on the item and showed as a
+    tooltip on a Done row (L10)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "max_attempts", 2)
+    monkeypatch.setattr(worker, "BACKOFF", (0,))
+    real = worker.downloader.download
+    attempts = []
+
+    def flaky(url, destination, on_progress=None):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise worker.downloader.DownloadError("HTTP Error 429")
+        return real(url, destination, on_progress)
+
+    monkeypatch.setattr(worker.downloader, "download", flaky)
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    assert len(attempts) == 2
+    assert items[0]["status"] == "complete"
+    assert items[0]["error"] is None

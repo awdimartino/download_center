@@ -234,7 +234,9 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
             _mark(item, "failed", error=f"Could not file the download: {exc}"[:200])
             return
 
-        _mark(item, "complete", file_path=str(filed.path))
+        # error=None: a retry along the way left its message behind, shown
+        # as a tooltip on a row that says Done.
+        _mark(item, "complete", file_path=str(filed.path), error=None)
         if not filed.identified:
             # Filed and playable, but nothing can follow it: stars, play
             # counts and the Library's album records all hang off the UUIDs.
