@@ -293,3 +293,57 @@ def test_the_panel_is_about_a_dozen_rows_not_twenty(wired, tmp_path, identity):
     primary = [c for s in report["sections"] for c in s["checks"]
                if not c["secondary"]]
     assert len(primary) <= 12, [c["key"] for c in primary]
+
+
+# --- rows placed into the right section (R5) --------------------------------
+
+def _section_of(report, key):
+    for section in report["sections"]:
+        if any(check["key"] == key for check in section["checks"]):
+            return section["title"]
+    return None
+
+
+def test_the_stale_row_stays_under_identity_when_that_section_fails(
+        wired, tmp_path, identity, monkeypatch):
+    """Rows were attached by position: with the Identity section replaced by
+    "Checks unavailable", the stale-index row was filed under that."""
+    import sqlite3
+
+    def broken(*args, **kwargs):
+        raise sqlite3.OperationalError("no such column")
+
+    monkeypatch.setattr(health, "_identity_section", broken)
+    add_track(wired, "indexed", tags=UUID_JSON)
+    diskaudit._cache[str(tmp_path / "music")] = diskaudit.Audit(
+        files=4, stamped=4, taken_at=0.0)
+
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    assert _section_of(report, "stale_index") == "Identity"
+
+
+def test_the_duplicates_row_stays_under_libraries_when_that_section_fails(
+        wired, tmp_path, identity, monkeypatch, state_db):
+    import sqlite3
+
+    def broken(*args, **kwargs):
+        raise sqlite3.OperationalError("no such column")
+
+    monkeypatch.setattr(health, "_library_section", broken)
+    report = health.report(0.0, _libraries(tmp_path), identity)
+    assert _section_of(report, "duplicate_groups") == "Libraries"
+
+
+def test_the_stamped_count_is_asked_once(wired, tmp_path, identity,
+                                         monkeypatch):
+    calls = []
+    real = health._stamped
+
+    def counted(connection, live):
+        calls.append(live)
+        return real(connection, live)
+
+    monkeypatch.setattr(health, "_stamped", counted)
+    add_track(wired, "indexed", tags=UUID_JSON)
+    health.report(0.0, _libraries(tmp_path), identity)
+    assert len(calls) == 1

@@ -329,11 +329,16 @@ LINK = "https://open.spotify.com/album/4yP0hdKOZPNshxUOjY0cZj"
 def queueing(monkeypatch):
     import time
 
-    space = SimpleNamespace(username="alex", library_name="Music", library_id=1)
+    space = SimpleNamespace(username="alex", library_name="Music", library_id=1,
+                            prepared=0)
+
+    def prepare():
+        # Slow enough that two requests are both inside it at once.
+        time.sleep(0.05)
+        space.prepared += 1
+
+    space.prepare = prepare
     monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
-    # Slow enough that two requests are both inside it at once.
-    monkeypatch.setattr(main.beets_runner, "ensure_config",
-                        lambda space: time.sleep(0.05))
 
     async def resolved(job, url, space):
         return None
@@ -361,6 +366,19 @@ async def test_two_requests_at_once_cannot_both_take_the_last_slot(queueing):
     assert len(refused) == 1 and refused[0].status_code == 429
     active = [j for j in main.JOBS.values() if j["status"] not in main.FINISHED]
     assert len(active) == main.MAX_ACTIVE_JOBS
+
+
+@pytest.mark.asyncio
+async def test_queueing_a_download_writes_no_beets_config(queueing,
+                                                          monkeypatch):
+    """A download never touches beets, and wrote its config anyway - even
+    with beets switched off (R5)."""
+    def refuse(space):
+        raise AssertionError("queueing a download wrote a beets config")
+
+    monkeypatch.setattr(main.beets_runner, "ensure_config", refuse)
+    await main.create_job(main.JobRequest(url=LINK), SESSION)
+    assert queueing.prepared == 1
 
 
 def _failed_job():

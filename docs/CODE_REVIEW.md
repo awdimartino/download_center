@@ -1103,13 +1103,23 @@ it less likely.
       `filing` before handing a download to the inbox, so the Filing state
       Browse and Downloads already draw is reachable; a new test fails on the
       old worker, which went straight from tagging to complete.
-- [ ] **R5. Duplication:** `_download_with_retries` and
+- [x] **R5. Duplication:** `_download_with_retries` and
       `_match_with_retries` share one backoff loop (`worker.py:68-117`);
       `create_job` still writes a beets config even when beets is disabled
       (`main.py:614-617`); `Workspace.prepare` makes `beets_dir` on every
       15-second poll; `health.py:536-537` attaches a row to `sections[1]` by
       position; the stamped count is computed twice (`health.py:114, 518`);
       `main.py:1967-1968` double-counts tracks inside selected folders.
+      **Fixed:** the two retry loops are one `_retrying` helper taking the
+      exception worth retrying. Queueing a download prepares the workspace and
+      no longer writes a beets config; `prepare` stops making `beets_dir`,
+      which `ensure_config` now makes when Find matches first needs it. Health
+      counts stamped tracks once in `_from_navidrome` and hands the count to
+      the Identity section, and attaches the stale-index and duplicates rows
+      by section title: with a section failed, they used to land in "Checks
+      unavailable". The combine route counts distinct files, so a single
+      chosen both as its album and as a track is one track and is refused. New
+      tests for each fail on the old code.
 
 ---
 

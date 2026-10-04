@@ -164,6 +164,7 @@ def ensure_config(space: workspace.Workspace) -> Path:
     filer decides where every file lives.
     """
     space.prepare()
+    space.beets_dir.mkdir(parents=True, exist_ok=True)
     if not space.beets_config.exists():
         # Substituted rather than formatted: the template is full of beets
         # path syntax like %if{$albumartist,...}, which str.format reads as

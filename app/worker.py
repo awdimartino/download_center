@@ -91,6 +91,28 @@ def _mark(item: dict[str, Any], status: str, **fields: Any) -> None:
     item.update(fields)
 
 
+async def _retrying(item: dict[str, Any], what: str,
+                    retryable: type[Exception],
+                    attempt: Callable[[int], Awaitable[Any]]) -> Any:
+    """Run `attempt(n)` up to `max_attempts` times, backing off between
+    tries. Only `retryable` is tried again; anything else, and the last
+    failure, propagates."""
+    last: Exception | None = None
+    for n in range(1, settings.max_attempts + 1):
+        try:
+            return await attempt(n)
+        except retryable as exc:
+            last = exc
+            if n >= settings.max_attempts:
+                break
+            delay = BACKOFF[min(n - 1, len(BACKOFF) - 1)]
+            log.warning("%s failed on attempt %d (%s), retrying in %ds",
+                        what, n, str(exc)[:80], delay)
+            _mark(item, "retrying", error=str(exc)[:200])
+            await asyncio.sleep(delay)
+    raise last if last else retryable(f"{what} was never attempted")
+
+
 async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
     """Download, retrying only failures that could plausibly succeed later."""
     def progress(fraction: float) -> None:
@@ -98,23 +120,12 @@ async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
         # periodic pusher picks the value up on its next tick.
         item["progress"] = fraction
 
-    last_error = ""
-    for attempt in range(1, settings.max_attempts + 1):
-        item["attempts"] = attempt
+    async def attempt(n: int) -> Any:
+        item["attempts"] = n
         _mark(item, "downloading")
-        try:
-            return await asyncio.to_thread(downloader.download, url, temp, progress)
-        except downloader.DownloadError as exc:
-            last_error = str(exc)
-            if attempt >= settings.max_attempts:
-                break
-            delay = BACKOFF[min(attempt - 1, len(BACKOFF) - 1)]
-            log.warning("download attempt %d failed (%s), retrying in %ds",
-                        attempt, last_error[:80], delay)
-            _mark(item, "retrying", error=last_error)
-            await asyncio.sleep(delay)
+        return await asyncio.to_thread(downloader.download, url, temp, progress)
 
-    raise downloader.DownloadError(last_error)
+    return await _retrying(item, "download", downloader.DownloadError, attempt)
 
 
 async def _match_with_retries(item: dict[str, Any]) -> Any:
@@ -127,20 +138,10 @@ async def _match_with_retries(item: dict[str, Any]) -> Any:
     every remaining track in the job, permanently, with a message blaming
     YouTube's catalogue for a problem with the connection.
     """
-    last: Exception | None = None
-    for attempt in range(1, settings.max_attempts + 1):
-        try:
-            return await asyncio.to_thread(matcher.find, item)
-        except matcher.SearchUnavailable as exc:
-            last = exc
-            if attempt >= settings.max_attempts:
-                break
-            delay = BACKOFF[min(attempt - 1, len(BACKOFF) - 1)]
-            log.warning("search unavailable (%s), retrying in %ds",
-                        str(exc)[:80], delay)
-            _mark(item, "retrying", error=str(exc)[:200])
-            await asyncio.sleep(delay)
-    raise last if last else matcher.SearchUnavailable("search failed")
+    async def attempt(n: int) -> Any:
+        return await asyncio.to_thread(matcher.find, item)
+
+    return await _retrying(item, "search", matcher.SearchUnavailable, attempt)
 
 
 async def _process(item: dict[str, Any], space: workspace.Workspace,

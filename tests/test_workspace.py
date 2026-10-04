@@ -124,8 +124,7 @@ def test_prepare_makes_every_directory_the_pipeline_writes_into(staging_root):
     space = workspace.for_session(_identity())
     space.prepare()
 
-    for directory in (space.inbox_dir, space.incomplete_dir,
-                      space.beets_dir):
+    for directory in (space.inbox_dir, space.incomplete_dir):
         assert directory.is_dir()
 
     # Not albums/ or singles/ - the two directories staging used to file
@@ -303,3 +302,16 @@ def test_a_complete_marker_is_read_back(staging_root):
 
     assert [(w.username, w.library_id, w.library_path) for w in found] == [
         ("alex", 1, LIBRARY)]
+
+
+def test_prepare_leaves_beets_to_find_matches(staging_root):
+    """The inbox poller prepares every workspace every few seconds; making
+    beets' directory each time was work for a feature that may be off (R5)."""
+    from app import beets_runner
+
+    space = workspace.for_session(_identity())
+    space.prepare()
+    assert not space.beets_dir.exists()
+
+    beets_runner.ensure_config(space)
+    assert space.beets_config.is_file()

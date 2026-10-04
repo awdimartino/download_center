@@ -120,8 +120,10 @@ class Workspace:
         return self.beets_dir / "library.db"
 
     def prepare(self) -> None:
-        for directory in (self.inbox_dir, self.incomplete_dir,
-                          self.beets_dir):
+        # Not beets_dir: the inbox poller calls this every few seconds, and
+        # beets' directory is made by `beets_runner.ensure_config` when
+        # Find matches first needs it.
+        for directory in (self.inbox_dir, self.incomplete_dir):
             directory.mkdir(parents=True, exist_ok=True)
         # A note of who this belongs to, for anyone reading the disk later.
         # Enough for the sweep - which runs with nobody signed in - to

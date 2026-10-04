@@ -467,8 +467,8 @@ def test_the_poller_leaves_a_file_the_worker_is_delivering(space):
 # --- the inbox has to exist before anything can be dropped in it ------------
 
 def test_draining_makes_the_inbox_if_it_is_missing(space):
-    """`prepare()` is reached only from `ensure_config`, which runs when a
-    download is queued or an album is matched. A workspace that has done
+    """`prepare()` otherwise runs only when a download is queued or an
+    album is matched. A workspace that has done
     neither has nowhere to drop a file, and `waiting()` reports that as an
     empty inbox rather than a missing one."""
     import shutil as _shutil

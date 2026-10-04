@@ -96,8 +96,28 @@ def _scalar(connection: sqlite3.Connection, sql: str, *args) -> int:
     return (row[0] or 0) if row else 0
 
 
+def _stamped(connection: sqlite3.Connection, live: str) -> int:
+    """Tracks in Navidrome's index that carry the UUID tag."""
+    return _scalar(connection, f"""
+        select count(*) from media_file mf
+         where {live} and json_extract(mf.tags, '{UUID_TAG}') is not null""")
+
+
+def _attach(sections: list[Section], title: str, check: Check) -> None:
+    """Add a row to the section of that title, or to a new one of that title
+    if it failed to build. Found by title, not position: a section that
+    failed is replaced by a "Checks unavailable" one, and a row placed by
+    index landed in that."""
+    for section in sections:
+        if section.title == title:
+            section.add(check)
+            return
+    sections.append(Section(title, [check]))
+
+
 def _identity_section(connection: sqlite3.Connection, live: str,
-                      user_id: str = "", audit=None) -> Section:
+                      user_id: str = "", audit=None,
+                      stamped: int | None = None) -> Section:
     """Whether every track still has a stable identity.
 
     This is the load-bearing one. A track without the UUID tag falls back to
@@ -112,9 +132,8 @@ def _identity_section(connection: sqlite3.Connection, live: str,
     section = Section("Identity")
 
     total = _scalar(connection, f"select count(*) from media_file mf where {live}")
-    stamped = _scalar(connection, f"""
-        select count(*) from media_file mf
-         where {live} and json_extract(mf.tags, '{UUID_TAG}') is not null""")
+    if stamped is None:
+        stamped = _stamped(connection, live)
 
     # A wav has nowhere to put the tag. Counting those as failures leaves a
     # red number that can never reach zero, which is how a panel like this
@@ -492,11 +511,23 @@ def _from_navidrome(connection: sqlite3.Connection,
     sections: list[Section] = []
     indexed_stamped: int | None = None
     live = navidrome.live_clause(connection, [lib["id"] for lib in libraries])
+    # Asked once, here, and handed to the Identity section. Aliased `mf`,
+    # because `live` is written in terms of it: without the alias this
+    # raised "no such column: mf.missing" into a bare suppress, so the
+    # stale-index check silently never fired - and that check is the only
+    # thing that can tell "never stamped" from "stamped but not yet
+    # scanned". Logged rather than swallowed for the same reason; the
+    # Identity section then asks again and fails on its own account.
+    try:
+        indexed_stamped = _stamped(connection, live)
+    except sqlite3.Error as exc:
+        log.warning("could not count stamped tracks in the index, so "
+                    "the stale-index check is unavailable: %s", exc)
     # Navidrome's schema moves between releases, and json_extract
     # needs a SQLite built with JSON1. One section failing should
     # cost that section, not the whole panel.
     builders = (
-        lambda c, l: _identity_section(c, l, user_id, audit),
+        lambda c, l: _identity_section(c, l, user_id, audit, indexed_stamped),
         lambda c, l: _library_section(c, l, libraries),
         lambda c, l: _metadata_section(c, l),
     )
@@ -508,21 +539,6 @@ def _from_navidrome(connection: sqlite3.Connection,
                 "Checks unavailable",
                 [Check("unavailable", "Query failed", "—",
                        INFO, str(exc)[:120])]))
-    # Aliased `mf`, because `live` is written in terms of it. Without
-    # the alias this raised "no such column: mf.missing" into a bare
-    # suppress, so the stale-index check below silently never fired -
-    # and that check is the only thing that can tell "never stamped"
-    # from "stamped but not yet scanned". Logged rather than
-    # swallowed for the same reason.
-    try:
-        indexed_stamped = _scalar(connection, f"""
-            select count(*) from media_file mf
-             where {live}
-               and json_extract(mf.tags, '{UUID_TAG}') is not null""")
-    except sqlite3.Error as exc:
-        log.warning("could not count stamped tracks in the index, so "
-                    "the stale-index check is unavailable: %s", exc)
-
     duplicates_check = _duplicates_check(connection, identity)
     return sections, indexed_stamped, duplicates_check
 
@@ -577,14 +593,10 @@ def report(started_at: float,
 
     sections.append(_disk_section(audit))
     stale = _stale_index_check(indexed_stamped, audit)
-    if stale and sections:
-        sections[0].add(stale)
-
-    # The Staging section is gone. It reported two counts and an age for
-    # something the Staging tab shows in full, with names and sizes and a
-    # button - a summary of a screen one tap away is not worth a row here.
-    if duplicates_check is not None and sections:
-        sections[1].add(duplicates_check)
+    if stale:
+        _attach(sections, "Identity", stale)
+    if duplicates_check is not None:
+        _attach(sections, "Libraries", duplicates_check)
 
     sections.append(_system_section(started_at))
 

@@ -500,9 +500,9 @@ def drain_all() -> dict[str, Result]:
         _unmounted.discard(space.library_path)
 
         # Make the inbox if it is not there. Nothing else does: `prepare()`
-        # is reached only from `ensure_config`, which runs when a download
-        # is queued or an album is matched - so a workspace that has done
-        # neither since this code shipped has nowhere to drop a file, and
+        # otherwise runs only when a download is queued or an album is
+        # matched - so a workspace that has done neither since this code
+        # shipped has nowhere to drop a file, and
         # `waiting()` reports that as an empty inbox rather than a missing
         # one. The README tells people to drop music into a directory the
         # application had never made for them.

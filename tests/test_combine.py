@@ -288,3 +288,37 @@ def test_renumbering_makes_one_disc(space):
     files = filer.audio_in(folder)
     assert sorted(p.name for p in files) == ["01 - A.mp3", "02 - B.mp3", "03 - C.mp3"]
     assert {EasyID3(p)["discnumber"][0] for p in files} == {"1/1"}
+
+
+def test_the_route_counts_a_track_inside_a_chosen_folder_once(
+        space, monkeypatch):
+    """One single, chosen as its album and as a track, made two (R5): the
+    route let a "combine" of one track through."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app import main
+
+    single = _single(space, "Phoebe Bridgers", "Motion Sickness")
+    folder = single.path.parent
+    monkeypatch.setattr(main.workspace, "for_session",
+                        lambda identity, library_id: space)
+    monkeypatch.setattr(main.library, "album_dir",
+                        lambda identity, library_id, name: folder)
+    monkeypatch.setattr(main.library, "track_path",
+                        lambda identity, library_id, name: single.path)
+    started = []
+    monkeypatch.setattr(main.operations, "start",
+                        lambda *args: started.append(args) or (
+                            SimpleNamespace(as_dict=dict), True))
+
+    body = main.CombineRequest(library_id=1, albumartist="Phoebe Bridgers",
+                               album="Stranger in the Alps",
+                               albums=["the folder"], tracks=["the track"])
+    session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
+    with pytest.raises(HTTPException) as refused:
+        asyncio.run(main.library_combine(body, session))
+    assert refused.value.status_code == 400
+    assert started == []

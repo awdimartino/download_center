@@ -717,10 +717,9 @@ async def create_job(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    def prepare() -> None:
-        beets_runner.ensure_config(space)
-
-    await asyncio.to_thread(prepare)
+    # The inbox and scratch space, not beets: a download never touches it,
+    # and Find matches writes its config on first use.
+    await asyncio.to_thread(space.prepare)
 
     # From the count to the new job with no await between them, so two
     # requests at once cannot both see room for one more.
@@ -2304,9 +2303,12 @@ async def library_combine(
                             detail="That cover is not one this offered.")
 
     def check() -> None:
-        count = (sum(len(filer.audio_in(path)) for path in folders.values())
-                 + len(body.tracks))
-        if count < 2:
+        # Distinct files: a track picked out of a folder that is itself
+        # selected, or named twice, is still one track.
+        chosen = {one.resolve() for path in folders.values()
+                  for one in filer.audio_in(path)}
+        chosen.update(files[name].resolve() for name in body.tracks)
+        if len(chosen) < 2:
             raise HTTPException(status_code=400,
                                 detail="Choose at least two tracks to combine.")
         for path in [*folders.values(), *(files[name] for name in body.tracks)]:
