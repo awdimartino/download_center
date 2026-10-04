@@ -64,7 +64,7 @@ def test_the_oldest_entry_goes_once_the_limit_is_reached(monkeypatch):
     memo.clear()
     monkeypatch.setattr(memo, "LIMIT", 2)
     for key in "abc":
-        memo.cached(key, 0, lambda: key)
+        memo.cached(key, 0, lambda key=key: key)
     calls = []
     memo.cached("a", 0, lambda: calls.append(1))
     assert calls == [1], "'a' was evicted, so it is computed again"

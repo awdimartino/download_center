@@ -18,9 +18,7 @@ from __future__ import annotations
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Hashable
-from typing import Any, TypeVar
-
-T = TypeVar("T")
+from typing import Any
 
 # Enough for every statistic of a couple of accounts across the ranges the
 # Listening panel offers. Past it the least recently used goes.
@@ -43,7 +41,7 @@ def _lookup(key: Hashable, version: Hashable) -> tuple[bool, Any]:
     return False, None
 
 
-def cached(key: Hashable, version: Hashable, compute: Callable[[], T]) -> T:
+def cached[T](key: Hashable, version: Hashable, compute: Callable[[], T]) -> T:
     """`compute()`, or what it returned last time if `version` is unchanged.
 
     The value is shared between callers, so it must be treated as read-only.
