@@ -213,6 +213,9 @@
         anything else that reaches the library.
       </p>
     </div>
+    <label class="target-library" hidden>Into
+      <select id="drop-library"></select>
+    </label>
     <button id="drop-zone" type="button">
       <span>Drop audio files or a folder here</span>
       <span class="drop-zone-hint">or choose files</span>
@@ -239,6 +242,9 @@
             <button id="search-go" type="submit">Search</button>
           </form>
           <p id="link-hint" class="br-link-hint" hidden></p>
+          <label class="target-library" hidden>Into
+            <select id="browse-library"></select>
+          </label>
           <div id="browse-kinds" class="lib-chips" role="group" aria-label="Show">
             <button type="button" data-kind="all">All</button>
             <button type="button" data-kind="album">Albums</button>

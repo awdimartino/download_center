@@ -108,3 +108,47 @@ export function action(label, className, handler) {
 export function setNote(id, message, tone) {
   setBanner(document.getElementById(id), message, tone);
 }
+
+/* --- which library new music goes into ---------------------------------------
+   Only a question for an account with more than one library; everybody else
+   never sees it, and the server uses their one library. Browse and Drop share
+   the answer, and this browser remembers it. Without it, a second library
+   could never receive a download or a drop. */
+
+let libraries = [];
+let chosenLibrary = null;
+const libraryPickers = [];
+
+function paintPicker(select) {
+  select.closest(".target-library").hidden = libraries.length < 2;
+  select.replaceChildren(...libraries.map((library) => {
+    const option = el("option", "", library.name);
+    option.value = String(library.id);
+    return option;
+  }));
+  if (chosenLibrary !== null) select.value = String(chosenLibrary);
+}
+
+export function setLibraries(list) {
+  libraries = list || [];
+  let saved = null;
+  try { saved = Number(localStorage.getItem("target.library")); } catch { /* fine */ }
+  chosenLibrary = libraries.some((l) => l.id === saved) ? saved
+    : libraries.length ? libraries[0].id : null;
+  libraryPickers.forEach(paintPicker);
+}
+
+export function libraryPicker(select) {
+  libraryPickers.push(select);
+  select.addEventListener("change", () => {
+    chosenLibrary = Number(select.value);
+    try { localStorage.setItem("target.library", select.value); } catch { /* fine */ }
+    libraryPickers.forEach(paintPicker);
+  });
+  paintPicker(select);
+}
+
+// The library to send with a download or an upload, or null for "my only one".
+export function targetLibrary() {
+  return libraries.length > 1 ? chosenLibrary : null;
+}

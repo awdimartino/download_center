@@ -318,6 +318,12 @@ the chips **All / Albums / Songs / Artists**.
 - An **artist** opens their discography, split into Albums and Singles and
   EPs, with reissues of one title collapsed to the earliest.
 
+An account with more than one library gets an **Into** choice under the box
+(and on the Drop page): the library new downloads and uploads go into. The
+two pages share it and the browser remembers it. With one library there is
+no choice to make, and nothing is shown. The "in library" markers below
+still read the first library.
+
 ### "In library" markers
 
 Results are marked with what your library already holds. This is computed

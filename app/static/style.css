@@ -886,6 +886,10 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 .br-search > button { min-height: 46px; padding: 0 var(--s-5); }
 .br-link-hint { margin: var(--s-2) 0 0; color: var(--accent); font-size: var(--t-sm); }
 #browse-kinds { margin-top: var(--s-3); }
+.target-library { display: flex; align-items: center; gap: var(--s-2); margin: var(--s-2) 0 0;
+  color: var(--muted); font-size: var(--t-sm); }
+.target-library[hidden] { display: none; }
+#view-drop .target-library { margin-bottom: var(--s-3); }
 
 #results.br-loading { opacity: .55; transition: opacity .2s ease; }
 #results > .br-section:first-child .lib-section-title { margin-top: var(--s-3); }

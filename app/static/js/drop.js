@@ -6,12 +6,13 @@
    get the bytes to /api/inbox/upload - the filing is the inbox's, the same
    as it is for the other two roads in. */
 
-import { el, showError } from "./core.js";
+import { el, libraryPicker, showError, targetLibrary } from "./core.js";
 
 const dropZone = document.getElementById("drop-zone");
 const dropInput = document.getElementById("drop-input");
 const dropBatches = document.getElementById("drop-batches");
 const dropEmpty = document.getElementById("drop-empty");
+libraryPicker(document.getElementById("drop-library"));
 
 // Mirrors uuidtags.AUDIO_SUFFIXES and filer.COVER_SUFFIXES. The server is
 // the authority on what it will file; this only skips a request that would
@@ -105,6 +106,8 @@ function dropUpload(file, relpath, batch, onProgress) {
     body.append("file", file, file.name);
     body.append("relpath", relpath);
     if (batch) body.append("batch", batch);
+    const library = targetLibrary();
+    if (library !== null) body.append("library_id", String(library));
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/inbox/upload");
     xhr.upload.addEventListener("progress", (event) => {
@@ -127,8 +130,10 @@ function dropUpload(file, relpath, batch, onProgress) {
 // Names the drop, so the server files all of it at once now that every file
 // has arrived - not track by track while the cover is still uploading.
 async function dropFinish(batch) {
+  const library = targetLibrary();
   const response = await fetch(
-    `/api/inbox/upload/finish?batch=${encodeURIComponent(batch)}`,
+    `/api/inbox/upload/finish?batch=${encodeURIComponent(batch)}`
+      + (library !== null ? `&library_id=${library}` : ""),
     { method: "POST" });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));

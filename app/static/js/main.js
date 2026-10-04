@@ -4,7 +4,7 @@
 // is reached through imports, which is also what wires the view registry
 // (nav.js) and settles module evaluation order before anything runs.
 
-import { setBanner, showError, warnEl } from "./core.js";
+import { setBanner, setLibraries, showError, warnEl } from "./core.js";
 import { connect, disconnect } from "./ws.js";
 import { viewHandlers, closeMenu } from "./nav.js";
 import { showOperation } from "./operations.js";
@@ -45,6 +45,7 @@ function showSignin(show) {
 
 function applySession(me) {
   session = me;
+  setLibraries(me.libraries);
   const libraries = (me.libraries || []).map((l) => l.name).join(", ");
   whoamiEl.textContent = libraries
     ? `${me.username} · ${libraries}`

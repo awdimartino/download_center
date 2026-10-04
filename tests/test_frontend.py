@@ -425,3 +425,23 @@ def test_the_selected_range_is_announced_not_only_coloured():
 def test_the_cover_survey_is_fetched_from_one_place():
     """Two callers fetching it at once ran the survey twice (CODE_REVIEW M38)."""
     assert JS_FILES["library.js"].count('"/api/library/attention/covers"') == 1
+
+
+# --- which library new music goes into (L11) ---------------------------------
+# Neither Browse nor Drop sent a library, so an account with two could never
+# put anything into its second.
+
+def test_a_download_says_which_library():
+    assert "library_id: targetLibrary()" in JS_FILES["browse.js"]
+
+
+def test_an_upload_and_its_finish_say_which_library():
+    drop = JS_FILES["drop.js"]
+    assert 'body.append("library_id"' in drop
+    assert "&library_id=" in drop
+
+
+def test_both_pages_offer_the_choice():
+    for picker in ("browse-library", "drop-library"):
+        assert re.search(rf'<label class="target-library" hidden>[^<]*<select id="{picker}"', HTML)
+        assert f'getElementById("{picker}")' in JS

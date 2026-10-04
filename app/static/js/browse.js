@@ -10,7 +10,7 @@
    it in the library, queued, downloading, failed - painted from the same
    jobs the Downloads panel draws, so nobody has to go and look. */
 
-import { el, duration, remoteArt, showError, songRow } from "./core.js";
+import { el, duration, libraryPicker, remoteArt, showError, songRow, targetLibrary } from "./core.js";
 import { jobs, onJobs } from "./ws.js";
 import { MOVING, expectJob, jobGroup, jobProgress, settledCount } from "./downloads.js";
 
@@ -139,7 +139,7 @@ async function queue(url, title, cover) {
     const response = await fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, library_id: targetLibrary() }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -638,6 +638,7 @@ kindsEl.querySelectorAll("button").forEach((button) => {
   button.addEventListener("click", () => setKind(button.dataset.kind));
 });
 
+libraryPicker(document.getElementById("browse-library"));
 syncKinds();
 syncBox();
 

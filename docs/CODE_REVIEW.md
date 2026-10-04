@@ -813,8 +813,14 @@ it less likely.
 - [x] **L10.** An item's error survives a successful in-run retry and shows
       as a tooltip on a Done row (`worker.py:88, 115, 188`).
       **Fixed:** completing an item clears `error`. Reproduced first.
-- [ ] **L11.** Browse and Drop never send `library_id`: a multi-library
+- [x] **L11.** Browse and Drop never send `library_id`: a multi-library
       account always uses its first library, with no way to choose.
+      **Fixed:** an *Into* picker on Browse and Drop, shown only for more
+      than one library, shared between them and remembered per browser
+      (`core.libraryPicker`); jobs, uploads and the upload finish send its
+      `library_id`. Checked in headless Chromium against stubbed APIs (two
+      libraries: sends 3 and remembers it; one: hidden, sends null). The
+      "in library" markers still read the first library.
 - [ ] **L12.** The Drop file picker's `accept="audio/*"` hides covers and,
       on some systems, `.ape`/`.wv` (`index.html:220`).
 - [ ] **L13.** The ✕ on an active job deletes it (history and Retry gone);
