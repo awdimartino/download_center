@@ -3289,3 +3289,13 @@ main > section[id^="view-"] {
      it appears in, not just that selector. */
   @supports (appearance: base-select) { ::picker(select) { transition: none; } }
 }
+
+/* Forced colours (Windows High Contrast and the like) drops every
+   box-shadow, and the focus rings above are box-shadows with the outline
+   turned off - so in that mode nothing showed where focus was. A real
+   outline there, in the system's own colour. !important because each ring
+   above turns the outline off with a more specific selector. */
+@media (forced-colors: active) {
+  :focus-visible { outline: 2px solid CanvasText !important; outline-offset: 2px; }
+  .lib-cover-option input:focus-visible + .art { outline: 2px solid CanvasText; }
+}

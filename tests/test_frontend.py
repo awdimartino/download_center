@@ -484,3 +484,9 @@ def test_an_empty_monthly_chart_does_not_claim_a_peak_of_one():
     charts = JS_FILES["charts.js"]
     assert 'if (peak) plot.append(el("span", "chart-peak-label"' in charts
     assert '"chart-peak-label", most' not in charts
+
+
+def test_focus_shows_in_forced_colours():
+    """Every focus ring is a box-shadow, which forced colours drops (L45)."""
+    assert "@media (forced-colors: active)" in CSS
+    assert re.search(r"forced-colors: active\) \{\s*:focus-visible \{ outline: 2px solid CanvasText", CSS)

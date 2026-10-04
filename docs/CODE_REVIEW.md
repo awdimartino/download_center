@@ -1031,8 +1031,12 @@ it less likely.
       (a trailing `k` is accepted and dropped); `rate_limit_sleep` is
       capped at 300 seconds. Settings refuses anything else with the
       reason. Reproduced first.
-- [ ] **L45.** Focus rings are `box-shadow`, which vanish in forced-colours
+- [x] **L45.** Focus rings are `box-shadow`, which vanish in forced-colours
       mode; there is no `forced-colors` rule (`style.css`).
+      **Fixed:** under `forced-colors: active`, `:focus-visible` gets a
+      2px `CanvasText` outline. Checked in headless Chromium with forced
+      colours emulated: the focused button's outline was `none` before and
+      `solid 2px` after.
 
 ---
 
