@@ -366,6 +366,13 @@ def _prune(root: Path) -> None:
                 pass
 
 
+# One drain at a time. Upload-finish and the 15-second poller both drain,
+# and uploads are backdated so both see a file as settled: unserialised,
+# both filed it, minting two track UUIDs, and the loser reported a spurious
+# failure. Drains are quick, so one lock for every workspace is enough.
+_drain_lock = threading.Lock()
+
+
 def drain(space: workspace.Workspace) -> Result:
     """File everything that has stopped changing and is not filed yet.
 
@@ -373,6 +380,11 @@ def drain(space: workspace.Workspace) -> Result:
     never been through the filer either, and this is the only thing that
     looks at them.
     """
+    with _drain_lock:
+        return _drain(space)
+
+
+def _drain(space: workspace.Workspace) -> Result:
     result = Result()
     for path in waiting(space) + loose_in_library(space):
         if not settled(path):

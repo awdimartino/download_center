@@ -515,12 +515,14 @@ it less likely.
       size, and every drain reports it as a failure until the file changes.
       The existing test had asserted the second drain reported nothing.
 
-- [ ] **M19. Upload-finish and the poller can file the same file at once.**
+- [x] **M19. Upload-finish and the poller can file the same file at once.**
       `app/main.py:861`, `app/inbox.py:282-316`. Uploads are backdated, so
       both see them as settled; nothing serialises the two drains. Two track
       UUIDs are minted (the file keeps one), the loser reports a spurious
       failure, and a file with no album tag leaves an orphan registry row.
       *Fix:* a lock around `drain()`.
+      **Fixed** as suggested (one lock for all workspaces; drains are
+      quick). Reproduced first with two threads draining at once.
 
 - [ ] **M20. Uploads are read whole into memory before the size check.**
       `app/main.py:821-827`. Up to 200 MB per file — more, since the check

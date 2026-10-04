@@ -703,3 +703,33 @@ def test_residue_beside_audio_still_to_file_is_kept(space, monkeypatch):
     inbox.drain(space)
 
     assert (folder / "cover.jpg").exists()
+
+
+def test_two_drains_at_once_file_a_file_once(space, monkeypatch):
+    """Upload-finish and the poller both drained, and nothing serialised
+    them: two track UUIDs minted, and the loser reported a spurious failure
+    (CODE_REVIEW M19)."""
+    import threading
+
+    drop(space, albumartist="Artist", album="Album", title="Song",
+         tracknumber="1")
+    real = inbox.filer.file_track
+    calls = []
+
+    def slow(space_, path, **kw):
+        calls.append(path)
+        time.sleep(0.3)
+        return real(space_, path, **kw)
+
+    monkeypatch.setattr(inbox.filer, "file_track", slow)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(inbox.drain(space)))
+               for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert len(calls) == 1
+    assert [r.failures for r in results] == [[], []]
+    assert sum(len(r.filed) for r in results) == 1
