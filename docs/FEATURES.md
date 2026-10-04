@@ -958,7 +958,8 @@ An *any* playlist is wrapped so the scope still applies to every match. A
 playlist saved before this shows "Draws from every library on the server"
 until it is saved again.
 
-Saving validates every condition, goes through Navidrome's API as you, and
+Saving validates every condition (a day count for *in the last*, a real date
+for *before* and *after*), goes through Navidrome's API as you, and
 reports how many tracks Navidrome says it now matches. Deleting removes only
 the playlist, never tracks.
 

@@ -237,7 +237,7 @@ it less likely.
       keep it; that needs finding by hand (a `cover.jpg` identical across
       unrelated albums).
 
-- [ ] **H8. Smart playlists: "in the last" shows a date picker and saves a
+- [x] **H8. Smart playlists: "in the last" shows a date picker and saves a
       date.** `app/static/js/playlists.js:80, 195`. The check is
       `operator.indexOf("InTheLast") >= 0`, case-sensitive; the operator is
       `inTheLast`, so only "not in the last" matches. Choosing "date added
@@ -247,6 +247,15 @@ it less likely.
       *Fix:* compare case-insensitively against the operator names, and add
       a frontend test that every operator string in the JS exists in
       `playlists.OPERATORS`.
+      **Fixed:** `playlists.js` names `DAY_OPERATORS` in full, and a
+      frontend test checks them against `OPERATORS["date"]` and forbids
+      substring matching on operators. The server also accepted any string
+      for a date field; `_coerce` now requires a day count for
+      `inTheLast`/`notInTheLast` and a `YYYY-MM-DD` date for `before`/`after`.
+      Reproduced first in V8 (`"inTheLast".indexOf("InTheLast")` is -1).
+      Not clicked through in a browser. A playlist already saved with a
+      date as its day count opens with an empty box and Save refuses it
+      until a number is entered.
 
 - [x] **H9. A folder holding two albums is retagged as one, with no guard.**
       `app/filer.py:283-306, 343-358`, `app/main.py:1617-1632, 1814-1833`.

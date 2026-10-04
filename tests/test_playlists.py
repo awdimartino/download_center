@@ -237,3 +237,29 @@ def test_only_your_own_playlists_are_offered_for_editing(raw, mine):
     one would change what somebody else is listening to, and a playlist
     naming no owner is not something to guess at."""
     assert playlists._is_mine(raw, _identity()) is mine
+
+
+# The editor once sent a date as the day count for "in the last", and this
+# passed it to Navidrome untouched (CODE_REVIEW H8). The value has to fit
+# its operator.
+
+def _date_rule(operator, value):
+    return _rules({"conditions": [
+        {"field": "dateadded", "operator": operator, "value": value}]})
+
+
+def test_in_the_last_takes_a_number_of_days():
+    rules = _date_rule("inTheLast", "30")
+    assert {"inTheLast": {"dateadded": "30"}} in rules["all"]
+
+
+@pytest.mark.parametrize("operator", ["inTheLast", "notInTheLast"])
+def test_in_the_last_refuses_a_date(operator):
+    with pytest.raises(ValueError, match="number of days"):
+        _date_rule(operator, "2026-09-01")
+
+
+@pytest.mark.parametrize("operator", ["before", "after"])
+def test_before_and_after_refuse_a_day_count(operator):
+    with pytest.raises(ValueError, match="needs a date"):
+        _date_rule(operator, "30")

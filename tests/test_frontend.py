@@ -382,3 +382,24 @@ def test_fields_are_large_enough_not_to_zoom_ios():
     field_rule = RULE_BODY[RULE_BODY.index("input:not([type=\"radio\"])"):]
     field_rule = field_rule[:field_rule.index("}")]
     assert "var(--t-field)" in field_rule
+
+
+# --- the playlist editor's operator names ------------------------------------
+# A substring test for "InTheLast" never matched "inTheLast", so "in the last"
+# showed a date picker and saved a date as its day count (CODE_REVIEW H8).
+# The names the editor tests for must be names the server offers.
+
+def test_the_day_count_operators_are_the_servers_date_operators():
+    from app import playlists
+
+    found = re.search(r"const DAY_OPERATORS = \[([^\]]*)\]", JS_FILES["playlists.js"])
+    assert found, "playlists.js no longer declares DAY_OPERATORS"
+    named = set(re.findall(r'"([^"]+)"', found.group(1)))
+    offered = {o["name"] for o in playlists.OPERATORS["date"]}
+
+    assert named <= offered, f"not offered by the server: {named - offered}"
+    assert named == {name for name in offered if "inthelast" in name.lower()}
+
+
+def test_the_editor_does_not_match_operators_by_substring():
+    assert not re.search(r"operator(?:\.value)?\.indexOf\(", JS_FILES["playlists.js"])

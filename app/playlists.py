@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from . import navidrome
@@ -318,7 +319,7 @@ def to_rules(form: dict[str, Any], allowed: list[int]) -> dict[str, Any]:
         if operator not in {o["name"] for o in OPERATORS[spec.kind]}:
             raise ValueError(
                 f"{spec.label} cannot be asked {operator!r}.")
-        value = _coerce(spec, row.get("value"))
+        value = _coerce(spec, row.get("value"), operator)
         # An empty value is not a filter. "Title contains ''" matches every
         # track in the library, which is the same accident as saving with no
         # conditions at all - and that is already refused, so refuse this
@@ -358,7 +359,11 @@ def to_rules(form: dict[str, Any], allowed: list[int]) -> dict[str, Any]:
     return rules
 
 
-def _coerce(spec: Field, value: Any) -> Any:
+# Date operators whose value is a number of days rather than a date.
+DAY_OPERATORS = {"inTheLast", "notInTheLast"}
+
+
+def _coerce(spec: Field, value: Any, operator: str = "") -> Any:
     """Put a value in the shape Navidrome expects for that kind of field.
 
     The browser sends strings for everything, and a rating compared against
@@ -375,8 +380,20 @@ def _coerce(spec: Field, value: Any) -> Any:
         return int(number) if number.is_integer() else number
     if spec.kind == "date":
         # Both forms are strings to Navidrome: a day count for inTheLast, a
-        # date for before/after.
-        return str(value or "").strip()
+        # date for before/after. Checked against the operator, because the
+        # editor once sent a date as the day count and this passed it on.
+        text = str(value or "").strip()
+        if operator in DAY_OPERATORS:
+            if not text.isdigit() or int(text) < 1:
+                raise ValueError(
+                    f"{spec.label} needs a number of days, not {value!r}.")
+        else:
+            try:
+                datetime.strptime(text, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(
+                    f"{spec.label} needs a date, not {value!r}.") from None
+        return text
     return str(value if value is not None else "")
 
 

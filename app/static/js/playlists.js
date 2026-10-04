@@ -8,6 +8,12 @@
 
 import { el, setBanner } from "./core.js";
 
+// The date operators whose value is a number of days rather than a date.
+// Named in full: a substring test for "InTheLast" missed "inTheLast", so "in
+// the last" showed a date picker and saved a date as the day count.
+// tests/test_frontend.py checks these against playlists.OPERATORS.
+const DAY_OPERATORS = ["inTheLast", "notInTheLast"];
+
 const playlistsEl = document.getElementById("playlists");
 const playlistsEmpty = document.getElementById("playlists-empty");
 const playlistError = document.getElementById("playlist-error");
@@ -77,7 +83,7 @@ function conditionRow(condition) {
         input.append(option);
       });
       input.value = (current === false || current === "false") ? "false" : "true";
-    } else if (spec.kind === "date" && operator.value.indexOf("InTheLast") >= 0) {
+    } else if (spec.kind === "date" && DAY_OPERATORS.includes(operator.value)) {
       // A date asked "in the last" wants a number of days; asked "before" it
       // wants a date. Same field, different box.
       input = el("input", "pl-input");
@@ -192,7 +198,7 @@ function describeRule(shape) {
     // "in the last 7" is a number of days, and the sentence has to say so
     // - the operator label cannot, because the value box beside it is
     // sometimes a date instead.
-    if (spec.kind === "date" && condition.operator.indexOf("InTheLast") >= 0) {
+    if (spec.kind === "date" && DAY_OPERATORS.includes(condition.operator)) {
       value = `${value} days`;
     }
     return `${spec.label} ${op ? op.label : condition.operator} ${value}`;
