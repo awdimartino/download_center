@@ -44,6 +44,40 @@ export function el(tag, className, text) {
   return node;
 }
 
+// A cover from a URL, for art that is not in the library yet - Spotify's,
+// on a search result or a download still in flight. Lazy, and removed if it
+// fails rather than leaving a broken-image glyph on an empty square.
+export function remoteArt(url, className = "") {
+  const box = el("div", `art ${className}`.trim());
+  if (!url) return box;
+  const img = el("img");
+  img.loading = "lazy";
+  img.decoding = "async";
+  img.alt = "";
+  img.src = url;
+  img.addEventListener("error", () => img.remove());
+  box.append(img);
+  return box;
+}
+
+// One song as a row: its cover, its title, and a muted line under it. The
+// Library's search and Browse both list songs, and two builders for the same
+// row would drift apart the way the panels' colours once did. `sub` is text
+// or nodes - Browse puts a link to the album in it. Anything a page needs
+// beside that (a status, a button) goes in `end`, at the row's far side.
+export function songRow(tag, art, title, sub, end = []) {
+  const row = el(tag, "lib-song");
+  const subEl = el("span", "lib-card-sub");
+  subEl.append(...[].concat(sub));
+  row.append(art, el("span", "lib-song-title", title), subEl);
+  if (end.length) {
+    const tail = el("span", "lib-song-end");
+    tail.append(...end);
+    row.append(tail);
+  }
+  return row;
+}
+
 async function call(path) {
   showError("");
   try {

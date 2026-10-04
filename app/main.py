@@ -941,6 +941,26 @@ def _mark_held(cards: list[dict[str, Any]],
     return cards
 
 
+def _mark_albums_held(cards: list[dict[str, Any]],
+                      library_id: int) -> list[dict[str, Any]]:
+    """Say how many of each album's tracks the library already holds.
+
+    `held_tracks` on every card, capped at the album's own length: a deluxe
+    edition filed under the plain title would otherwise claim fourteen of
+    eleven. Both credits are tried, as for a track, and the larger count
+    wins - they are the same album filed two ways, not two albums.
+    """
+    counts = navidrome.albums_held_in(library_id)
+    for card in cards:
+        name = card.get("name") or ""
+        credits = {card.get("artist") or "", card.get("primary_artist") or ""}
+        held = max((counts.get(registry.album_key(credit, name), 0)
+                    for credit in credits if credit), default=0)
+        total = card.get("total")
+        card["held_tracks"] = min(held, total) if total else held
+    return cards
+
+
 def _browsing_library(session: auth.Session) -> int | None:
     """Which library the Browse tab is reporting against.
 
@@ -960,21 +980,38 @@ async def search(q: str, type: str = "album", limit: int = 24,
                  ) -> dict[str, Any]:
     query = q.strip()
     if not query:
+        if type == "all":
+            return {"type": type, "albums": [], "tracks": [], "artists": []}
         return {"type": type, "results": []}
     # Spotify rejects anything over fifty, which arrived as an unexplained
     # 502. Clamped here so a hand-edited URL is answered rather than blamed
     # on Spotify.
     limit = max(1, min(limit, 50))
+    library_id = _browsing_library(session)
+
+    def mark(albums: list, tracks: list) -> None:
+        if library_id is None:
+            return
+        if albums:
+            _mark_albums_held(albums, library_id)
+        if tracks:
+            _mark_held(tracks, library_id)
+
     try:
-        results = await asyncio.to_thread(spotify.browse, query, type, limit)
+        if type == "all":
+            found = await asyncio.to_thread(spotify.browse_all, query, limit)
+        else:
+            results = await asyncio.to_thread(spotify.browse, query, type, limit)
     except spotify.ResolveError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Spotify error: {exc}") from exc
 
-    library_id = _browsing_library(session)
-    if type == "track" and library_id is not None:
-        await asyncio.to_thread(_mark_held, results, library_id)
+    if type == "all":
+        await asyncio.to_thread(mark, found["albums"], found["tracks"])
+        return {"type": type, **found}
+    await asyncio.to_thread(mark, results if type == "album" else [],
+                            results if type == "track" else [])
     return {"type": type, "results": results}
 
 
@@ -999,11 +1036,17 @@ async def album(album_id: str,
 
 
 @app.get("/api/artists/{artist_id}/albums")
-async def artist(artist_id: str) -> dict[str, Any]:
+async def artist(artist_id: str,
+                 session: auth.Session = Depends(current_session),
+                 ) -> dict[str, Any]:
     try:
-        return await asyncio.to_thread(spotify.artist_albums, artist_id)
+        data = await asyncio.to_thread(spotify.artist_albums, artist_id)
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Artist not found: {exc}") from exc
+    library_id = _browsing_library(session)
+    if library_id is not None:
+        await asyncio.to_thread(_mark_albums_held, data["albums"], library_id)
+    return data
 
 
 # --- health ---------------------------------------------------------------

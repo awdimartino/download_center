@@ -18,7 +18,7 @@
    matters is Combine: several albums and loose tracks made into one album,
    in one step, with the order and cover chosen first. */
 
-import { el, setNote } from "./core.js";
+import { el, setNote, songRow } from "./core.js";
 import { barRows } from "./charts.js";
 import { setBadge } from "./nav.js";
 import { registerOperation, startOperation } from "./operations.js";
@@ -334,12 +334,9 @@ function songsBlock(songs) {
   const block = el("section", "lib-songs");
   block.append(el("h3", "lib-section-title", "Songs"));
   for (const song of songs) {
-    const row = el("button", "lib-song");
+    const row = songRow("button", libraryArt(song.id, 96), song.title,
+                        [song.artist, song.album].filter(Boolean).join(" · "));
     row.type = "button";
-    row.append(
-      libraryArt(song.id, 96),
-      el("span", "lib-song-title", song.title),
-      el("span", "lib-card-sub", [song.artist, song.album].filter(Boolean).join(" · ")));
     // Opens the album it is on, which is where anything about it is done.
     row.addEventListener("click", () => openDrawer({
       library_id: song.library_id, folder: song.folder, album: song.album,

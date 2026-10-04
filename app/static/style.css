@@ -188,19 +188,6 @@ button:disabled { opacity: .4; cursor: default; background: var(--accent); }
 }
 .ghost.primary:hover { background: color-mix(in srgb, var(--accent) 86%, #fff); }
 
-.remove {
-  min-height: 30px;
-  width: 30px;
-  padding: 0;
-  border-radius: var(--r-sm);
-  background: none;
-  border-color: transparent;
-  color: var(--faint);
-  font-size: var(--t-xl);
-  font-weight: var(--w-normal);
-}
-.remove:hover { background: var(--tint-bad); color: var(--bad); }
-
 /* --- text fields ---------------------------------------------------------- */
 
 /* One field, whatever it is made of. A select was 34px tall on --panel-2
@@ -782,118 +769,354 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 }
 #settings-note { font-size: var(--t-sm); color: var(--muted); }
 
-/* --- browse --------------------------------------------------------------- */
-
-#search-form { display: flex; gap: var(--s-2); align-items: center; flex-wrap: wrap; }
-#query { flex: 1; min-width: 240px; }
-
-/* A segmented control, not three separate buttons that happen to be next to
-   each other - which is how they read when each carried its own border. */
-.kinds {
-  display: flex;
-  gap: 0;
-  padding: var(--s-0);
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-  border-radius: 999px;
-}
-.kind {
-  min-height: 34px;
-  padding: 0 var(--s-3);
-  background: none;
-  border-color: transparent;
-  color: var(--muted);
-  font-size: var(--t-sm);
-  font-weight: var(--w-normal);
-}
-.kind:hover { background: none; color: var(--text); }
-.kind.active { background: var(--accent); color: var(--on-accent); }
-
-.crumb { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-4) 0 0; }
-.crumb-text { color: var(--muted); font-size: var(--t-md); }
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
-  gap: var(--s-4);
-  margin-top: var(--s-4);
-}
-/* No results yet: no box, so its margin does not sit as a gap between the
-   two empty lines above and below it. */
-.grid:empty { display: none; }
-
-.card {
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  transition: border-color .14s ease;
-}
-.card:hover { border-color: var(--panel-3); }
+/* --- browse ---------------------------------------------------------------
+   The search on the left with its results straight under it, the queue in a
+   rail on the right. The pieces are the Library's - its chips, cover grid,
+   song rows and album drawer - so an album looks and opens the same way in
+   both places; what is here is only what Browse adds to them. */
 
 .art { aspect-ratio: 1; background: var(--panel-2); overflow: hidden; }
 .art img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.art.round { border-radius: 50%; margin: var(--s-3) auto 0; width: 68%; }
-.art.large { width: 168px; flex-shrink: 0; border-radius: var(--r-md); aspect-ratio: 1; }
 
-.card-body { padding: var(--s-3); display: flex; flex-direction: column; gap: var(--s-0); flex: 1; }
-.card-title { font-weight: var(--w-medium); font-size: var(--t-md); line-height: 1.35; }
-.card-sub { font-size: var(--t-sm); color: var(--muted); }
-.card-sub.dim { color: var(--faint); }
+main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 
-.card-actions {
-  display: flex;
-  gap: var(--s-1);
-  align-items: center;
-  /* Right-aligned so the download button lands in the same place on every
-     card, held or not. It used to be shoved along by the "already have" tag
-     appearing beside it, so no two cards in a grid agreed on where their
-     buttons were. */
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  margin-top: auto;
-  padding-top: var(--s-3);
+.br-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--s-6);
+  align-items: start;
 }
-.card-actions .ghost { min-height: 30px; padding: 0 var(--s-3); font-size: var(--t-sm); }
+.br-main { min-width: 0; }
 
-/* A marker, not a control. It was a button that looked like a label and
-   forgot the ledger row when clicked - an action nobody could find, sitting
-   on top of a word that only meant to state a fact. The action is the
-   Forget button beside it now, and this says what is true and nothing else.
-   `margin-right: auto` pins it to the far left of the actions row so the
-   buttons stay where they are. */
-.held {
-  margin-right: auto;
-  font-size: var(--t-xs);
-  font-weight: var(--w-medium);
-  color: var(--ok);
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  padding: var(--s-0) var(--s-2);
+/* Pinned under where the header was. The shadow paints the strip above it
+   in the page colour, so results scrolling up vanish behind the floating
+   burger rather than showing through the gap. */
+.br-searchbar {
+  position: sticky;
+  top: var(--header-h, 56px);
+  z-index: 10;
+  padding: var(--s-2) 0 var(--s-3);
+  background: var(--bg);
+  box-shadow: 0 calc(var(--header-h, 56px) * -1) 0 var(--bg);
+}
+.br-search { display: flex; gap: var(--s-2); }
+.br-field { position: relative; flex: 1; min-width: 0; }
+.br-field::before {
+  content: "";
+  position: absolute;
+  left: var(--s-4);
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  background: var(--faint);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  pointer-events: none;
+}
+/* By id: the general field rule names two attribute selectors and would
+   otherwise win, putting the text under the icon. */
+#query {
+  width: 100%;
+  min-height: 46px;
+  padding-left: calc(var(--s-6) + var(--s-2));
+  border-radius: 999px;
+  background: var(--panel);
+}
+.br-search > button { min-height: 46px; padding: 0 var(--s-5); }
+.br-link-hint { margin: var(--s-2) 0 0; color: var(--accent); font-size: var(--t-sm); }
+#browse-kinds { margin-top: var(--s-3); }
+
+#results.br-loading { opacity: .55; transition: opacity .2s ease; }
+#results > .br-section:first-child .lib-section-title { margin-top: var(--s-3); }
+.br-see {
+  margin-left: auto;
+  min-height: 0;
+  padding: 0 var(--s-1);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--t-sm);
+}
+.br-see:hover { background: transparent; text-decoration: underline; }
+#browse-empty { max-width: 60ch; margin-left: auto; margin-right: auto; }
+
+/* Covers: the state sits on the sleeve itself. */
+.br-card .lib-card-cover { transition: transform .15s ease; }
+.br-card:hover .art { transform: none; }
+.br-card:hover .lib-card-cover { transform: translateY(-2px); }
+.br-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  pointer-events: none;
+}
+.br-overlay button { pointer-events: auto; }
+.lib-flag.tone-ok { color: var(--ok); }
+.lib-flag.tone-bad { color: var(--bad); }
+
+/* Shown on hover with a mouse, always there on a touch screen. */
+.br-quick {
+  position: absolute;
+  right: var(--s-2);
+  bottom: var(--s-2);
+  width: 38px;
+  height: 38px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow: var(--float-shadow);
+  opacity: 0;
+  transform: translateY(var(--s-1));
+  transition: opacity .15s ease, transform .15s ease, background .14s ease;
+}
+.br-card:hover .br-quick,
+.br-card:focus-within .br-quick { opacity: 1; transform: none; }
+@media (hover: none) { .br-quick { opacity: 1; transform: none; } }
+
+/* While downloading: the sleeve darkens from the bottom and fills. */
+.br-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: linear-gradient(transparent 30%, color-mix(in srgb, var(--bg) 88%, transparent));
+}
+.br-veil-text { padding: 0 var(--s-3) var(--s-2); font-size: var(--t-sm); font-weight: var(--w-medium); }
+.br-veil-text small { display: block; color: var(--muted); font-size: var(--t-xs); font-weight: var(--w-normal); }
+.br-veil-bar { height: 4px; background: color-mix(in srgb, var(--text) 14%, transparent); }
+.br-veil-fill { height: 100%; background: var(--accent); transition: width .4s ease; }
+
+/* The download arrow, in whatever colour its button's text is. */
+.br-arrow {
+  display: inline-block;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v12M6 11l6 6 6-6M5 20h14'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v12M6 11l6 6 6-6M5 20h14'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.br-quick .br-arrow { width: 17px; height: 17px; }
+
+/* Songs: the Library's row, with a status and a button at the far side. */
+.br-songs { display: flex; flex-direction: column; }
+.lib-song.br-song { grid-template-columns: 40px minmax(0, 1fr) auto; cursor: default; }
+.lib-song.br-song .art { width: 40px; height: 40px; border-radius: var(--r-sm); }
+.lib-song-end {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.br-dur { min-width: 2.6em; color: var(--faint); font-size: var(--t-sm); font-variant-numeric: tabular-nums; text-align: right; }
+.br-link {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   white-space: nowrap;
 }
+.br-link:hover { background: transparent; color: var(--text); text-decoration: underline; }
+.br-link:disabled { opacity: 1; background: transparent; }
+.lib-pill.tone-accent { background: var(--tint-accent); color: var(--accent); }
+.lib-pill.tone-bad { background: var(--tint-bad); color: var(--bad); }
 
-.track-actions {
+.br-get { min-width: 6.5rem; min-height: 32px; gap: var(--s-1); }
+/* Already owned: still possible, but not the thing to press. */
+.br-get.quiet { background: transparent; color: var(--faint); }
+.br-get.quiet:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
+
+.br-artists { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); margin-top: 0; }
+
+/* The album drawer's own parts. */
+.br-actions { align-items: center; }
+.br-note { flex: 1 1 14rem; color: var(--muted); font-size: var(--t-sm); }
+.br-trk {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-1) 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--t-md);
+}
+.br-trk-no { color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+.br-trk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-trk-name small { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: var(--t-sm); }
+.br-trk .br-get { min-width: 0; min-height: 28px; }
+
+/* --- downloads ------------------------------------------------------------- */
+
+.dl-rail {
+  position: sticky;
+  top: calc(var(--header-h, 56px) + var(--s-2));
+  max-height: calc(100vh - var(--header-h, 56px) - var(--s-5));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-4) var(--s-3) var(--s-3);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+.dl-head { display: flex; align-items: baseline; gap: var(--s-2); padding: 0 var(--s-1) var(--s-2); }
+.dl-head h2 { margin: 0; font-size: var(--t-lg); font-weight: var(--w-bold); }
+.dl-head small { color: var(--muted); font-size: var(--t-sm); }
+.dl-close { display: none; margin-left: auto; }
+
+.dl-group-head {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  flex-shrink: 0;
+  margin: var(--s-3) var(--s-1) var(--s-1);
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+}
+.dl-twist {
+  min-height: 0;
+  padding: 0;
+  gap: var(--s-1);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+}
+.dl-twist::before { content: "›"; display: inline-block; transition: transform .15s ease; }
+.dl-twist[aria-expanded="true"]::before { transform: rotate(90deg); }
+.dl-twist:hover { background: transparent; color: var(--text); }
+.dl-clear { margin-left: auto; min-height: 26px; font-size: var(--t-xs); }
+.dl-nothing { margin: 0; padding: var(--s-1); color: var(--muted); font-size: var(--t-sm); }
+
+.dl-job-head {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-1);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  outline: none;
+}
+.dl-job-head:hover { background: var(--panel-2); }
+.dl-job-head:focus-visible { box-shadow: var(--ring); }
+.dl-job-art .art { width: 40px; height: 40px; border-radius: var(--r-sm); }
+.dl-job.small .dl-job-head { grid-template-columns: 32px minmax(0, 1fr) auto; }
+.dl-job.small .dl-job-art .art { width: 32px; height: 32px; }
+.dl-job.small .dl-job-title { font-weight: var(--w-normal); }
+.dl-job-text { display: flex; flex-direction: column; min-width: 0; }
+.dl-job-title, .dl-job-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-job-title { font-size: var(--t-md); font-weight: var(--w-medium); }
+.dl-job-sub { color: var(--muted); font-size: var(--t-sm); }
+.dl-job-sub.tone-bad { color: var(--bad); }
+.dl-job-bar { height: 3px; margin-top: var(--s-1); overflow: hidden; border-radius: 2px; background: var(--panel-3); }
+.dl-job-fill { height: 100%; background: var(--accent); transition: width .4s ease; }
+.dl-job-remove {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background: transparent;
+  color: var(--faint);
+  opacity: 0;
+}
+.dl-job-head:hover .dl-job-remove,
+.dl-job-head:focus-within .dl-job-remove { opacity: 1; }
+.dl-job-remove:hover { background: var(--tint-bad); color: var(--bad); }
+@media (hover: none) { .dl-job-remove { opacity: 1; } }
+
+.dl-job-tracks { padding: 0 var(--s-1) var(--s-2) calc(var(--s-6) + var(--s-5)); }
+.dl-trk {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-0) 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--t-sm);
+}
+.dl-trk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-trk-st { flex: none; color: var(--faint); font-size: var(--t-xs); }
+.dl-trk-st.complete { color: var(--ok); }
+.dl-trk-st.failed { color: var(--bad); }
+.dl-trk-st.matching, .dl-trk-st.downloading, .dl-trk-st.retrying,
+.dl-trk-st.tagging, .dl-trk-st.filing { color: var(--accent); }
+.dl-retry { margin-top: var(--s-2); min-height: 28px; font-size: var(--t-xs); }
+
+/* The phone's pill, which opens the rail as a sheet from the bottom. */
+.dl-pill {
+  display: none;
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--float-gap) + env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 46px;
+  padding: 0 var(--s-4) 0 var(--s-2);
+  border-radius: 999px;
+  background: var(--panel-3);
+  color: var(--text);
+  box-shadow: var(--float-shadow);
+  font-size: var(--t-md);
+  font-weight: var(--w-normal);
+  transform: translateX(-50%);
+}
+.dl-pill:hover { background: var(--panel-3); }
+.dl-pill .tone-bad { color: var(--bad); }
+.dl-pill-covers { display: flex; }
+.dl-pill-covers .art {
+  width: 28px;
+  height: 28px;
+  margin-left: calc(var(--s-2) * -1);
+  border-radius: var(--r-sm);
+  box-shadow: 0 0 0 2px var(--panel-3);
+}
+.dl-pill-covers .art:first-child { margin-left: 0; }
+.dl-pill-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: dl-pulse 1.4s ease-in-out infinite; }
+@keyframes dl-pulse { 50% { opacity: .35; } }
+.dl-scrim { position: fixed; inset: 0; z-index: 41; background: color-mix(in srgb, var(--bg) 60%, transparent); }
+
+@media (max-width: 980px) {
+  .br-layout { grid-template-columns: minmax(0, 1fr); }
+  .dl-rail { display: none; }
+  .dl-pill { display: flex; }
+  /* Room under the last result, so the pill never sits on it. */
+  .br-main { padding-bottom: calc(var(--s-6) * 2); }
+  .downloads-open .dl-rail {
+    display: block;
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 42;
+    max-height: 80vh;
+    padding-bottom: calc(var(--s-5) + env(safe-area-inset-bottom, 0px));
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    box-shadow: var(--float-shadow);
+  }
+  .downloads-open .dl-close { display: inline-flex; }
+  .downloads-open .dl-pill { display: none; }
 }
 
-.detail { display: flex; gap: var(--s-5); margin-top: var(--s-4); flex-wrap: wrap; }
-.detail-body { display: flex; flex-direction: column; gap: var(--s-1); align-items: flex-start; }
-.detail-title { font-size: var(--t-2xl); font-weight: var(--w-bold); }
-.detail-body .ghost { margin-top: var(--s-2); }
-
-.tracklist {
-  margin-top: var(--s-5);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  overflow: hidden;
+/* On a phone the download button keeps only its arrow, so a song's status
+   still fits beside its title. */
+@media (max-width: 640px) {
+  .br-search > button { padding: 0 var(--s-4); }
+  .lib-song.br-song .br-dur { display: none; }
+  .lib-song-end { gap: var(--s-2); }
+  .br-get { min-width: 0; width: 36px; padding: 0; }
+  .br-get-label { display: none; }
+  .br-trk { grid-template-columns: 1.5rem minmax(0, 1fr) auto auto; }
+  .br-trk .br-dur { display: none; }
 }
-.tracklist .track .ghost { min-height: 28px; padding: 0 var(--s-3); font-size: var(--t-xs); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dl-pill-pulse { animation: none; }
+  .br-quick, .br-veil-fill, .dl-job-fill { transition: none; }
+}
 
 /* --- shared blocks -------------------------------------------------------- */
 
@@ -1272,16 +1495,6 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
      around on a phone. */
   .nav-item { min-height: 52px; }
 
-
-  /* One thing per row, full width, thumb-sized. */
-  #search-form { flex-direction: column; align-items: stretch; }
-  /* The Go button only: the filter options are buttons inside this form too,
-     and taking the 44px with them made the switch taller than the field. */
-  #search-form input, #search-form > button { width: 100%; min-height: 44px; }
-  #query { min-width: 0; }
-  .kinds { width: 100%; }
-  /* 40px options in the 2px track: 44px, level with the field and Go. */
-  .kind { flex: 1; min-height: 40px; }
 
   .panel-note button { width: 100%; min-height: 40px; }
 

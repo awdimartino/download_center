@@ -1,39 +1,137 @@
 "use strict";
 
 /* --- browse ----------------------------------------------------------------
-   One nav item, one input, one submit button. A URL queues a download;
-   anything else is a Spotify search - Session 3 merged Queue and Browse onto
-   this one form, so it owns both the search-form submit handler and the
-   search results below it. */
+   One box: a link queues a download, anything else searches Spotify. The
+   results come straight under it and the queue lives beside them
+   (downloads.js), so finished downloads never stand between a search and
+   its answer.
 
-import { el, duration, showError } from "./core.js";
+   Every result says for itself where it stands - in the library, part of
+   it in the library, queued, downloading, failed - painted from the same
+   jobs the Downloads panel draws, so nobody has to go and look. */
+
+import { el, duration, remoteArt, showError, songRow } from "./core.js";
+import { jobs, onJobs } from "./ws.js";
+import { MOVING, expectJob, jobGroup, jobProgress, settledCount } from "./downloads.js";
 
 const form = document.getElementById("search-form");
-const urlInput = document.getElementById("query");
+const input = document.getElementById("query");
+const goEl = document.getElementById("search-go");
+const hintEl = document.getElementById("link-hint");
+const kindsEl = document.getElementById("browse-kinds");
 const resultsEl = document.getElementById("results");
-const browseEmpty = document.getElementById("browse-empty");
-const crumbEl = document.getElementById("crumb");
+const emptyEl = document.getElementById("browse-empty");
+const drawerEl = document.getElementById("browse-drawer");
 
-let kind = "album";
-let searchToken = 0;
+const KINDS = ["all", "album", "track", "artist"];
+let kind = "all";
+try {
+  const saved = localStorage.getItem("browse.kind");
+  if (KINDS.includes(saved)) kind = saved;
+} catch { /* a private window starts on All */ }
 
 // Same test as the server's own generic.looks_like_url.
 function looksLikeUrl(text) {
-  return /^https?:\/\//i.test(text);
+  return /^https?:\/\//i.test(text.trim());
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const url = urlInput.value.trim();
-  if (!url) return;
-  if (!looksLikeUrl(url)) {
-    runSearch();
-    return;
-  }
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
 
+/* --- where a result stands ------------------------------------------------
+   Read from the jobs on every change. Each node on screen registers how to
+   repaint itself, and a job message repaints only those - the results are
+   never rebuilt because a progress bar moved. */
+
+let painters = [];          // repaint callbacks for the results on screen
+let drawerPainters = [];    // and for the open album
+const asked = new Set();    // links pressed whose job has not arrived yet
+
+function repaint() {
+  for (const url of asked) {
+    if ([...jobs.values()].some((j) => j.source_url === url)) asked.delete(url);
+  }
+  painters.forEach((paint) => paint());
+  drawerPainters.forEach((paint) => paint());
+}
+onJobs(repaint);
+
+function painted(list, node, paint) {
+  list.push(paint);
+  paint();
+  return node;
+}
+
+// The Spotify id a job was queued from, and what kind of thing it was.
+function sourceOf(job) {
+  const m = /spotify\.com\/(?:intl-[\w-]+\/)?(album|track|playlist)\/([A-Za-z0-9]+)/
+    .exec(job.source_url || "");
+  return m ? { kind: m[1], id: m[2] } : null;
+}
+
+function newestFirst() {
+  return [...jobs.values()].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+function albumJob(album) {
+  return newestFirst().find((job) => {
+    const source = sourceOf(job);
+    return source && source.kind === "album" && source.id === album.id;
+  });
+}
+
+// "pending", a moving step, "complete", "failed", "held" or null.
+function trackState(track) {
+  if (asked.has(track.url)) return "pending";
+  for (const job of newestFirst()) {
+    const source = sourceOf(job);
+    if (job.status === "resolving" && source && source.kind === "track" && source.id === track.id) {
+      return "pending";
+    }
+    const item = job.items.find((i) => i.spotify_id === track.id);
+    if (item && item.status !== "cancelled") return item.status;
+  }
+  return track.held ? "held" : null;
+}
+
+const STATE = {
+  held: ["In library", "tone-ok"],
+  complete: ["In library", "tone-ok"],
+  pending: ["Queued", ""],
+  matching: ["Finding", "tone-accent"],
+  downloading: ["Downloading", "tone-accent"],
+  retrying: ["Retrying", "tone-accent"],
+  tagging: ["Tagging", "tone-accent"],
+  filing: ["Filing", "tone-accent"],
+  failed: ["Failed", "tone-bad"],
+};
+
+function stateBadge(state) {
+  const known = STATE[state];
+  return known ? el("span", `lib-pill ${known[1]}`.trim(), known[0]) : el("span");
+}
+
+// The download arrow, drawn by the stylesheet (.br-arrow) in currentColor.
+function arrow() {
+  const icon = el("span", "br-arrow");
+  icon.setAttribute("aria-hidden", "true");
+  return icon;
+}
+
+function withArrow(button, label) {
+  button.replaceChildren(arrow(), el("span", "br-get-label", label));
+  return button;
+}
+
+/* --- queueing ------------------------------------------------------------- */
+
+async function queue(url, title, cover) {
+  if (!url) return;
   showError("");
-  const button = form.querySelector("button");
-  button.disabled = true;
+  expectJob(url, title, cover);
+  asked.add(url);
+  repaint();
   try {
     const response = await fetch("/api/jobs", {
       method: "POST",
@@ -42,231 +140,503 @@ form.addEventListener("submit", async (event) => {
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      showError(body.detail || `Request failed (${response.status})`);
-    } else {
-      urlInput.value = "";
+      showError(body.detail || `Could not queue that (${response.status}).`);
+      asked.delete(url);
+      repaint();
+      return false;
     }
+    return true;
   } catch {
     showError("Could not reach the server.");
-  } finally {
-    button.disabled = false;
+    asked.delete(url);
+    repaint();
+    return false;
   }
-});
-
-document.querySelectorAll(".kind").forEach((button) => {
-  button.addEventListener("click", () => {
-    document.querySelectorAll(".kind").forEach((k) => k.classList.toggle("active", k === button));
-    kind = button.dataset.kind;
-    const value = urlInput.value.trim();
-    if (value && !looksLikeUrl(value)) runSearch();
-  });
-});
-
-function setBrowse(nodes, message) {
-  resultsEl.replaceChildren(...nodes);
-  browseEmpty.textContent = message || "";
-  browseEmpty.hidden = nodes.length > 0 || !message;
 }
 
-function cover(url, className) {
-  const box = el("div", `art ${className || ""}`);
-  if (url) {
-    const img = document.createElement("img");
-    img.src = url;
-    img.loading = "lazy";
-    img.alt = "";
-    box.append(img);
+// The button on a song. Already owned is still allowed - it arrives as a
+// second copy - but it is quiet, so it is not the obvious thing to press.
+function trackButton(track) {
+  const button = el("button", "ghost br-get");
+  button.type = "button";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    queue(track.url, `${track.artist} - ${track.name}`, track.cover);
+  });
+  const paint = () => {
+    const state = trackState(track);
+    const busy = state === "pending" || MOVING.has(state);
+    const owned = state === "held" || state === "complete";
+    const label = busy ? "Queued" : state === "failed" ? "Try again" : owned ? "Again" : "Download";
+    withArrow(button, label);
+    button.disabled = busy;
+    button.classList.toggle("quiet", owned);
+    button.title = owned
+      ? "Already in your library. Downloading again makes a second copy."
+      : label;
+    button.setAttribute("aria-label", `${label}: ${track.name}`);
+  };
+  return { button, paint };
+}
+
+/* --- albums ---------------------------------------------------------------- */
+
+function releaseKind(album) {
+  if (album.type === "compilation") return "Compilation";
+  if (album.type === "single") return album.total > 1 ? "EP" : "Single";
+  return null;
+}
+
+// The state on a cover: a veil and a bar while downloading, otherwise a
+// flag saying how much of it you have, and the download button.
+function paintCover(album, overlay) {
+  const job = albumJob(album);
+  const group = job && jobGroup(job);
+  const parts = [];
+  const total = album.total || 0;
+  const held = album.held_tracks || 0;
+
+  // Rebuilt only when something it shows has changed. Every progress tick
+  // repaints every cover, and replacing a button under the pointer drops
+  // its hover and its focus.
+  const sig = [asked.has(album.url), group, job && settledCount(job), job && job.items.length,
+               job && Math.round(jobProgress(job) * 100), job && job.items.some((i) => i.status !== "pending")].join("|");
+  if (overlay.dataset.sig === sig) return;
+  overlay.dataset.sig = sig;
+
+  if (asked.has(album.url) || group === "active") {
+    const veil = el("div", "br-veil");
+    const words = el("div", "br-veil-text");
+    const started = job && job.items.some((i) => i.status !== "pending");
+    words.append(started ? "Downloading" : "Queued",
+                 el("small", "", job && job.items.length
+                   ? `${settledCount(job)} of ${job.items.length} tracks`
+                   : "Reading the album…"));
+    const bar = el("div", "br-veil-bar");
+    const fill = el("div", "br-veil-fill");
+    fill.style.width = `${Math.round((job ? jobProgress(job) : 0) * 100)}%`;
+    bar.append(fill);
+    veil.append(words, bar);
+    overlay.replaceChildren(veil);
+    return;
   }
+
+  const flags = el("span", "lib-flags");
+  if (group === "done" || (total && held >= total)) {
+    flags.append(el("span", "lib-flag tone-ok", "In library"));
+  } else {
+    if (group === "attention") flags.append(el("span", "lib-flag tone-bad", "Some failed"));
+    else if (held) flags.append(el("span", "lib-flag", `${held} of ${total} in library`));
+    const quick = el("button", "br-quick");
+    quick.type = "button";
+    quick.append(arrow());
+    quick.title = held
+      ? `Download ${album.name}. The ${held} you have would arrive as second copies.`
+      : `Download ${album.name}`;
+    quick.setAttribute("aria-label", `Download ${album.name}`);
+    quick.addEventListener("click", (event) => {
+      event.stopPropagation();
+      queue(album.url, `${album.artist} - ${album.name}`, album.cover);
+    });
+    parts.push(quick);
+  }
+  overlay.replaceChildren(flags, ...parts);
+}
+
+function albumCard(album) {
+  const card = el("div", "lib-card br-card");
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.title = `${album.artist} - ${album.name}`;
+  const cover = el("div", "lib-card-cover");
+  const overlay = el("div", "br-overlay");
+  cover.append(remoteArt(album.cover), overlay);
+  card.append(
+    cover,
+    el("span", "lib-card-title", album.name),
+    el("span", "lib-card-sub",
+       [album.artist, album.year, releaseKind(album)].filter(Boolean).join(" · ")));
+  card.addEventListener("click", () => openAlbum(album.id));
+  card.addEventListener("keydown", (event) => {
+    if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    openAlbum(album.id);
+  });
+  return painted(painters, card, () => paintCover(album, overlay));
+}
+
+/* --- songs ----------------------------------------------------------------- */
+
+function trackRow(track) {
+  const albumLink = el("button", "br-link", track.album || "");
+  albumLink.type = "button";
+  albumLink.addEventListener("click", () => openAlbum(track.album_id));
+  albumLink.disabled = !track.album_id;
+
+  const state = el("span", "br-state");
+  const { button, paint } = trackButton(track);
+  const row = songRow("div", remoteArt(track.cover), track.name,
+                      [track.artist, " · ", albumLink],
+                      [state, el("span", "br-dur", duration(track.duration_ms)), button]);
+  row.classList.add("br-song");
+  return painted(painters, row, () => {
+    state.replaceChildren(stateBadge(trackState(track)));
+    paint();
+  });
+}
+
+/* --- artists --------------------------------------------------------------- */
+
+function followers(n) {
+  if (n == null) return "";
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M followers`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}K followers`;
+  return `${n} followers`;
+}
+
+function artistTile(artist) {
+  const tile = el("button", "lib-artist");
+  tile.type = "button";
+  const mosaic = el("div", "lib-mosaic");
+  mosaic.append(remoteArt(artist.cover));
+  tile.append(mosaic, el("span", "lib-card-title", artist.name),
+              el("span", "lib-card-sub", followers(artist.followers)));
+  tile.addEventListener("click", () => openArtist(artist.id));
+  return tile;
+}
+
+/* --- the results ------------------------------------------------------------ */
+
+let searchToken = 0;
+let lastQuery = "";
+let lastResults = null;     // what the last search returned, for Back
+
+function setMessage(text) {
+  emptyEl.textContent = text || "";
+  emptyEl.hidden = !text;
+}
+
+function section(title, count, body, more) {
+  const head = el("h3", "lib-section-title", title);
+  if (count != null) head.append(el("small", "", String(count)));
+  if (more) {
+    const all = el("button", "br-see", "See all");
+    all.type = "button";
+    all.addEventListener("click", () => setKind(more));
+    head.append(all);
+  }
+  const box = el("section", "br-section");
+  box.append(head, body);
   return box;
 }
 
-async function queue(url, button) {
-  const original = button.textContent;
-  button.disabled = true;
-  button.textContent = "Queued";
-  const response = await fetch("/api/jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    showError(body.detail || "Could not queue that.");
-    button.disabled = false;
-    button.textContent = original;
+function grid(nodes, className = "lib-grid") {
+  const box = el("div", className);
+  box.append(...nodes);
+  return box;
+}
+
+function syncKinds() {
+  kindsEl.querySelectorAll("button").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.kind === kind)));
+}
+
+function showResults(data) {
+  painters = [];
+  const parts = [];
+  if (data.type === "all") {
+    if (data.artists.length) {
+      parts.push(section("Artists", null, grid(data.artists.slice(0, 6).map(artistTile), "lib-artists br-artists"), "artist"));
+    }
+    if (data.tracks.length) {
+      parts.push(section("Songs", null, grid(data.tracks.slice(0, 5).map(trackRow), "br-songs"), "track"));
+    }
+    if (data.albums.length) {
+      parts.push(section("Albums", null, grid(data.albums.map(albumCard)), "album"));
+    }
+  } else if (data.results.length) {
+    const render = { album: albumCard, track: trackRow, artist: artistTile }[data.type];
+    const box = { album: "lib-grid", track: "br-songs", artist: "lib-artists br-artists" }[data.type];
+    const title = { album: "Albums", track: "Songs", artist: "Artists" }[data.type];
+    parts.push(section(title, data.results.length, grid(data.results.map(render), box)));
   }
+  resultsEl.replaceChildren(...parts);
+  setMessage(parts.length ? "" : `Nothing on Spotify matches “${lastQuery}”. Try fewer words, or paste a link.`);
 }
-
-function queueButton(url, label) {
-  const button = el("button", "ghost queue", label || "Download");
-  button.addEventListener("click", (event) => {
-    event.stopPropagation();
-    queue(url, button);
-  });
-  return button;
-}
-
-function albumCard(card) {
-  const node = el("div", "card");
-  node.append(cover(card.cover));
-  const body = el("div", "card-body");
-  body.append(
-    el("div", "card-title", card.name),
-    el("div", "card-sub", `${card.artist}${card.year ? ` · ${card.year}` : ""}`),
-    el("div", "card-sub dim", `${card.total} track${card.total === 1 ? "" : "s"}`)
-  );
-  const actions = el("div", "card-actions");
-  actions.append(queueButton(card.url, "Download"));
-  const open = el("button", "ghost", "Tracks");
-  open.addEventListener("click", (event) => {
-    event.stopPropagation();
-    openAlbum(card.id);
-  });
-  actions.append(open);
-  body.append(actions);
-  node.append(body);
-  return node;
-}
-
-// "In library" is read from Navidrome, so it means what it says: this
-// recording is there now. It used to come from the download ledger, which
-// recorded that a track had been *fetched* - and stayed true after the file
-// was deleted, replaced or moved, leaving the track permanently unfetchable
-// with nothing to say why. That is why there was a Forget button beside it,
-// and why there no longer needs to be one: nothing is refused on the strength
-// of this, so there is nothing to undo.
-//
-// Pinned left so it cannot shove the Download button out of line wherever it
-// appears.
-function heldMarker() {
-  const marker = el("span", "held", "in library");
-  marker.title = "Your library already has this. Downloading anyway is "
-               + "allowed - it will arrive as a second copy.";
-  return marker;
-}
-
-function trackCard(card) {
-  const node = el("div", "card");
-  node.append(cover(card.cover));
-  const body = el("div", "card-body");
-  body.append(
-    el("div", "card-title", card.name),
-    el("div", "card-sub", card.artist),
-    el("div", "card-sub dim", `${card.album || ""}${card.year ? ` · ${card.year}` : ""}`)
-  );
-  const actions = el("div", "card-actions");
-  actions.append(queueButton(card.url, "Download"));
-  if (card.held) actions.prepend(heldMarker());
-  body.append(actions);
-  node.append(body);
-  return node;
-}
-
-function artistCard(card) {
-  const node = el("div", "card");
-  node.append(cover(card.cover, "round"));
-  const body = el("div", "card-body");
-  body.append(el("div", "card-title", card.name));
-  if (card.followers != null) {
-    body.append(el("div", "card-sub dim", `${card.followers.toLocaleString()} followers`));
-  }
-  const actions = el("div", "card-actions");
-  const open = el("button", "ghost", "Albums");
-  open.addEventListener("click", (event) => {
-    event.stopPropagation();
-    openArtist(card.id);
-  });
-  actions.append(open);
-  body.append(actions);
-  node.append(body);
-  return node;
-}
-
-const RENDERERS = { album: albumCard, track: trackCard, artist: artistCard };
 
 async function runSearch() {
-  const q = urlInput.value.trim();
-  if (!q) return;
+  const q = input.value.trim();
+  if (!q || looksLikeUrl(q)) return;
   // Guards against a slow earlier request landing after a newer one.
   const token = ++searchToken;
-  crumbEl.hidden = true;
-  // Results are always a card grid, so this belongs here rather than on the
-  // submit handler. openAlbum takes the class off for its detail view, and
-  // Back comes through runSearch without passing the form: every card then
-  // laid out at its natural width, which is a cover image the size of the
-  // screen. It looked like a rendering bug and was a missing class.
-  resultsEl.classList.add("grid");
-  setBrowse([], "Searching…");
+  lastQuery = q;
+  if (!resultsEl.childElementCount) setMessage("Searching…");
+  resultsEl.classList.add("br-loading");
   try {
-    const data = await fetch(
-      `/api/search?q=${encodeURIComponent(q)}&type=${kind}`
-    ).then((r) => r.json());
+    const limit = kind === "all" ? 10 : 24;
+    const response = await fetch(
+      `/api/search?q=${encodeURIComponent(q)}&type=${kind}&limit=${limit}`);
+    const data = await response.json();
     if (token !== searchToken) return;
-    if (data.detail) return setBrowse([], data.detail);
-    setBrowse(data.results.map(RENDERERS[data.type]), "Nothing found.");
+    if (!response.ok) {
+      painters = [];
+      resultsEl.replaceChildren();
+      setMessage(data.detail || "Search failed.");
+      return;
+    }
+    lastResults = data;
+    showResults(data);
   } catch {
-    if (token === searchToken) setBrowse([], "Search failed.");
+    if (token === searchToken) setMessage("Search failed. Is the server reachable?");
+  } finally {
+    if (token === searchToken) resultsEl.classList.remove("br-loading");
   }
 }
 
-function crumb(text, onBack) {
-  crumbEl.replaceChildren();
-  const back = el("button", "ghost", "← Back");
-  back.addEventListener("click", onBack);
-  crumbEl.append(back, el("span", "crumb-text", text));
-  crumbEl.hidden = false;
+function setKind(next) {
+  kind = next;
+  try { localStorage.setItem("browse.kind", kind); } catch { /* fine */ }
+  syncKinds();
+  window.scrollTo({ top: 0 });
+  runSearch();
+}
+
+/* --- one artist ------------------------------------------------------------- */
+
+async function openArtist(id) {
+  if (!id) return;
+  closeAlbum();
+  const token = ++searchToken;
+  painters = [];
+  resultsEl.replaceChildren();
+  setMessage("Loading…");
+  kindsEl.hidden = true;
+  window.scrollTo({ top: 0 });
+  try {
+    const response = await fetch(`/api/artists/${encodeURIComponent(id)}/albums`);
+    const data = await response.json();
+    if (token !== searchToken) return;
+    if (!response.ok) return setMessage(data.detail || "Could not load that artist.");
+
+    const back = el("button", "ghost lib-back", lastResults ? `‹ Results for “${lastQuery}”` : "‹ Back");
+    back.type = "button";
+    back.addEventListener("click", backToResults);
+
+    const head = el("div", "lib-artist-head");
+    const mosaic = el("div", "lib-mosaic");
+    mosaic.append(remoteArt(data.artist.cover));
+    const words = el("div");
+    words.append(el("h2", "lib-artist-name", data.artist.name),
+                 el("span", "lib-card-sub",
+                    [followers(data.artist.followers), plural(data.albums.length, "release")]
+                      .filter(Boolean).join(" · ")));
+    head.append(mosaic, words);
+
+    const albums = data.albums.filter((a) => a.type === "album");
+    const rest = data.albums.filter((a) => a.type !== "album");
+    const parts = [back, head];
+    if (albums.length) parts.push(section("Albums", null, grid(albums.map(albumCard))));
+    if (rest.length) parts.push(section("Singles and EPs", null, grid(rest.map(albumCard))));
+    resultsEl.replaceChildren(...parts);
+    setMessage(data.albums.length ? "" : "Spotify lists no releases for this artist.");
+  } catch {
+    if (token === searchToken) setMessage("Could not load that artist.");
+  }
+}
+
+function backToResults() {
+  kindsEl.hidden = false;
+  if (lastResults) {
+    searchToken++;
+    showResults(lastResults);
+  } else {
+    painters = [];
+    resultsEl.replaceChildren();
+    setMessage("");
+  }
+}
+
+/* --- one album, in a panel beside the results ------------------------------
+   The Library's drawer, so an album opens the same way in both places. It
+   used to replace the results, and Back ran the search again from scratch. */
+
+let openAlbumId = null;
+
+function closeAlbum() {
+  if (!openAlbumId) return;
+  openAlbumId = null;
+  drawerPainters = [];
+  drawerEl.hidden = true;
+  drawerEl.replaceChildren();
+}
+
+function albumActions(album, box) {
+  const job = albumJob(album);
+  const group = job && jobGroup(job);
+  const held = album.held_count;
+  const total = album.tracks.length;
+  const download = el("button", "", "Download album");
+  download.type = "button";
+  download.addEventListener("click", () => queue(album.url, `${album.artist} - ${album.name}`, album.cover));
+  const note = el("span", "br-note");
+
+  if (asked.has(album.url) || group === "active") {
+    download.disabled = true;
+    download.textContent = "Downloading…";
+    note.textContent = job && job.items.length
+      ? `${settledCount(job)} of ${job.items.length} tracks so far` : "Reading the album…";
+  } else if (group === "done" || (total && held >= total)) {
+    download.className = "ghost";
+    download.textContent = "Download again";
+    note.textContent = "Already in your library. Again makes a second copy.";
+  } else if (held) {
+    note.textContent = `${held} of ${total} are already in your library and would arrive as second copies. `
+      + "To fetch only the rest, use the buttons below.";
+  } else if (group === "attention") {
+    note.textContent = "Some of the last attempt failed. Retry those from Downloads, or start again.";
+  }
+  box.replaceChildren(download, note);
+}
+
+function albumTrackRow(album, track) {
+  const row = el("div", "br-trk");
+  const name = el("span", "br-trk-name", track.name);
+  if (track.artist && track.artist !== album.artist) {
+    name.append(el("small", "", track.artist));
+  }
+  const state = el("span", "br-state");
+  const card = { ...track, cover: album.cover };
+  const { button, paint } = trackButton(card);
+  row.append(el("span", "br-trk-no", track.track_no ?? ""), name, state,
+             el("span", "br-dur", duration(track.duration_ms)), button);
+  return painted(drawerPainters, row, () => {
+    state.replaceChildren(stateBadge(trackState(card)));
+    paint();
+  });
 }
 
 async function openAlbum(id) {
-  setBrowse([], "Loading…");
-  const data = await fetch(`/api/albums/${id}`).then((r) => r.json());
-  if (data.detail) return setBrowse([], data.detail);
+  if (!id) return;
+  openAlbumId = id;
+  drawerPainters = [];
+  const top = el("div", "lib-drawer-top");
+  const close = el("button", "ghost", "✕ Close");
+  close.type = "button";
+  close.addEventListener("click", closeAlbum);
+  top.append(close);
+  const body = el("div", "lib-drawer-body");
+  body.append(el("p", "empty", "Loading…"));
+  drawerEl.replaceChildren(top, body);
+  drawerEl.hidden = false;
+  drawerEl.scrollTop = 0;
+  close.focus({ preventScroll: true });
 
-  crumb(`${data.artist} — ${data.name}`, runSearch);
+  let album;
+  try {
+    const response = await fetch(`/api/albums/${encodeURIComponent(id)}`);
+    album = await response.json();
+    if (openAlbumId !== id) return;
+    if (!response.ok) {
+      body.replaceChildren(el("p", "empty", album.detail || "Could not load that album."));
+      return;
+    }
+  } catch {
+    if (openAlbumId === id) body.replaceChildren(el("p", "empty", "Could not load that album."));
+    return;
+  }
 
-  const header = el("div", "detail");
-  header.append(cover(data.cover, "large"));
-  const info = el("div", "detail-body");
-  info.append(
-    el("div", "detail-title", data.name),
-    el("div", "card-sub", `${data.artist}${data.year ? ` · ${data.year}` : ""}`),
-    el("div", "card-sub dim",
-      `${data.tracks.length} tracks${data.held_count ? ` · ${data.held_count} already held` : ""}`)
-  );
-  info.append(queueButton(data.url, "Download album"));
-  header.append(info);
+  const hero = el("div", "lib-hero");
+  const words = el("div", "lib-hero-text");
+  const artist = el("button", "lib-artist-link", album.artist);
+  artist.type = "button";
+  artist.disabled = !album.artist_id;
+  artist.addEventListener("click", () => openArtist(album.artist_id));
+  const minutes = Math.round(album.tracks.reduce((n, t) => n + (t.duration_ms || 0), 0) / 60000);
+  words.append(
+    el("span", "lib-pill", releaseKind(album) || "Album"),
+    el("h2", "lib-hero-title", album.name),
+    artist,
+    el("p", "lib-hero-meta",
+       [album.year, plural(album.tracks.length, "track"), minutes ? `${minutes} min` : null]
+         .filter(Boolean).join(" · ")));
+  hero.append(remoteArt(album.cover), words);
 
-  const list = el("div", "tracklist");
-  data.tracks.forEach((track) => {
-    const row = el("div", `track${track.held ? " skipped" : ""}`);
-    row.append(
-      el("span", "track-no", track.track_no ?? ""),
-      el("span", "track-name", track.name),
-      el("span", "track-dur", duration(track.duration_ms))
-    );
-    // Same shape as a card: the Get button always sits in the last column,
-    // and being held adds a marker and a Forget beside it rather than
-    // standing in for it.
-    const actions = el("div", "track-actions");
-    actions.append(queueButton(track.url, "Get"));
-    if (track.held) actions.prepend(heldMarker());
-    row.append(actions);
-    list.append(row);
-  });
+  const actions = el("div", "lib-actions br-actions");
+  painted(drawerPainters, actions, () => albumActions(album, actions));
 
-  resultsEl.classList.remove("grid");
-  resultsEl.replaceChildren(header, list);
-  browseEmpty.hidden = true;
+  const tracks = el("div", "lib-tracks");
+  tracks.append(...album.tracks.map((t) => albumTrackRow(album, t)));
+  body.replaceChildren(hero, actions, tracks);
 }
 
-async function openArtist(id) {
-  setBrowse([], "Loading…");
-  const data = await fetch(`/api/artists/${id}/albums`).then((r) => r.json());
-  if (data.detail) return setBrowse([], data.detail);
-  crumb(data.artist.name, runSearch);
-  resultsEl.classList.add("grid");
-  setBrowse(data.albums.map(albumCard), "No albums found.");
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && openAlbumId && !drawerEl.hidden) closeAlbum();
+});
+
+/* --- the box ---------------------------------------------------------------- */
+
+function syncBox() {
+  const text = input.value.trim();
+  const url = looksLikeUrl(text);
+  goEl.textContent = url ? "Download" : "Search";
+  kindsEl.hidden = url;
+  hintEl.hidden = !url;
+  if (url) {
+    const host = (/^https?:\/\/([^/?#]+)/i.exec(text) || [])[1] || "";
+    const what = /\/playlist/i.test(text) ? "A playlist"
+      : /\/album/i.test(text) ? "An album"
+      : /\/track|watch\?|youtu\.be/i.test(text) ? "A track" : "A link";
+    hintEl.textContent = `${what} from ${host.replace(/^(www|open|music|m)\./i, "")}. `
+      + "Press Download to queue it.";
+  }
 }
+
+let typing = null;
+input.addEventListener("input", () => {
+  syncBox();
+  clearTimeout(typing);
+  const text = input.value.trim();
+  if (!text) {
+    searchToken++;
+    lastResults = null;
+    painters = [];
+    resultsEl.replaceChildren();
+    setMessage("");
+    return;
+  }
+  if (looksLikeUrl(text) || text.length < 2) return;
+  // Results follow the typing, the way the Library's search does - but each
+  // one is a Spotify request, so only once the typing pauses.
+  typing = setTimeout(runSearch, 450);
+});
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clearTimeout(typing);
+  const text = input.value.trim();
+  if (!text) return;
+  if (!looksLikeUrl(text)) {
+    kindsEl.hidden = false;
+    runSearch();
+    return;
+  }
+  goEl.disabled = true;
+  try {
+    if (await queue(text, "", null)) {
+      input.value = "";
+      syncBox();
+    }
+  } finally {
+    goEl.disabled = false;
+  }
+});
+
+kindsEl.querySelectorAll("button").forEach((button) => {
+  button.addEventListener("click", () => setKind(button.dataset.kind));
+});
+
+syncKinds();
+syncBox();
 
 // Focus the search box only where a keyboard is already there. On a phone
 // this summoned the on-screen one the instant the tab was tapped, covering
@@ -276,6 +646,6 @@ async function openArtist(id) {
 // has a real keyboard. Called by main.js when the Browse view is shown.
 export function focusSearchIfPointer() {
   if (matchMedia("(hover: hover) and (pointer: fine)").matches) {
-    urlInput.focus();
+    input.focus();
   }
 }

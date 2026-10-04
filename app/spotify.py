@@ -103,6 +103,14 @@ def _primary_artist(artists: list[dict] | None) -> str:
     return ""
 
 
+def _first_artist_id(artists: list[dict] | None) -> str | None:
+    """The lead artist's id, for a link from a card to that artist's page."""
+    for artist in artists or []:
+        if artist.get("id"):
+            return artist["id"]
+    return None
+
+
 def _cover(album: dict) -> str | None:
     images = album.get("images") or []
     return images[0]["url"] if images else None
@@ -210,6 +218,10 @@ def album_card(album: dict[str, Any]) -> dict[str, Any]:
         "id": album["id"],
         "name": album["name"],
         "artist": _artist_names(album.get("artists")),
+        # For the "in library" count, the same as on a track card: the
+        # library may have filed it under either credit.
+        "primary_artist": _primary_artist(album.get("artists")),
+        "artist_id": _first_artist_id(album.get("artists")),
         "year": _year(album.get("release_date")),
         "cover": _cover(album),
         "total": album.get("total_tracks"),
@@ -229,6 +241,8 @@ def track_card(track: dict[str, Any]) -> dict[str, Any]:
         # the card shows one and the library holds the other.
         "primary_artist": _primary_artist(track.get("artists")),
         "album": album.get("name"),
+        # So the album name on a song can open that album.
+        "album_id": album.get("id"),
         "year": _year(album.get("release_date")),
         "cover": _cover(album),
         "duration_ms": track.get("duration_ms"),
@@ -254,6 +268,25 @@ def browse(query: str, kind: str, limit: int = 24) -> list[dict[str, Any]]:
     items = [i for i in search(query, kind, limit) if i]
     shaper = {"album": album_card, "track": track_card, "artist": artist_card}[kind]
     return [shaper(item) for item in items]
+
+
+def browse_all(query: str, limit: int = 10) -> dict[str, list[dict[str, Any]]]:
+    """Albums, tracks and artists for one query, in one request.
+
+    What Browse shows before you narrow it to a kind: a title you remember is
+    as often a song as an album, and asking three times would be three round
+    trips to Spotify from a Pi for one keystroke's worth of results.
+    """
+    results = client().search(q=query, type="album,track,artist", limit=limit)
+
+    def items(kind: str) -> list[dict[str, Any]]:
+        return [i for i in (results.get(f"{kind}s") or {}).get("items", []) if i]
+
+    return {
+        "albums": [album_card(a) for a in items("album")],
+        "tracks": [track_card(t) for t in items("track")],
+        "artists": [artist_card(a) for a in items("artist")],
+    }
 
 
 def album_detail(album_id: str) -> dict[str, Any]:

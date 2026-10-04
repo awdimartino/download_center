@@ -436,6 +436,80 @@ def test_the_badge_is_scoped_to_the_library(db, identity):
     assert cards[0]["held"] is False
 
 
+# --- the album covers' "3 of 11 in library" ---------------------------------
+
+def _album_card(**extra):
+    return {"name": "Thriller", "artist": "Michael Jackson",
+            "primary_artist": "Michael Jackson", "total": 9, **extra}
+
+
+def test_an_album_counts_the_tracks_the_library_has(db, identity):
+    from app import main
+    for n in range(3):
+        add_track(db, f"t{n}", title=f"Song {n}", artist="Michael Jackson",
+                  album_artist="Michael Jackson", album="Thriller")
+
+    cards = main._mark_albums_held([_album_card()], 1)
+    assert cards[0]["held_tracks"] == 3
+
+
+def test_an_album_filed_under_the_primary_artist_is_counted(db, identity):
+    """The card carries the full credit; the file may carry only the first."""
+    from app import main
+    add_track(db, "t1", title="The Girl Is Mine", artist="Michael Jackson",
+              album_artist="Michael Jackson", album="Thriller")
+
+    cards = main._mark_albums_held(
+        [_album_card(artist="Michael Jackson, Paul McCartney")], 1)
+    assert cards[0]["held_tracks"] == 1
+
+
+def test_an_album_count_never_exceeds_the_album(db, identity):
+    """A deluxe edition filed under the plain title must not read 12 of 9."""
+    from app import main
+    for n in range(12):
+        add_track(db, f"t{n}", title=f"Song {n}", artist="Michael Jackson",
+                  album_artist="Michael Jackson", album="Thriller")
+
+    cards = main._mark_albums_held([_album_card()], 1)
+    assert cards[0]["held_tracks"] == 9
+
+
+def test_an_album_count_is_scoped_to_the_library(db, identity):
+    from app import main
+    add_track(db, "t1", title="Billie Jean", artist="Michael Jackson",
+              album_artist="Michael Jackson", album="Thriller", library_id=2)
+
+    cards = main._mark_albums_held([_album_card()], 1)
+    assert cards[0]["held_tracks"] == 0
+
+
+def test_searching_everything_is_one_request_to_spotify(monkeypatch):
+    from app import spotify
+    asked = []
+
+    class Client:
+        def search(self, q, type, limit):
+            asked.append(type)
+            return {
+                "albums": {"items": [{"id": "a1", "name": "Thriller",
+                                      "artists": [{"name": "Michael Jackson"}],
+                                      "release_date": "1982-11-30",
+                                      "total_tracks": 9, "images": []}, None]},
+                "tracks": {"items": [{"id": "t1", "name": "Billie Jean",
+                                      "artists": [{"name": "Michael Jackson"}],
+                                      "album": {"name": "Thriller"}}]},
+                "artists": {"items": [{"id": "r1", "name": "Michael Jackson"}]},
+            }
+
+    monkeypatch.setattr(spotify, "client", lambda: Client())
+    found = spotify.browse_all("thriller")
+    assert asked == ["album,track,artist"]
+    assert [a["name"] for a in found["albums"]] == ["Thriller"]
+    assert [t["name"] for t in found["tracks"]] == ["Billie Jean"]
+    assert [a["name"] for a in found["artists"]] == ["Michael Jackson"]
+
+
 # --- what counts as an album folder -----------------------------------------
 #
 # A retag applies to every file under the folder it is given, so being wrong

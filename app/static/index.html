@@ -220,22 +220,54 @@
     <p id="drop-empty" class="empty">Nothing uploaded yet.</p>
   </section>
 
+  <!-- Results on the left, the queue in a rail on the right. The queue used
+       to sit above the results, finished downloads and all, so every search
+       began with scrolling past what had already worked. -->
   <section id="view-browse" hidden>
-    <form id="search-form" autocomplete="off">
-      <input id="query" type="text" spellcheck="false"
-             placeholder="Search Spotify, or paste a link to queue a download">
-      <button type="submit">Go</button>
-      <div class="kinds">
-        <button class="kind active" data-kind="album" type="button">Albums</button>
-        <button class="kind" data-kind="track" type="button">Tracks</button>
-        <button class="kind" data-kind="artist" type="button">Artists</button>
+    <div class="br-layout">
+      <div class="br-main">
+        <!-- Pinned, so it is never scrolled away from the results. -->
+        <div class="br-searchbar">
+          <form id="search-form" class="br-search" autocomplete="off" role="search">
+            <label class="br-field">
+              <span class="sr-only">Search Spotify, or paste a link</span>
+              <input id="query" type="search" spellcheck="false" enterkeyhint="search"
+                     placeholder="Search Spotify, or paste a link">
+            </label>
+            <button id="search-go" type="submit">Search</button>
+          </form>
+          <p id="link-hint" class="br-link-hint" hidden></p>
+          <div id="browse-kinds" class="lib-chips" role="group" aria-label="Show">
+            <button type="button" data-kind="all">All</button>
+            <button type="button" data-kind="album">Albums</button>
+            <button type="button" data-kind="track">Songs</button>
+            <button type="button" data-kind="artist">Artists</button>
+          </div>
+        </div>
+        <div id="results"></div>
+        <p id="browse-empty" class="empty">Find an album, a song or an artist
+          on Spotify and download it straight into your library. Or paste a
+          link.</p>
       </div>
-    </form>
-    <section id="jobs"></section>
-    <p id="empty" class="empty">Nothing queued yet.</p>
-    <p id="crumb" class="crumb" hidden></p>
-    <div id="results" class="grid"></div>
-    <p id="browse-empty" class="empty">Search for an artist, album, or track.</p>
+
+      <!-- What is downloading, what needs a look, and what finished. On a
+           phone this is a sheet, opened from the pill below. -->
+      <aside class="dl-rail" aria-label="Downloads">
+        <div class="dl-head">
+          <h2>Downloads</h2>
+          <small id="downloads-summary"></small>
+          <button id="downloads-close" class="ghost dl-close" type="button"
+                  aria-label="Close downloads">✕</button>
+        </div>
+        <div id="jobs"></div>
+      </aside>
+    </div>
+
+    <button id="downloads-pill" class="dl-pill" type="button"
+            aria-label="Show downloads" aria-expanded="false" hidden></button>
+    <div id="downloads-scrim" class="dl-scrim" hidden></div>
+    <!-- One album, opened beside the results - the Library's drawer. -->
+    <aside id="browse-drawer" class="lib-drawer" hidden aria-label="Album"></aside>
   </section>
 
   <!-- Everything you own, three ways in: the albums themselves, who made

@@ -237,6 +237,44 @@ def held_in(library_id: int) -> set[str]:
     return held
 
 
+def albums_held_in(library_id: int) -> dict[str, int]:
+    """How many tracks a library holds of each album, by album key.
+
+    Browse's covers say "In library" or "3 of 11 in library" from this, so a
+    record half-fetched as singles shows as half there before anyone opens it.
+    A count rather than a set because the half-there case is the one worth
+    seeing: a whole album is easy to remember owning, three of its songs are
+    not.
+
+    Keyed under the album artist and under the track artist both, for the
+    same reason `held_in` keeps both credits - a CD rip may carry either.
+    """
+    from . import registry
+
+    try:
+        connection = open_db()
+    except Unavailable as exc:
+        log.warning("cannot read what library %s holds: %s", library_id, exc)
+        return {}
+
+    with connection:
+        rows = connection.execute(
+            f"select coalesce(mf.artist, ''), coalesce(mf.album_artist, ''),"
+            f"       coalesce(mf.album, '')"
+            f"  from media_file mf"
+            f" where {live_clause(connection, [library_id])}").fetchall()
+
+    counts: dict[str, int] = {}
+    for artist, album_artist, album in rows:
+        if not album:
+            continue
+        keys = {registry.album_key(credit, album)
+                for credit in (artist, album_artist) if credit}
+        for key in keys:
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 # --- calls made for a person ----------------------------------------------
 
 def _subsonic(identity: Identity, endpoint: str, **extra: str) -> dict:
