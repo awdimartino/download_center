@@ -1800,6 +1800,16 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
   margin-top: var(--s-3);
 }
 
+/* Centred under the grid, and as far below its last row as the rows are
+   from each other, so it reads as the end of the list rather than one
+   more thing squeezed into it. */
+#library-more {
+  display: block;
+  margin: var(--s-5) auto var(--s-6);
+  padding: 0 var(--s-5);
+}
+#library-more[hidden] { display: none; }
+
 .lib-card, .lib-mini, .lib-row {
   position: relative;
   min-width: 0;

@@ -347,6 +347,26 @@ function songsBlock(songs) {
   return block;
 }
 
+// How many covers the grid fits across right now, or 0 when that cannot be
+// measured (the list layout, or the panel hidden behind another view).
+function gridColumns() {
+  if (view.layout === "list") return 0;
+  const live = listEl && listEl.isConnected && listEl.classList.contains("lib-grid");
+  const grid = live ? listEl : libraryEl.appendChild(el("div", "lib-grid"));
+  const tracks = getComputedStyle(grid).gridTemplateColumns;
+  if (!live) grid.remove();
+  return tracks && tracks !== "none" ? tracks.split(" ").length : 0;
+}
+
+// A page size that ends on a full row. The column count follows the width,
+// so a fixed page left a ragged last row: 120 albums seven across is
+// seventeen rows and one album alone beside "Show more".
+function fullRows(count, shown = 0) {
+  const columns = gridColumns();
+  if (!columns) return count;
+  return Math.ceil((shown + count) / columns) * columns - shown;
+}
+
 async function fetchLibraryPage(offset, limit) {
   const query = new URLSearchParams({
     limit: String(limit),
@@ -385,13 +405,15 @@ async function loadAlbums(mode, anchor) {
     let albums = [];
     let data;
     if (mode === "more") {
-      data = await fetchLibraryPage(libraryShownCount, LIBRARY_PAGE);
+      data = await fetchLibraryPage(libraryShownCount,
+                                    fullRows(LIBRARY_PAGE, libraryShownCount));
       albums = data.albums || [];
     } else {
       // An artist page is one artist's records, which is never so many that
       // it needs paging - and splitting albums from singles needs them all.
       const want = view.artist ? LIBRARY_MAX_PAGE
-        : keepScroll ? Math.max(libraryShownCount, LIBRARY_PAGE) : LIBRARY_PAGE;
+        : keepScroll ? Math.max(libraryShownCount, fullRows(LIBRARY_PAGE))
+        : fullRows(LIBRARY_PAGE);
       do {
         data = await fetchLibraryPage(albums.length,
                                       Math.min(want - albums.length, LIBRARY_MAX_PAGE));
