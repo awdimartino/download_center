@@ -167,11 +167,24 @@ try {
   if (saved && saved.accent) applyPalette(saved);
 } catch (err) { /* nothing remembered */ }
 
-// One of the year's most played albums, picked at random on every visit so
-// the header is not the same cover every time. Picked here rather than on the
-// server, the same as the headline fact. An album whose cover will not load
-// (none embedded, none in the folder) is skipped for another; only when none
-// load does the page fall back to text on the plain background.
+// One album at random, so the header is not the same cover every time - but
+// not evenly: the server weights what was played in the last two weeks and
+// the last month above the year's favourites (overview.COVER_RECENT), so the
+// cover is usually something you are listening to now. Picked here rather
+// than on the server, the same as the headline fact. An album whose cover
+// will not load (none embedded, none in the folder) is skipped for another;
+// only when none load does the page fall back to text on the plain
+// background.
+function weightedPick(albums) {
+  const total = albums.reduce((sum, album) => sum + (album.weight || 1), 0);
+  let at = Math.random() * total;
+  for (let i = 0; i < albums.length; i++) {
+    at -= albums[i].weight || 1;
+    if (at < 0) return i;
+  }
+  return albums.length - 1;
+}
+
 function setCover(albums) {
   const left = (albums || []).filter((album) => album.cover_track_id);
 
@@ -181,7 +194,7 @@ function setCover(albums) {
       setPalette(null);
       return;
     }
-    const [album] = left.splice(Math.floor(Math.random() * left.length), 1);
+    const [album] = left.splice(weightedPick(left), 1);
     homeCoverArt.alt = album.album + " by " + album.artist;
     homeCoverArt.onload = () => setPalette(coverPalette(homeCoverArt));
     homeCoverArt.onerror = tryNext;

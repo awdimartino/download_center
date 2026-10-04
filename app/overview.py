@@ -327,7 +327,10 @@ def _listening(user_id: str) -> dict[str, Any]:
         known = named.get(track_uuid)
         if known and known["artist"]:
             by_artist[known["artist"]] += n
-    cover_albums = _cover_albums(recent, named)
+    today = playcounts.today()
+    lately = {days: _played_since(plays, days_back(today, days))
+              for days in COVER_RECENT}
+    cover_albums = _cover_albums(recent, named, lately)
 
     this_month = by_month.get(wanted[-1], 0)
     last_month = by_month.get(wanted[-2], 0) if len(wanted) > 1 else 0
@@ -474,33 +477,80 @@ def highlights(heard: dict[str, Any], counted: dict[str, Any]) -> list[dict[str,
     return facts
 
 
-# How many of the most played albums the home cover is drawn from. The
-# browser picks one at random on every visit, so the header changes without
-# reaching beyond music somebody actually listens to.
-COVER_ALBUMS = 20
+# How many albums the home cover is drawn from. The browser picks one at
+# random on every visit, so the header changes without reaching beyond music
+# somebody actually listens to.
+COVER_ALBUMS = 40
+
+# Days back -> (how many of COVER_ALBUMS it may fill, how much likelier one
+# of its albums is to be the cover than one only in the twelve-month top).
+# The shortest window an album falls in places it. What somebody is
+# listening to now is the cover they want to see; the year's favourites are
+# the fallback that keeps the header from showing one album all week after
+# a quiet one. Capped, because both accounts here play more than forty
+# albums a fortnight - uncapped, the year's favourites never appeared.
+# Full, the chances come to about 73% fortnight, 18% month, 9% year.
+COVER_RECENT = {14: (20, 4), 30: (10, 2)}
+
+
+def _played_since(plays: list[tuple[str, str, int]], since: str) -> dict[str, int]:
+    """Track UUID -> plays on or after the day `since`."""
+    counts: dict[str, int] = collections.Counter()
+    for day, track_uuid, n in plays:
+        if day[:10] >= since:
+            counts[track_uuid] += n
+    return counts
 
 
 def _cover_albums(recent: dict[str, int],
-                  named: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """The most played albums in the window, each with a track to draw its cover from.
+                  named: dict[str, dict[str, Any]],
+                  lately: dict[int, dict[str, int]] | None = None,
+                  ) -> list[dict[str, Any]]:
+    """Albums for the home cover, each with a track to draw it from and a
+    weight for how often the browser should pick it.
 
-    Grouped the way `playcounts.top_albums` groups - by album artist and album
-    together. Each cover comes from that album's most played track, which is
-    the one most likely to be a file with its art embedded.
+    The recent windows go first, most played first within each, then the
+    twelve-month top fills what is left of COVER_ALBUMS. Grouped the way
+    `playcounts.top_albums` groups - by album artist and album together.
+    Each cover comes from that album's most played track, which is the one
+    most likely to be a file with its art embedded.
     """
-    by_album: dict[tuple[str, str], int] = collections.Counter()
+    def ranked(counts: dict[str, int]) -> list[tuple[tuple[str, str], int]]:
+        by_album: dict[tuple[str, str], int] = collections.Counter()
+        for track_uuid, n in counts.items():
+            known = named.get(track_uuid)
+            if known and known["album"]:
+                by_album[(known["album_artist"], known["album"])] += n
+        return by_album.most_common()
+
+    # The cover track comes from the whole window, the most data there is.
     loudest: dict[tuple[str, str], tuple[int, str]] = {}
     for track_uuid, n in recent.items():
         known = named.get(track_uuid)
         if not known or not known["album"]:
             continue
         key = (known["album_artist"], known["album"])
-        by_album[key] += n
         if key not in loudest or n > loudest[key][0]:
             loudest[key] = (n, track_uuid)
-    return [{"artist": artist, "album": album, "plays": plays,
-             "cover_track_id": named[loudest[(artist, album)][1]].get("id")}
-            for (artist, album), plays in by_album.most_common(COVER_ALBUMS)]
+
+    tiers = [(lately[days], *COVER_RECENT[days])
+             for days in sorted(COVER_RECENT) if lately and days in lately]
+    tiers.append((recent, COVER_ALBUMS, 1))
+
+    chosen: dict[tuple[str, str], dict[str, Any]] = {}
+    for counts, slots, weight in tiers:
+        taken = 0
+        for key, plays in ranked(counts):
+            if len(chosen) >= COVER_ALBUMS or taken >= slots:
+                break
+            if key in chosen or key not in loudest:
+                continue
+            taken += 1
+            artist, album = key
+            chosen[key] = {"artist": artist, "album": album, "plays": plays,
+                           "weight": weight,
+                           "cover_track_id": named[loudest[key][1]].get("id")}
+    return list(chosen.values())
 
 
 def overview(identity: navidrome.Identity) -> dict[str, Any]:

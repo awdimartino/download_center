@@ -9,7 +9,7 @@ whichever month the snapshots began.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -570,11 +570,60 @@ def test_cover_albums_are_ranked_by_plays_each_with_its_loudest_track():
         "b1": {"album": "Kid A", "album_artist": "Someone Else", "id": "mf-9"},
     }
     assert overview._cover_albums(recent, named) == [
-        {"artist": "Radiohead", "album": "Kid A", "plays": 12,
+        {"artist": "Radiohead", "album": "Kid A", "plays": 12, "weight": 1,
          "cover_track_id": "mf-1"},
-        {"artist": "Someone Else", "album": "Kid A", "plays": 6,
+        {"artist": "Someone Else", "album": "Kid A", "plays": 6, "weight": 1,
          "cover_track_id": "mf-9"},
     ]
+
+
+def test_recent_albums_come_first_and_weigh_more():
+    """Played in the last fortnight beats played in the last month beats
+    only being in the year's top - however the year's plays compare."""
+    named = {t: {"album": t.upper(), "album_artist": "X", "id": f"mf-{t}"}
+             for t in ("year", "month", "fortnight")}
+    recent = {"year": 500, "month": 20, "fortnight": 3}
+    lately = {14: {"fortnight": 3}, 30: {"fortnight": 3, "month": 20}}
+
+    covers = overview._cover_albums(recent, named, lately)
+
+    assert [(c["album"], c["weight"]) for c in covers] == [
+        ("FORTNIGHT", overview.COVER_RECENT[14][1]),
+        ("MONTH", overview.COVER_RECENT[30][1]),
+        ("YEAR", 1),
+    ]
+
+
+def test_a_busy_fortnight_still_leaves_room_for_the_year(monkeypatch):
+    """Both accounts here play more albums in two weeks than the cover pool
+    holds. Uncapped, the year's favourites would never be shown."""
+    monkeypatch.setattr(overview, "COVER_ALBUMS", 6)
+    monkeypatch.setattr(overview, "COVER_RECENT", {14: (3, 4), 30: (2, 2)})
+    names = [f"f{i}" for i in range(10)] + ["y0", "y1"]
+    named = {t: {"album": t, "album_artist": "X", "id": t} for t in names}
+    fortnight = {f"f{i}": 10 - i for i in range(10)}
+    recent = {**fortnight, "y0": 900, "y1": 800}
+
+    covers = overview._cover_albums(recent, named, {14: fortnight, 30: fortnight})
+
+    assert [c["weight"] for c in covers] == [4, 4, 4, 2, 2, 1]
+    assert covers[-1]["album"] == "y0", "the year's top album is still there"
+
+
+def test_the_listening_page_weights_its_covers_by_recency(
+        state_db, identity_with_db, navidrome_db):
+    today = datetime.now(UTC).date()
+    old = (today - timedelta(days=100)).isoformat()
+    new = (today - timedelta(days=3)).isoformat()
+    for n, uuid_ in enumerate(("old", "new")):
+        add_track(navidrome_db, f"m{n}", album=uuid_.title(), tags=tagged(uuid_))
+    imported(old, "old", 50)
+    imported(new, "new", 1)
+
+    covers = overview.listening(identity_with_db)["cover_albums"]
+
+    assert [(c["album"], c["weight"]) for c in covers] == [
+        ("New", overview.COVER_RECENT[14][1]), ("Old", 1)]
 
 
 def test_cover_albums_stop_at_the_limit():
