@@ -7,6 +7,7 @@ import contextlib
 import functools
 import hashlib
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, UTC
@@ -778,6 +779,8 @@ async def retry_job(
 
 # A FLAC track comfortably clears 40MB; refused well past that rather than
 # guessed from a bitrate.
+# Read and written a megabyte at a time, never whole.
+UPLOAD_CHUNK = 1 << 20
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
@@ -817,15 +820,16 @@ async def upload_to_inbox(
         raise HTTPException(
             status_code=400, detail=f"{name}: not something this can file.")
 
-    await asyncio.to_thread(space.prepare)
+    # Checked before anything is read, and again while copying: the whole
+    # upload used to be read into memory first - 200 MB a file, more since
+    # the check came after, on a Raspberry Pi, several at once for a folder.
+    too_big = HTTPException(
+        status_code=413, detail=f"{name} is larger than this accepts.")
+    if (getattr(file, "size", None) or 0) > MAX_UPLOAD_BYTES:
+        await file.close()
+        raise too_big
 
-    data = await file.read()
-    await file.close()
-    if not data:
-        raise HTTPException(status_code=400, detail=f"{name} is empty.")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413, detail=f"{name} is larger than this accepts.")
+    await asyncio.to_thread(space.prepare)
 
     # Server-generated on the first file of a drop and echoed back by every
     # later one in the same drop, rather than trusted from the browser - it
@@ -834,12 +838,34 @@ async def upload_to_inbox(
     batch = filer.sanitize(batch or uuid.uuid4().hex)
     target = inbox.upload_root(space, batch).joinpath(*segments)
 
-    def write() -> None:
+    def write() -> int:
+        """Copied in chunks to a hidden part file, then renamed into place,
+        so the poller never sees half of it under its real name."""
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        inbox.backdate(target)
+        partial = target.with_name(f".{target.name}.part")
+        written = 0
+        try:
+            with open(partial, "wb") as out:
+                while chunk := file.file.read(UPLOAD_CHUNK):
+                    written += len(chunk)
+                    if written > MAX_UPLOAD_BYTES:
+                        break
+                    out.write(chunk)
+            if 0 < written <= MAX_UPLOAD_BYTES:
+                os.replace(partial, target)
+                inbox.backdate(target)
+        finally:
+            partial.unlink(missing_ok=True)
+        return written
 
-    await asyncio.to_thread(write)
+    try:
+        written = await asyncio.to_thread(write)
+    finally:
+        await file.close()
+    if not written:
+        raise HTTPException(status_code=400, detail=f"{name} is empty.")
+    if written > MAX_UPLOAD_BYTES:
+        raise too_big
     return {"batch": batch}
 
 

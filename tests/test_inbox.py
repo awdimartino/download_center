@@ -733,3 +733,72 @@ def test_two_drains_at_once_file_a_file_once(space, monkeypatch):
     assert len(calls) == 1
     assert [r.failures for r in results] == [[], []]
     assert sum(len(r.filed) for r in results) == 1
+
+
+# --- uploads are streamed (CODE_REVIEW M20) ----------------------------------
+# The whole upload was read into memory before its size was checked.
+
+def _upload(data: bytes, name="song.mp3", size=None):
+    import io
+
+    from starlette.datastructures import UploadFile
+
+    upload = UploadFile(io.BytesIO(data), filename=name, size=size)
+
+    async def never(*args, **kwargs):
+        raise AssertionError("the upload was read whole")
+
+    upload.read = never
+    return upload
+
+
+def _session():
+    from types import SimpleNamespace
+    return SimpleNamespace(identity=SimpleNamespace(username="alex"))
+
+
+@pytest.mark.asyncio
+async def test_an_upload_is_copied_in_chunks(space, monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(main, "UPLOAD_CHUNK", 4)
+    data = SILENCE.read_bytes()
+
+    answer = await main.upload_to_inbox(_upload(data), "", None, None, _session())
+
+    landed = inbox.upload_root(space, answer["batch"]) / "song.mp3"
+    assert landed.read_bytes() == data
+    assert not list(landed.parent.glob(".*.part"))
+
+
+@pytest.mark.asyncio
+async def test_a_declared_oversize_upload_is_refused_before_reading(space,
+                                                                    monkeypatch):
+    from fastapi import HTTPException
+
+    from app import main
+
+    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 10)
+
+    with pytest.raises(HTTPException) as refused:
+        await main.upload_to_inbox(_upload(b"x" * 50, size=50), "", None, None,
+                                   _session())
+    assert refused.value.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_an_undeclared_oversize_upload_stops_at_the_cap(space, monkeypatch):
+    from fastapi import HTTPException
+
+    from app import main
+
+    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 10)
+    monkeypatch.setattr(main, "UPLOAD_CHUNK", 4)
+
+    with pytest.raises(HTTPException) as refused:
+        await main.upload_to_inbox(_upload(b"x" * 50), "", None, None, _session())
+    assert refused.value.status_code == 413
+    assert not [p for p in space.inbox_dir.rglob("*") if p.is_file()]

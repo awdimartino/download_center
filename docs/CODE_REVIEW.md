@@ -524,10 +524,14 @@ it less likely.
       **Fixed** as suggested (one lock for all workspaces; drains are
       quick). Reproduced first with two threads draining at once.
 
-- [ ] **M20. Uploads are read whole into memory before the size check.**
+- [x] **M20. Uploads are read whole into memory before the size check.**
       `app/main.py:821-827`. Up to 200 MB per file — more, since the check
       comes after — in RAM on a Pi; a dragged folder sends several.
       *Fix:* check `file.size`, stream to disk with a running cap.
+      **Fixed** as suggested: refused up front on the declared size, then
+      copied a megabyte at a time to a hidden `.part` file with a running
+      cap and renamed into place. Tests fail if the route reads the upload
+      whole.
 
 - [ ] **M21. An album upload can be filed before its cover arrives.**
       `app/inbox.py:178-188`, `app/static/js/drop.js:164-185`. Each file is
