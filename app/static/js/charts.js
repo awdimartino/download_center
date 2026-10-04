@@ -173,8 +173,11 @@ export function genreBars(genres) {
                  "Nothing tagged with a genre in this window yet.");
 }
 
+// The columns sit in a row of their own inside `.hour-chart`. They used to
+// sit in an unstyled div, so they stacked as blocks and every bar's
+// percentage height resolved against nothing - the chart drew empty.
 export function hourlyBars(hourly) {
-  const wrap = el("div");
+  const wrap = el("div", "hour-cols");
   if (!hourly.some((h) => h.plays > 0)) {
     return el("p", "empty", "Nothing played in this window yet.");
   }

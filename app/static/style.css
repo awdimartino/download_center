@@ -2721,10 +2721,13 @@ main > #error { background: color-mix(in srgb, var(--bad) 16%, var(--panel-2)); 
 
 /* --- the hourly chart ------------------------------------------------------ */
 
-.hour-chart {
+/* Room underneath for the hour labels, which hang below the bars. */
+.hour-chart { height: 80px; margin-bottom: var(--s-4); }
+
+.hour-cols {
   display: flex;
   align-items: flex-end;
-  height: 80px;
+  height: 100%;
   gap: var(--s-0);
 }
 
