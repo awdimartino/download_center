@@ -899,7 +899,10 @@ it less likely.
       (`library.js:1159`).
       **Fixed:** `GET /api/library` takes `library_id`, and the merge
       search passes the album's own. Reproduced first.
-- [ ] **L24.** An artist page stops silently at 200 records (`library.js:414`).
+- [x] **L24.** An artist page stops silently at 200 records (`library.js:414`).
+      **Fixed:** the artist page keeps paging until it has the total.
+      Checked in headless Chromium with a stubbed 450-record artist: 200
+      cards before, 450 after.
 - [ ] **L25.** `GET /api/playcounts` is not admin-only and shows imported
       totals summed across accounts — on a two-person install, one person's
       total (`main.py:2093-2103`). Nothing in the UI uses it.

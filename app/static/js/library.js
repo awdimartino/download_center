@@ -432,9 +432,10 @@ async function loadAlbums(mode, anchor) {
                                     fullRows(LIBRARY_PAGE, libraryShownCount));
       albums = data.albums || [];
     } else {
-      // An artist page is one artist's records, which is never so many that
-      // it needs paging - and splitting albums from singles needs them all.
-      const want = view.artist ? LIBRARY_MAX_PAGE
+      // An artist page is drawn whole - splitting albums from singles needs
+      // every record - so it reads page after page until it has them all.
+      // It used to ask for one page and stop at 200 without a word.
+      const want = view.artist ? Infinity
         : keepScroll ? Math.max(libraryShownCount, fullRows(LIBRARY_PAGE))
         : fullRows(LIBRARY_PAGE);
       do {

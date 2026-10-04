@@ -466,3 +466,8 @@ def test_the_file_picker_offers_covers_and_every_audio_extension():
     assert 'accept="audio/*"' not in HTML
     assert ('dropInput.accept = ["audio/*", ...DROP_AUDIO_EXT, ...DROP_COVER_EXT]'
             in JS_FILES["drop.js"])
+
+
+def test_an_artist_page_reads_every_record_not_one_page():
+    """It asked for one page of 200 and stopped there without a word (L24)."""
+    assert "const want = view.artist ? Infinity" in JS_FILES["library.js"]
