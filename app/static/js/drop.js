@@ -23,6 +23,10 @@ const DROP_AUDIO_EXT = new Set([
 ]);
 const DROP_COVER_EXT = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
+// By extension as well as type: "audio/*" alone hid covers, and on some
+// systems .ape and .wv, which have no registered audio type there.
+dropInput.accept = ["audio/*", ...DROP_AUDIO_EXT, ...DROP_COVER_EXT].join(",");
+
 function dropExt(name) {
   const dot = name.lastIndexOf(".");
   return dot === -1 ? "" : name.slice(dot).toLowerCase();

@@ -821,8 +821,11 @@ it less likely.
       `library_id`. Checked in headless Chromium against stubbed APIs (two
       libraries: sends 3 and remembers it; one: hidden, sends null). The
       "in library" markers still read the first library.
-- [ ] **L12.** The Drop file picker's `accept="audio/*"` hides covers and,
+- [x] **L12.** The Drop file picker's `accept="audio/*"` hides covers and,
       on some systems, `.ape`/`.wv` (`index.html:220`).
+      **Fixed:** `drop.js` sets `accept` to `audio/*` plus every audio and
+      cover extension it already filters by; a test keeps those lists equal
+      to the server's. Checked in headless Chromium.
 - [ ] **L13.** The ✕ on an active job deletes it (history and Retry gone);
       `POST /api/jobs/{id}/cancel` is never called.
 - [ ] **L14.** Two jobs filing the same track can both choose the same free

@@ -220,7 +220,8 @@
       <span>Drop audio files or a folder here</span>
       <span class="drop-zone-hint">or choose files</span>
     </button>
-    <input id="drop-input" type="file" multiple accept="audio/*" hidden>
+    <!-- `accept` is set by drop.js, from the same lists it filters by. -->
+    <input id="drop-input" type="file" multiple hidden>
     <section id="drop-batches"></section>
     <p id="drop-empty" class="empty">Nothing uploaded yet.</p>
   </section>

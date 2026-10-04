@@ -445,3 +445,24 @@ def test_both_pages_offer_the_choice():
     for picker in ("browse-library", "drop-library"):
         assert re.search(rf'<label class="target-library" hidden>[^<]*<select id="{picker}"', HTML)
         assert f'getElementById("{picker}")' in JS
+
+
+# --- what the Drop file picker offers (L12) -----------------------------------
+
+def _js_set(name):
+    found = re.search(rf"const {name} = new Set\(\[(.*?)\]\);", JS_FILES["drop.js"], re.S)
+    return set(re.findall(r'"(\.[a-z0-9]+)"', found.group(1)))
+
+
+def test_the_drop_lists_match_what_the_server_files():
+    from app import filer, uuidtags
+
+    assert _js_set("DROP_AUDIO_EXT") == uuidtags.AUDIO_SUFFIXES
+    assert _js_set("DROP_COVER_EXT") == set(filer.COVER_SUFFIXES)
+
+
+def test_the_file_picker_offers_covers_and_every_audio_extension():
+    """accept="audio/*" alone hid covers, and .ape/.wv on some systems."""
+    assert 'accept="audio/*"' not in HTML
+    assert ('dropInput.accept = ["audio/*", ...DROP_AUDIO_EXT, ...DROP_COVER_EXT]'
+            in JS_FILES["drop.js"])
