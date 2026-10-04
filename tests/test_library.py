@@ -837,3 +837,18 @@ def test_the_merge_search_asks_for_the_albums_own_library():
     js = (Path(__file__).resolve().parent.parent / "app" / "static" / "js"
           / "library.js").read_text(encoding="utf-8")
     assert "&library_id=${album.library_id}&limit=8" in js
+
+
+# --- a connection is closed by the with that used it (L43) -----------------------
+
+def test_navidromes_database_is_closed_after_use(db):
+    """sqlite3's with only commits; every read left its connection open
+    for the garbage collector."""
+    import sqlite3
+
+    connection = navidrome.open_db()
+    with connection:
+        connection.execute("select 1").fetchone()
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        connection.execute("select 1")

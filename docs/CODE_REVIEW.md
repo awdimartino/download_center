@@ -1019,8 +1019,12 @@ it less likely.
       Not closed: yt-dlp follows a site's own redirects unchecked, and a
       name that changes its answer between the check and the fetch (DNS
       rebinding) can still get past.
-- [ ] **L43.** `with sqlite3.connect()` does not close connections (it only
+- [x] **L43.** `with sqlite3.connect()` does not close connections (it only
       commits); use `contextlib.closing`.
+      **Fixed** in one place rather than twenty: `navidrome.open_db`
+      returns a connection whose `with` also closes it, and a connection
+      that fails its first query is closed before raising. state.db's one
+      long-lived connection is meant to stay open. Reproduced first.
 - [ ] **L44.** `audio_bitrate` is unvalidated text and `rate_limit_sleep`
       unbounded (`config.py:48-51`).
 - [ ] **L45.** Focus rings are `box-shadow`, which vanish in forced-colours

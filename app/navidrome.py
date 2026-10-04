@@ -111,19 +111,40 @@ def login(username: str, password: str) -> Identity:
     return identity
 
 
+class _Closing(sqlite3.Connection):
+    """A connection that `with` closes as well as commits.
+
+    sqlite3's own context manager only ends the transaction, so every
+    `with open_db() ...` left its connection - a file handle and a read
+    lock's worth of WAL bookkeeping on Navidrome's database - for the
+    garbage collector to find.
+    """
+
+    def __exit__(self, *exc: object) -> bool:
+        try:
+            return super().__exit__(*exc)
+        finally:
+            self.close()
+
+
 def open_db() -> sqlite3.Connection:
-    """Navidrome's database, read-only."""
+    """Navidrome's database, read-only. Closed by the `with` that uses it."""
     path = settings.navidrome_db
     if not path.is_file():
         raise Unavailable(f"no database at {path}")
     try:
         # mode=ro still reads the write-ahead log, so the view is current
         # rather than a stale snapshot. immutable=1 would be faster and wrong.
-        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5,
+                                     factory=_Closing)
+    except sqlite3.Error as exc:
+        raise Unavailable(f"{exc}") from exc
+    try:
         # A mount pointing somewhere unexpected opens fine and fails on the
         # first real query, so check for a table we actually need.
         connection.execute("select 1 from media_file limit 1")
     except sqlite3.Error as exc:
+        connection.close()
         raise Unavailable(f"{exc}") from exc
     connection.row_factory = sqlite3.Row
     return connection
