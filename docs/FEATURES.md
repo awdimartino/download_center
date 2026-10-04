@@ -941,6 +941,9 @@ recur but rarely do, and facts that are status rather than health.
   the tags.
 - A failing query replaces its section with "Checks unavailable"; the rest
   still render.
+- The checks that read Navidrome are kept for up to a minute per person,
+  and sooner if the tracks, your plays and ratings, a duplicate decision or
+  the disk audit change. Disk, uptime and free space are read every time.
 
 ---
 

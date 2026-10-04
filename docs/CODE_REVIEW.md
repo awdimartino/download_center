@@ -739,10 +739,13 @@ it less likely.
       calls per known album before, one listing after. The page shares one
       in-flight request.
 
-- [ ] **M39. Health does ~8 full scans and the duplicate finder per
+- [x] **M39. Health does ~8 full scans and the duplicate finder per
       request, polled every five minutes per open tab.** `app/health.py`,
       `app/static/js/main.js:152`. *Fix:* cache per user for a minute on the
       database stamp.
+      **Fixed** as suggested: `health._from_navidrome_cached`, keyed on
+      `library_stamp`, the duplicate decisions, the audit's time and a
+      one-minute clock; each report deep-copies it. Reproduced first.
 
 ---
 

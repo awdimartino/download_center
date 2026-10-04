@@ -16,6 +16,7 @@ state goes through Navidrome's HTTP API instead.
 
 from __future__ import annotations
 
+import copy
 import logging
 import shutil
 import sqlite3
@@ -25,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import diskaudit, navidrome, uuidtags
+from . import diskaudit, memo, navidrome, uuidtags
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.health")
@@ -466,6 +467,84 @@ def _duration(seconds: float) -> str:
     return f"{minutes}m"
 
 
+# How long Health's Navidrome checks are kept at most. Each request ran
+# about eight full scans and the duplicate finder, and every open tab asks
+# every five minutes; nothing they report needs to be fresher than this.
+CACHE_SECONDS = 60
+
+
+def _decisions_version() -> tuple:
+    """What changes the duplicates row besides the library itself."""
+    from . import store
+
+    return tuple(store.connection().execute(
+        "select (select count(*) from duplicate_dismissed),"
+        "       (select coalesce(max(id), 0) from duplicate_quarantined)"
+    ).fetchone())
+
+
+def _from_navidrome(connection: sqlite3.Connection,
+                    libraries: list[dict[str, Any]], identity: Any,
+                    user_id: str, audit: Any) -> tuple:
+    """The checks that read Navidrome's database: (sections, the count of
+    stamped tracks in the index, the duplicates row)."""
+    sections: list[Section] = []
+    indexed_stamped: int | None = None
+    live = navidrome.live_clause(connection, [lib["id"] for lib in libraries])
+    # Navidrome's schema moves between releases, and json_extract
+    # needs a SQLite built with JSON1. One section failing should
+    # cost that section, not the whole panel.
+    builders = (
+        lambda c, l: _identity_section(c, l, user_id, audit),
+        lambda c, l: _library_section(c, l, libraries),
+        lambda c, l: _metadata_section(c, l),
+    )
+    for build in builders:
+        try:
+            sections.append(build(connection, live))
+        except sqlite3.Error as exc:
+            sections.append(Section(
+                "Checks unavailable",
+                [Check("unavailable", "Query failed", "—",
+                       INFO, str(exc)[:120])]))
+    # Aliased `mf`, because `live` is written in terms of it. Without
+    # the alias this raised "no such column: mf.missing" into a bare
+    # suppress, so the stale-index check below silently never fired -
+    # and that check is the only thing that can tell "never stamped"
+    # from "stamped but not yet scanned". Logged rather than
+    # swallowed for the same reason.
+    try:
+        indexed_stamped = _scalar(connection, f"""
+            select count(*) from media_file mf
+             where {live}
+               and json_extract(mf.tags, '{UUID_TAG}') is not null""")
+    except sqlite3.Error as exc:
+        log.warning("could not count stamped tracks in the index, so "
+                    "the stale-index check is unavailable: %s", exc)
+
+    duplicates_check = _duplicates_check(connection, identity)
+    return sections, indexed_stamped, duplicates_check
+
+
+def _from_navidrome_cached(connection: sqlite3.Connection,
+                           libraries: list[dict[str, Any]], identity: Any,
+                           user_id: str, audit: Any) -> tuple:
+    """`_from_navidrome`, kept for up to a minute while nothing it reads has
+    changed: the tracks and this person's annotations, the duplicate
+    decisions and quarantine record, and the disk audit. Shared, so the
+    caller copies it before adding rows."""
+    stamp = navidrome.library_stamp(connection, user_id or None)
+    if stamp is None:
+        # No cheap way to tell whether the library changed: read it fresh.
+        return _from_navidrome(connection, libraries, identity, user_id, audit)
+    version = (stamp, _decisions_version(),
+               getattr(audit, "taken_at", None),
+               int(time.time() // CACHE_SECONDS))
+    key = ("health", user_id, tuple(sorted(lib["id"] for lib in libraries)))
+    return memo.cached(key, version, lambda: _from_navidrome(
+        connection, libraries, identity, user_id, audit))
+
+
 def report(started_at: float,
            libraries: list[dict[str, Any]] | None = None,
            identity=None) -> dict[str, Any]:
@@ -491,39 +570,9 @@ def report(started_at: float,
         error = str(exc)
     else:
         with connection:
-            live = navidrome.live_clause(connection, [lib["id"] for lib in libraries])
-            # Navidrome's schema moves between releases, and json_extract
-            # needs a SQLite built with JSON1. One section failing should
-            # cost that section, not the whole panel.
-            builders = (
-                lambda c, l: _identity_section(c, l, user_id, audit),
-                lambda c, l: _library_section(c, l, libraries),
-                lambda c, l: _metadata_section(c, l),
-            )
-            for build in builders:
-                try:
-                    sections.append(build(connection, live))
-                except sqlite3.Error as exc:
-                    sections.append(Section(
-                        "Checks unavailable",
-                        [Check("unavailable", "Query failed", "—",
-                               INFO, str(exc)[:120])]))
-            # Aliased `mf`, because `live` is written in terms of it. Without
-            # the alias this raised "no such column: mf.missing" into a bare
-            # suppress, so the stale-index check below silently never fired -
-            # and that check is the only thing that can tell "never stamped"
-            # from "stamped but not yet scanned". Logged rather than
-            # swallowed for the same reason.
-            try:
-                indexed_stamped = _scalar(connection, f"""
-                    select count(*) from media_file mf
-                     where {live}
-                       and json_extract(mf.tags, '{UUID_TAG}') is not null""")
-            except sqlite3.Error as exc:
-                log.warning("could not count stamped tracks in the index, so "
-                            "the stale-index check is unavailable: %s", exc)
-
-            duplicates_check = _duplicates_check(connection, identity)
+            sections, indexed_stamped, duplicates_check = copy.deepcopy(
+                _from_navidrome_cached(connection, libraries, identity,
+                                       user_id, audit))
 
     sections.append(_disk_section(audit))
     stale = _stale_index_check(indexed_stamped, audit)

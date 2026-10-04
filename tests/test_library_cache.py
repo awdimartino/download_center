@@ -106,3 +106,43 @@ def test_opening_an_album_reads_only_that_folder(db, identity):
     opened = library.tracks(identity, 1, "A_1/B")
 
     assert [t["id"] for t in opened["items"]] == ["in"]
+
+
+# --- Health (CODE_REVIEW M39) ------------------------------------------------
+# Every request ran about eight full scans and the duplicate finder, polled
+# every five minutes by every open tab.
+
+def test_health_reads_navidrome_once_until_something_changes(db, identity,
+                                                              monkeypatch):
+    from app import health
+
+    add_track(db, "a", path="A/B/1.mp3", updated_at="2026-10-01")
+    reads = _counting(monkeypatch, health, "_from_navidrome")
+
+    health.report(0, identity.libraries, identity)
+    health.report(0, identity.libraries, identity)
+    assert len(reads) == 1
+
+    _sql(db, "INSERT INTO annotation (user_id, item_id, item_type, play_count)"
+             " VALUES ('u-alex', 'a', 'media_file', 1)")
+    health.report(0, identity.libraries, identity)
+    assert len(reads) == 2
+
+    clock = time.time() + health.CACHE_SECONDS
+    monkeypatch.setattr(health.time, "time", lambda: clock)
+    health.report(0, identity.libraries, identity)
+    assert len(reads) == 3
+
+
+def test_a_health_report_is_not_shared_with_the_next(db, identity):
+    from app import health
+
+    add_track(db, "a", path="A/B/1.mp3", updated_at="2026-10-01")
+    health.report(0, identity.libraries, identity)
+    second = health.report(0, identity.libraries, identity)
+
+    # Rows are added to each report after the cached part; added to the
+    # shared copy, they would pile up from one request to the next.
+    rows = [len(s["checks"]) for s in second["sections"]]
+    third = health.report(0, identity.libraries, identity)
+    assert [len(s["checks"]) for s in third["sections"]] == rows
