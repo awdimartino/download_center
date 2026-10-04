@@ -219,9 +219,12 @@ def write_tags(path: Path, **fields: Any) -> None:
     A number keeps whatever total was written beside it: `discnumber` of
     "1/2" edited to disc 2 becomes "2/2", because dropping the total would
     change how `read_meta` reads the release and rename every file on it.
+    `track_total` replaces the track total instead - for a combine, which
+    renumbers into a release whose length none of the old totals describe.
     """
     from mutagen import File as MutagenFile
 
+    track_total = fields.get("track_total")
     wanted = {name: value for name, value in fields.items()
               if value is not None and name in _EASY}
     if not wanted:
@@ -239,7 +242,9 @@ def write_tags(path: Path, **fields: Any) -> None:
     for name, value in wanted.items():
         key = _EASY[name]
         text = str(value).strip()
-        if name in ("track_no", "disc_no"):
+        if name == "track_no" and track_total:
+            text = f"{text}/{int(track_total)}"
+        elif name in ("track_no", "disc_no"):
             existing = (audio.tags.get(key) or [""])[0]
             _, slash, total = str(existing).partition("/")
             text = f"{text}/{total}" if slash and total else text

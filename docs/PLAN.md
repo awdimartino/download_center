@@ -160,6 +160,17 @@ Tick items as they land.
       query, cheap enough not to need the Duplicates panel's cache-on-first-
       open treatment. Merge and rename moved to the `### Last` section
       below, at the user's steer - a tally was worth landing on its own.
+- [x] **Library redesign and combine.** Done 2026-10-03, from the mockup in
+      `design/library-redesign/library.html`. Albums / Artists / Needs
+      attention tabs, a cover grid with sort and Albums/Singles chips, songs
+      in search results, the album editor moved into a side panel, and a
+      select mode whose main action is **Combine into album** (several
+      albums and loose tracks into one, with order and cover chosen first;
+      Spotify suggests the album name). YouTube covers are now squared on
+      download (`covers.square`), with **Fetch cover** in the panel and
+      **Square all** in Needs attention for what arrived before. See
+      ARCHITECTURE.md, "Library". Not built from the mockup: an undo after
+      a combine - a combine confirms in its own dialog instead.
 - [ ] **Session 9 — rename and setup docs.** Rename to Navidrome Companion
       (image, compose, README; needs a Pi redeploy), then a from-scratch
       setup guide: container, mounts, Navidrome PID config, beets config,

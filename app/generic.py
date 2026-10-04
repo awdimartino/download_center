@@ -62,6 +62,23 @@ def _strip_artist_prefix(title: str, artist: str) -> str:
     return title[len(prefix):].strip() if lowered.startswith(prefix) else title
 
 
+def _thumbnail(info: dict[str, Any]) -> str | None:
+    """The best thumbnail on offer.
+
+    A playlist is read flat, and a flat entry carries only the `thumbnails`
+    list - no `thumbnail` - so every track from a playlist arrived with no
+    cover at all. The largest of them is usually a letterboxed 4:3 frame,
+    which `covers.square` cuts back down to the cover.
+    """
+    if info.get("thumbnail"):
+        return info["thumbnail"]
+    sized = [t for t in info.get("thumbnails") or [] if t.get("url")]
+    if not sized:
+        return None
+    best = max(sized, key=lambda t: (t.get("width") or 0) * (t.get("height") or 0))
+    return best["url"]
+
+
 def _to_item(info: dict[str, Any]) -> dict[str, Any] | None:
     video_id = info.get("id")
     if not video_id:
@@ -103,7 +120,7 @@ def _to_item(info: dict[str, Any]) -> dict[str, Any] | None:
         "disc_no": 1,
         "release_date": str(year) if year else None,
         "duration_ms": int(duration * 1000) if duration else None,
-        "cover_url": info.get("thumbnail"),
+        "cover_url": _thumbnail(info),
         # Present means "already located": the worker skips matching.
         "direct_url": url,
     }

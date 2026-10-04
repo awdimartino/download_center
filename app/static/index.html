@@ -238,16 +238,18 @@
     <p id="browse-empty" class="empty">Search for an artist, album, or track.</p>
   </section>
 
-  <!-- Everything you own, one row per album. The filter narrows to albums
-       MusicBrainz has not confirmed; it is a filter rather than the whole
-       list, because hiding matched albums is what made one unreachable once
-       it had been matched. -->
+  <!-- Everything you own, three ways in: the albums themselves, who made
+       them, and what needs a person. It used to be one long list of rows
+       with the editor folded inside each, which made the list hard to read
+       and the editor hard to use. -->
   <section id="view-library" hidden>
     <div class="panel-note">
-      <p>
-        Every album in your library. The filter narrows to the ones
-        MusicBrainz has never confirmed.
-      </p>
+      <div id="library-tabs" class="lib-tabs" role="tablist" aria-label="Library">
+        <button type="button" role="tab" data-tab="albums">Albums</button>
+        <button type="button" role="tab" data-tab="artists">Artists</button>
+        <button type="button" role="tab" data-tab="todo">Needs attention
+          <span id="library-todo-count" class="lib-count-pill" hidden></span></button>
+      </div>
       <button id="library-rescan" class="ghost" type="button">Rescan</button>
       <button id="library-genres-toggle" class="ghost" type="button">Genres</button>
     </div>
@@ -259,36 +261,54 @@
       <label class="field-inline">
         <span class="sr-only">Search your library</span>
         <input id="library-search" type="search" autocomplete="off"
-               placeholder="Search artist or album">
+               placeholder="Albums, artists or songs">
       </label>
-      <label class="field-inline library-show">
-        <span class="sr-only">Show</span>
-        <select id="library-show">
-          <option value="all">All albums</option>
-          <option value="review">Needs review</option>
-          <option value="unmatched">No MusicBrainz match</option>
-          <option value="nogain">No ReplayGain</option>
+      <div id="library-kind" class="lib-chips" role="group" aria-label="Show">
+        <button type="button" data-kind="all">All</button>
+        <button type="button" data-kind="album">Albums</button>
+        <button type="button" data-kind="single">Singles</button>
+      </div>
+      <label class="field-inline lib-sort">
+        <span class="sr-only">Sort</span>
+        <select id="library-sort">
+          <option value="recent">Recently added</option>
+          <option value="artist">Artist A–Z</option>
+          <option value="album">Album A–Z</option>
+          <option value="year">Year</option>
+          <option value="plays">Most played</option>
         </select>
       </label>
+      <div id="library-layout" class="lib-seg" role="group" aria-label="Layout">
+        <button type="button" data-layout="grid" title="Covers" aria-label="Covers">▦</button>
+        <button type="button" data-layout="list" title="List" aria-label="List">☰</button>
+      </div>
+      <button id="library-select" class="ghost" type="button" aria-pressed="false">Select</button>
     </div>
+    <!-- A narrowing reached from Needs attention ("see all"), shown as a
+         chip that clears it rather than as a select nobody would find. -->
+    <div id="library-filter" class="lib-filter" hidden></div>
     <p id="library-count" class="panel-sub" hidden></p>
-    <button id="library-gain-all" class="ghost" type="button" hidden></button>
-    <!-- Pinned under the header while the list scrolls. Everything here is
-         about something started from a row, and the row is usually a long
-         way down: a status written at the top of the panel was off screen
-         by the time it said anything. In the panel, not the page banner,
-         which sits outside every section and followed you onto every tab. -->
-    <div class="library-status">
+    <!-- Pinned under the header while the list scrolls, and carried into
+         the album panel while one is open: everything here is about
+         something started from an album, and a status the album covered
+         was a status nobody saw. -->
+    <div id="library-status" class="library-status">
       <p id="library-op" class="warn" hidden></p>
       <div id="library-progress" class="notice" hidden></div>
-      <!-- The releases beets found and would not choose between. Shown in
-           the panel rather than a dialog: a modal over a list on a phone is
-           how the last three layout bugs happened. -->
+      <!-- The releases beets found and would not choose between. -->
       <section id="candidates" class="candidates" hidden></section>
     </div>
+    <div id="library-suggest"></div>
     <div id="library"></div>
     <p id="library-empty" class="empty">Nothing here yet.</p>
     <button id="library-more" class="ghost" type="button" hidden>Show more</button>
+
+    <!-- One album, opened beside the list rather than inside it. -->
+    <aside id="library-drawer" class="lib-drawer" hidden aria-label="Album"></aside>
+    <!-- What is selected and what can be done with it, while selecting. -->
+    <div id="library-bar" class="lib-bar" role="toolbar" aria-label="Selection" hidden></div>
+    <!-- Combining the selection into one album. -->
+    <div id="library-dialog" class="lib-dialog" hidden></div>
   </section>
 
   <section id="view-health" hidden>

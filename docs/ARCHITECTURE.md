@@ -371,10 +371,65 @@ and will never have an ID, so those albums live in the filter for ever and
 that is correct. The count is a statement about MusicBrainz, not a queue
 that empties.
 
-The album is the unit, and a row opens to show its tracks. The listing
-**counts** tracks rather than building them - paging 2,800 albums to show
-fifty rows would otherwise materialise 6,800 track objects - and one
-album's tracks are read by their own query when a row is opened.
+**Three ways in** (2026-10-03). The panel was one long list of rows with
+the whole editor folded inside each, which made the list hard to read and
+the editor hard to use. It is now three tabs:
+
+- **Albums** - a cover grid (or a dense list), with All / Albums / Singles
+  chips, a sort (recently added, artist, album, year, most played) and a
+  search that also returns **songs** whose titles match
+  (`library._songs`, first page only, `LIKE` with its wildcards escaped).
+  A *single* is a folder of one track, which is what every YouTube download
+  is. `GET /api/library` takes `kind`, `sort` and `artist` for this; every
+  album now carries `year`, `duration`, this person's `plays` (summed off
+  `annotation.play_count`, probed because the column is not guaranteed)
+  and `kind`.
+- **Artists** - `GET /api/library/artists` (`library.artists`), grouped by
+  album artist without regard to case, each with a mosaic of its four most
+  played covers. An artist's page is `GET /api/library?artist=` split into
+  Albums and Singles, which is where a record downloaded song by song shows
+  up as a pile.
+- **Needs attention** - `GET /api/library/attention` (`library.attention`):
+  singles that belong together, singles already on an album, albums needing
+  review, albums with no ReplayGain. **Covers with bars** come separately
+  from `GET /api/library/attention/covers` (`library.cover_survey`), because
+  finding them opens the first track of every album - seconds on the Pi the
+  first time. `covers.barred()` remembers each answer against the file's
+  mtime, so later surveys are cheap, and the list's "Cover" flags come only
+  from that memory (`covers.barred_known`) so the listing never opens a file.
+
+*Singles that belong together* are two or more single-track folders by one
+album artist. A single whose song is already on one of that artist's real
+albums is **not** offered: that is a duplicate beside its album (about fifty
+of the duplicate groups were exactly that), and combining it would put the
+song on the album twice. It is listed apart, to be set aside instead.
+"Not together" dismissals live in the browser, keyed on exactly which
+singles were offered, so a new one arriving offers the group again.
+
+An album opens in a **panel beside the list** rather than inside it: cover,
+status, Edit details, Fetch cover, Find matches, More (ReplayGain, Mark
+reviewed, Combine with…, Quarantine), then the tracks. The status line
+(`#library-status`) is carried into the panel while it is open, since the
+panel covers it. The listing still **counts** tracks rather than building
+them - paging 2,800 albums would otherwise materialise 6,800 track objects -
+and one album's tracks are read by their own query when it is opened.
+
+**Combining** (`POST /api/library/combine`, `combine.py`). Select mode ticks
+albums in the grid and tracks inside an open album; the selection survives
+searches and tabs. Combine asks which album they end up in (a selected album,
+which keeps its name and UUID, or a new name - typing an existing album's
+name joins it), the track order, and the cover. It is the filer's existing
+retag in a fixed order: the kept album first, renamed only if it must be so
+its UUID moves with it; every other album joins it through `retag_album`,
+which adopts the incumbent's UUID; loose tracks through `retag_track`; then
+renumbering (`write_tags(track_total=)` replaces the old totals) and the
+chosen cover on every file, read *before* anything moved. Track UUIDs are
+never touched. An operation, with per-file progress, because three albums
+is dozens of retags. `POST /api/library/combine/guess` asks Spotify which
+full album most of the songs appear on - singles and EPs do not vote, and a
+one-song guess with several songs asked is no guess - and only ever fills
+an empty name. Like every folder-wide action it trusts that one folder is one
+album; see the multi-album-folder note in PLAN.md.
 
 **Untagged means no MusicBrainz recording id**, read off Navidrome's database
 every time. Nothing is stored, so a track leaves the list by gaining an id and
@@ -398,10 +453,10 @@ UUID and the filer moves each file. One function decides where a track lives.
 number, title and artist are plain inputs in its row and save the moment
 one loses focus with a changed value (`POST /api/library/track/edit`,
 every field optional); disc number and moving a track to another album are
-rarer, so they sit one tap away behind "More" rather than in the row. An
-edit always collapses the album afterward rather than re-reading it -
-Navidrome has not rescanned yet, so the tracks a re-read would show are the
-ones from before the save.
+rarer, so they sit one tap away behind "More" rather than in the row. After
+an edit the panel keeps showing what was typed rather than re-reading the
+album - Navidrome has not rescanned yet, so the tracks a re-read would show
+are the ones from before the save - while the list behind it is refreshed.
 
 The album editor's "merge into an existing album" search is `GET
 /api/library` again, the same substring search the panel's own search box
@@ -540,12 +595,13 @@ counts, every 5 minutes).
 health, duplicates, playlists, listening, settings. It still wants splitting
 (FIXES item 29).
 
-The Library panel began as the Staging panel's markup with a different
-question behind it. Its class names now say what they style - `album-name`,
-`album-meta`, `album-library`, `album-actions` - and the two that styled
-nothing at all went. `test_frontend.py` fails the build on an id the
-stylesheet styles that the markup does not have, and on a font size, weight
-or spacing that does not come from the scale.
+The Library panel's classes are prefixed `lib-` since the 2026-10-03
+redesign (grid, panel, selection bar, combine dialog); the old row classes
+went with the rows. Tone on a flag or pill is `tone-warn`/`tone-ok`, never
+`.warn` - that is the global banner class and brings a border and padding
+with it. `test_frontend.py` fails the build on an id the stylesheet styles
+that the markup does not have, and on a font size, weight or spacing that
+does not come from the scale.
 
 There is no JavaScript test runner — Node is not available here or in CI — so
 `tests/test_frontend.py` checks the *joins* instead: no duplicate ids, every

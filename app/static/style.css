@@ -1507,10 +1507,557 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 
 .library-controls .field-inline { flex: 1 1 14rem; }
 .library-controls input[type="search"] { width: 100%; }
-.library-controls .library-show { flex: 0 1 12rem; }
-.library-show select { width: 100%; }
+.library-controls .lib-sort { flex: 0 1 11rem; }
+.lib-sort select { width: 100%; }
 
-#library-gain-all { margin-top: var(--s-2); }
+/* --- library: the three ways in ------------------------------------------- */
+
+.lib-tabs {
+  display: flex;
+  gap: var(--s-1);
+  padding: var(--s-1);
+  margin-right: auto;
+  background: var(--panel);
+  border-radius: 999px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.lib-tabs button {
+  background: transparent;
+  color: var(--muted);
+  font-weight: var(--w-normal);
+}
+.lib-tabs button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.lib-tabs button[aria-selected="true"] { background: var(--panel-3); color: var(--text); }
+.lib-count-pill {
+  min-width: 1.4em;
+  padding: 0 var(--s-1);
+  border-radius: 999px;
+  background: var(--warn);
+  color: var(--on-warn);
+  font-size: var(--t-xs);
+  font-weight: var(--w-bold);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.lib-chips { display: flex; gap: var(--s-1); flex-wrap: wrap; }
+.lib-chips button {
+  min-height: 34px;
+  background: transparent;
+  border-color: var(--line);
+  color: var(--muted);
+  font-weight: var(--w-normal);
+}
+.lib-chips button:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.lib-chips button[aria-pressed="true"] {
+  background: var(--tint-accent);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.lib-seg { display: flex; padding: var(--s-0); background: var(--panel); border-radius: 999px; }
+.lib-seg button {
+  min-height: 32px;
+  padding: 0 var(--s-3);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--t-md);
+}
+.lib-seg button[aria-pressed="true"] { background: var(--panel-3); color: var(--text); }
+#library-select[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+
+.lib-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+  padding-left: var(--s-3);
+  border-radius: 999px;
+  background: var(--tint-accent);
+  color: var(--accent);
+  font-size: var(--t-sm);
+}
+.lib-filter button { min-height: 30px; background: transparent; color: var(--accent); }
+
+.lib-section-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin: var(--s-5) 0 var(--s-3);
+  font-size: var(--t-lg);
+  font-weight: var(--w-bold);
+}
+.lib-section-title small { color: var(--faint); font-size: var(--t-sm); font-weight: var(--w-normal); }
+
+/* --- library: albums as covers, or as a list ----------------------------- */
+
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--s-5) var(--s-4);
+  margin-top: var(--s-3);
+}
+
+.lib-card, .lib-mini, .lib-row {
+  position: relative;
+  min-width: 0;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  outline: none;
+}
+.lib-card:focus-visible, .lib-mini:focus-visible, .lib-row:focus-visible { box-shadow: var(--ring); }
+
+.lib-card { display: flex; flex-direction: column; gap: var(--s-0); }
+.lib-card-cover { position: relative; }
+.lib-card .art {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.lib-card:hover .art { transform: translateY(-2px); }
+.lib-card.picked .art, .lib-mini.picked .art { box-shadow: 0 0 0 3px var(--accent); }
+
+.lib-card-title {
+  display: block;
+  margin-top: var(--s-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
+}
+.lib-card-sub {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.lib-flags {
+  position: absolute;
+  top: var(--s-2);
+  left: var(--s-2);
+  right: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
+.lib-flag {
+  padding: 0 var(--s-2);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--text);
+  font-size: var(--t-xs);
+  font-weight: var(--w-bold);
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  line-height: 1.7;
+}
+.lib-flag.tone-warn { color: var(--warn); }
+
+/* The tick in a cover's corner, shown only while selecting. */
+.lib-tick {
+  display: none;
+  position: absolute;
+  top: var(--s-2);
+  right: var(--s-2);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--text) 75%, transparent);
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
+.selecting .lib-tick { display: block; }
+.picked .lib-tick { border-color: var(--accent); background: var(--accent); }
+.picked .lib-tick::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 3px;
+  width: 6px;
+  height: 11px;
+  border: solid var(--on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.lib-rows { display: flex; flex-direction: column; margin-top: var(--s-3); }
+.lib-row {
+  display: grid;
+  grid-template-columns: auto 48px 1fr auto auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2);
+}
+.lib-row:hover { background: var(--panel); }
+.lib-row.picked { background: var(--tint-accent); }
+.lib-row .art { width: 48px; height: 48px; }
+.lib-row .lib-tick { position: relative; top: auto; right: auto; }
+.lib-row .lib-flags { position: static; }
+.lib-row .lib-flag { background: var(--panel-2); backdrop-filter: none; }
+.lib-row-text { min-width: 0; }
+.lib-row-text .lib-card-title { margin-top: 0; }
+.lib-row-library { color: var(--faint); font-size: var(--t-sm); }
+
+/* Songs whose titles matched a search, above the albums that did. */
+.lib-songs { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--s-1) var(--s-4); margin-top: var(--s-3); }
+.lib-songs .lib-section-title { grid-column: 1 / -1; margin-bottom: 0; }
+.lib-song {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  line-height: 1.4;
+  align-items: center;
+  gap: 0 var(--s-3);
+  width: 100%;
+  min-height: 0;
+  padding: var(--s-1) var(--s-2);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font-weight: var(--w-normal);
+  text-align: left;
+}
+.lib-song:hover { background: var(--panel); }
+.lib-song .art { width: 36px; height: 36px; grid-row: span 2; }
+.lib-song-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-md); }
+
+/* --- library: artists ------------------------------------------------------ */
+
+.lib-artists {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--s-5) var(--s-4);
+  margin-top: var(--s-4);
+}
+.lib-artist {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s-0);
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font-weight: var(--w-normal);
+  text-align: center;
+  white-space: normal;
+  line-height: 1.4;
+}
+.lib-artist:hover { background: transparent; }
+.lib-artist:hover .lib-mosaic { transform: translateY(-2px); }
+
+.lib-mosaic {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--panel-2);
+  box-shadow: var(--shadow);
+  transition: transform .15s ease;
+}
+.lib-mosaic.four { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.lib-mosaic .art { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
+
+.lib-back { margin-top: var(--s-4); }
+.lib-artist-head { display: flex; align-items: center; gap: var(--s-4); margin: var(--s-4) 0 var(--s-2); }
+.lib-artist-head .lib-mosaic { width: 96px; flex: none; }
+.lib-artist-name { margin: 0; font-size: var(--t-2xl); font-weight: var(--w-bold); }
+
+/* --- library: suggestions and needs attention ----------------------------- */
+
+.lib-suggest, .lib-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+.lib-suggest {
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: var(--r-lg);
+  background: linear-gradient(90deg, var(--tint-accent), transparent 85%);
+}
+.lib-suggest-text { flex: 1 1 14rem; min-width: 0; font-size: var(--t-md); }
+.lib-suggest-text small { display: block; color: var(--muted); font-size: var(--t-sm); }
+
+.lib-stack { display: flex; flex: none; }
+.lib-stack .art {
+  width: 40px;
+  height: 40px;
+  margin-left: calc(var(--s-3) * -1);
+  border-radius: var(--r-sm);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.lib-stack .art:first-child { margin-left: 0; }
+
+.lib-todo {
+  margin-top: var(--s-4);
+  padding: var(--s-4);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+.lib-todo-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.lib-todo-text { flex: 1 1 18rem; min-width: 0; }
+.lib-todo-text h3 { margin: 0; font-size: var(--t-lg); font-weight: var(--w-bold); }
+.lib-todo-text h3 small { color: var(--faint); font-size: var(--t-sm); font-weight: var(--w-normal); }
+.lib-todo-text p { margin: var(--s-0) 0 0; color: var(--muted); font-size: var(--t-sm); }
+.lib-done { color: var(--ok); font-size: var(--t-sm); }
+.lib-group { padding: var(--s-3) 0; border-top: 1px solid var(--line-soft); }
+.lib-todo-head + .lib-group { margin-top: var(--s-3); }
+
+.lib-strip { display: flex; gap: var(--s-3); overflow-x: auto; padding: var(--s-3) 0 var(--s-1); }
+.lib-mini { flex: 0 0 112px; }
+.lib-mini .art { width: 112px; height: 112px; border-radius: var(--r-sm); }
+.lib-mini .lib-card-title { font-size: var(--t-sm); }
+.lib-mini .lib-card-sub { font-size: var(--t-xs); }
+
+/* --- library: one album, in a panel beside the list ------------------------
+   Over the list rather than in it. Fixed, with its own scroll, so a long
+   track list scrolls inside the panel and the page behind stays put. */
+
+.lib-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  width: min(560px, 100%);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--panel);
+  box-shadow: var(--float-shadow);
+}
+.lib-drawer-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  padding-top: calc(var(--s-3) + env(safe-area-inset-top, 0px));
+  background: var(--panel);
+}
+.lib-drawer-body { padding: 0 var(--s-5) var(--s-6); }
+.lib-drawer .library-status { position: static; background: transparent; margin-top: var(--s-3); }
+
+.lib-hero { display: flex; align-items: flex-end; gap: var(--s-4); }
+.lib-hero .art {
+  width: 176px;
+  aspect-ratio: 1;
+  flex: none;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+}
+.lib-hero-text { min-width: 0; }
+.lib-hero-title {
+  margin: var(--s-2) 0 var(--s-0);
+  font-size: var(--t-2xl);
+  font-weight: var(--w-bold);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.lib-artist-link {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--t-lg);
+  white-space: normal;
+  text-align: left;
+}
+.lib-artist-link:hover { background: transparent; text-decoration: underline; }
+.lib-hero-meta { margin: var(--s-1) 0 0; color: var(--muted); font-size: var(--t-sm); }
+
+.lib-pills { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: var(--s-3); }
+.lib-pill {
+  display: inline-block;
+  padding: 0 var(--s-2);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: var(--t-xs);
+  line-height: 1.9;
+}
+.lib-pill.tone-ok { background: var(--tint-ok); color: var(--ok); }
+.lib-pill.tone-warn { background: var(--tint-warn); color: var(--warn); }
+
+.lib-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-4) 0; }
+.lib-more { position: relative; }
+.lib-menu {
+  position: absolute;
+  top: calc(100% + var(--s-1));
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 14rem;
+  padding: var(--s-1);
+  border-radius: var(--r-md);
+  background: var(--panel-3);
+  box-shadow: var(--float-shadow);
+}
+.lib-menu button { justify-content: flex-start; border-radius: var(--r-sm); background: transparent; }
+.lib-menu button:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+
+.lib-panel { margin-bottom: var(--s-4); padding: 0 var(--s-3); border-radius: var(--r-md); background: var(--panel-2); }
+.lib-drawer .cover-picker { margin-bottom: var(--s-4); }
+
+.lib-tracks-head { display: flex; align-items: baseline; justify-content: space-between; }
+.lib-tracks { border-top: 1px solid var(--line-soft); }
+
+/* --- library: selecting, and combining ------------------------------------- */
+
+.lib-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--float-gap) + env(safe-area-inset-bottom, 0px));
+  z-index: 46;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  max-width: calc(100% - var(--s-4) * 2);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border-radius: var(--r-lg);
+  background: var(--panel-3);
+  box-shadow: var(--float-shadow);
+  transform: translateX(-50%);
+}
+.lib-bar-what { margin-right: var(--s-2); font-size: var(--t-md); }
+/* Room under the last row of covers, so the bar never sits on top of it. */
+.selecting #library-more,
+.selecting #library-empty { margin-bottom: calc(var(--s-6) * 3); }
+.selecting #library { padding-bottom: calc(var(--s-6) * 3); }
+.selecting .lib-drawer-body { padding-bottom: calc(var(--s-6) * 4); }
+
+.lib-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-4);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.lib-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: calc(100vh - var(--s-4) * 2);
+  max-height: calc(100dvh - var(--s-4) * 2);
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  box-shadow: var(--float-shadow);
+}
+.lib-sheet-head { padding: var(--s-4) var(--s-5); border-bottom: 1px solid var(--line-soft); }
+.lib-sheet-head h2 { margin: 0; font-size: var(--t-xl); }
+.lib-sheet-head p { margin: var(--s-0) 0 0; color: var(--muted); font-size: var(--t-sm); }
+.lib-sheet-body {
+  display: grid;
+  gap: var(--s-5);
+  padding: var(--s-4) var(--s-5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.lib-sheet-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-5);
+  border-top: 1px solid var(--line-soft);
+}
+.lib-sheet-summary { margin-right: auto; color: var(--muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
+.lib-sheet-summary.tone-warn { color: var(--warn); }
+
+.lib-step h3 {
+  margin: 0 0 var(--s-2);
+  color: var(--faint);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.lib-target {
+  display: grid;
+  grid-template-columns: auto 40px 1fr;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.lib-target:hover { background: var(--panel-2); }
+.lib-target.on { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: var(--tint-accent); }
+.lib-target .art { width: 40px; height: 40px; }
+.lib-target-text { min-width: 0; font-size: var(--t-md); overflow-wrap: anywhere; }
+.lib-target-text small { display: block; color: var(--muted); font-size: var(--t-sm); }
+.lib-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: var(--t-xl);
+}
+.lib-fields { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
+.lib-fields .edit-field { flex: 1 1 14rem; }
+.lib-fields .edit-field input.wide { min-width: 0; width: 100%; }
+
+.lib-note { margin: var(--s-2) 0 0; color: var(--muted); font-size: var(--t-sm); }
+.lib-note.tone-warn { color: var(--warn); }
+.lib-note button { min-height: 28px; }
+.lib-option { display: flex; align-items: flex-start; gap: var(--s-2); margin-top: var(--s-2); font-size: var(--t-md); cursor: pointer; }
+.lib-option input { margin-top: var(--s-0); }
+
+.lib-order { border: 1px solid var(--line-soft); border-radius: var(--r-md); overflow: hidden; }
+.lib-ord {
+  display: grid;
+  grid-template-columns: 1rem 1.75rem 1fr auto auto;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-3);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel);
+  font-size: var(--t-md);
+}
+.lib-ord:last-child { border-bottom: 0; }
+.lib-ord.dragging { opacity: .4; }
+.lib-ord.over { box-shadow: inset 0 2px 0 var(--accent); }
+.lib-grip { color: var(--faint); cursor: grab; user-select: none; }
+.lib-ord-no { color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+.lib-ord-title { min-width: 0; overflow-wrap: anywhere; }
+.lib-ord-title small { display: block; color: var(--faint); font-size: var(--t-xs); }
+.lib-dupe { color: var(--warn); font-size: var(--t-xs); }
+.lib-move { min-height: 28px; padding: 0 var(--s-2); background: transparent; color: var(--faint); }
+
+.lib-cover-pick { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.lib-cover-option { position: relative; cursor: pointer; }
+.lib-cover-option input { position: absolute; opacity: 0; }
+.lib-cover-option .art { width: 72px; height: 72px; border-radius: var(--r-sm); }
+.lib-cover-option input:checked + .art { box-shadow: 0 0 0 3px var(--accent); }
+.lib-cover-option input:focus-visible + .art { box-shadow: var(--ring); }
 
 /* Sticks under the header, whose height JS keeps in --header-h. Opaque, so
    the list does not show through it; below the header and the menu. Its
@@ -1536,18 +2083,6 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   color: var(--muted);
   white-space: nowrap;
 }
-
-.album-track {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s-2);
-  padding: var(--s-1) 0;
-  color: var(--muted);
-}
-
-.album-track .track-no { min-width: 2.5rem; text-align: right; }
-.album-track .track-title { color: var(--text); }
-.album-track.unmatched .track-title { color: var(--muted); }
 
 /* Labelled for a screen reader, invisible on screen. The search box has a
    placeholder, which is not a label - it vanishes the moment you type. */
@@ -1596,50 +2131,22 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 }
 
 
-/* An album row is a head you can click and a body that ignores clicks. The
-   toggle used to be on the whole row with the body inside it, so a click on
-   an input bubbled up and collapsed the album out from under whoever was
-   typing in it. */
-.album-row { border-bottom: 1px solid var(--line-soft); }
-.album-row:last-child { border-bottom: 0; }
-
-.album-head {
-  display: grid;
-  grid-template-columns: auto auto 1fr auto auto auto;
-  align-items: center;
-  gap: var(--s-3);
-  padding: var(--s-3) var(--s-2);
-  cursor: pointer;
-}
-
-.album-head:hover { background: var(--tint-accent); }
-.album-caret { color: var(--muted); width: 1rem; }
-
-.album-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-md); }
-.album-meta { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
-.album-library { font-size: var(--t-sm); color: var(--faint); }
-
-/* The last column of the head: the one thing to do to a whole album. */
-.album-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--s-3);
-  min-width: 0;
-}
-
-.album-body { padding: 0 var(--s-2) var(--s-3) var(--s-5); }
-
+/* One track in the album panel: a tick while selecting, then number, title
+   and artist edited in place, then the way to the rarer edits. */
 .album-track {
   display: grid;
-  grid-template-columns: 2.5rem auto 1fr auto auto auto;
+  grid-template-columns: 3.5rem 1fr 10rem auto;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2);
   padding: var(--s-1) 0;
+  border-bottom: 1px solid var(--line-soft);
 }
-
-.album-track .track-no { color: var(--muted); text-align: right; }
-.album-track .track-meta.dim { color: var(--muted); }
+/* Selecting puts the tick first. It is out of the grid otherwise, so the
+   columns are counted for each state rather than leaving a gap for it. */
+.selecting .album-track { grid-template-columns: auto 3.5rem 1fr 10rem auto; }
+.album-track.picked { background: var(--tint-accent); }
+.album-track .lib-track-tick { display: none; }
+.selecting .album-track .lib-track-tick { display: block; }
 
 /* Track number, title and artist, edited directly in the row - no toggle
    into a separate edit mode first. Sized down from the default 38px input
@@ -1651,9 +2158,9 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   width: 100%;
 }
 .album-track .track-no-input { text-align: right; padding: 0 var(--s-1); }
-.album-track .track-artist-input { width: 10rem; }
+.album-track .track-artist-input { width: 100%; }
 
-.track-editor { padding: 0 0 var(--s-2) 2.5rem; }
+.track-editor { padding: 0 0 var(--s-2) 3.5rem; }
 .edit-field input.wide { min-width: 16rem; }
 
 /* A live match against the whole library, so merging an album means picking
@@ -1692,41 +2199,85 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
 .album-merge-name { overflow-wrap: anywhere; }
 .album-merge-count { flex: none; font-size: var(--t-sm); color: var(--muted); }
 
+/* Covers to choose between, and nothing else changed by choosing one. */
+.cover-picker {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--s-2);
+}
+.cover-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--t-sm);
+}
+.cover-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  min-height: 0;
+  white-space: normal;
+  color: var(--text);
+  font-weight: var(--w-normal);
+  line-height: 1.35;
+  gap: var(--s-0);
+  padding: var(--s-1);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.cover-choice:hover { background: var(--tint-accent); }
+.cover-choice:disabled { opacity: 0.5; cursor: progress; }
+.cover-choice img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--r-sm, 4px);
+  background: var(--panel-2);
+}
+.cover-label { font-size: var(--t-sm); overflow-wrap: anywhere; }
+.cover-detail { font-size: var(--t-sm); color: var(--muted); overflow-wrap: anywhere; }
+
 @media (max-width: 720px) {
   main:has(#view-library:not([hidden])) { max-width: 100%; }
-  /* Arrow and cover on the left, the name with its details stacked beside
-     the cover, the actions in a row underneath. Giving the name a row of its
-     own left the arrow alone on a line and the cover pushed to the right. */
-  .album-head { grid-template-columns: auto auto 1fr; gap: var(--s-1) var(--s-3); }
-  .album-head .album-library { display: none; }
-  .album-caret { grid-column: 1; grid-row: 1 / span 2; }
-  .album-head .art { grid-column: 2; grid-row: 1 / span 2; }
-  .album-name { grid-column: 3; grid-row: 1; white-space: normal; }
-  .album-meta { grid-column: 3; grid-row: 2; }
-  /* Four columns are not enough for a name and a button as well, so the
-     actions take a row of their own rather than squeezing the name off
-     screen. */
-  .album-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    gap: var(--s-2);
-    margin-top: var(--s-1);
-  }
-  .album-actions button { min-height: 38px; }
-  .album-body { padding-left: var(--s-2); }
-  .album-track { grid-template-columns: 2rem auto 1fr auto; }
-  .album-track .track-meta { display: none; }
-  /* The artist input keeps editing on a phone rather than hiding, unlike the
-     dim match-status note above - it just takes a row of its own. */
+  .album-track { grid-template-columns: 3rem 1fr auto; }
+  .selecting .album-track { grid-template-columns: auto 3rem 1fr auto; }
+  /* The artist input keeps editing on a phone rather than hiding - it just
+     takes a row of its own. */
   .album-track .track-artist-input {
     grid-column: 1 / -1;
+    grid-row: 2;
     width: 100%;
-    margin-top: var(--s-1);
   }
   .track-editor { padding-left: 0; }
   .edit-field input.wide { min-width: 0; width: 100%; }
   .edit-field { flex: 1 1 100%; }
+
+  /* Two covers across, three artists: big enough to recognise a record by. */
+  .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-4) var(--s-3); }
+  .lib-artists { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-4) var(--s-3); }
+  .lib-tabs { width: 100%; margin-right: 0; }
+  .panel-note .lib-tabs button { flex: 1 0 auto; width: auto; min-height: 34px; }
+  /* Rescan and Genres side by side under the tabs, not a full-width
+     stack of their own above the albums. */
+  #view-library .panel-note > button { flex: 1 1 0; width: auto; }
+  .lib-row { grid-template-columns: auto 48px 1fr auto; }
+  .lib-row-library { display: none; }
+
+  /* The album panel and the combine dialog take the whole screen. */
+  .lib-drawer { width: 100%; }
+  .lib-drawer-body { padding: 0 var(--s-4) var(--s-6); }
+  .lib-hero { flex-direction: column; align-items: flex-start; }
+  .lib-hero .art { width: 100%; }
+  .lib-dialog { padding: 0; align-items: stretch; }
+  .lib-sheet { width: 100%; max-height: none; border-radius: 0; }
+  .lib-sheet-head, .lib-sheet-body, .lib-sheet-foot { padding-left: var(--s-4); padding-right: var(--s-4); }
+  .lib-bar { left: var(--s-4); right: var(--s-4); max-width: none; transform: none; }
+  .lib-bar-what { flex-basis: 100%; text-align: center; margin-right: 0; }
 }
 
 
@@ -1739,8 +2290,6 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   background: var(--line-soft);
 }
 
-.album-head .art { width: 48px; height: 48px; }
-.album-track .art { width: 32px; height: 32px; }
 .art img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 /* --- home ----------------------------------------------------------------

@@ -9,8 +9,6 @@ difference between an unattended import and one that stops to ask.
 from __future__ import annotations
 
 import logging
-import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -19,27 +17,9 @@ from mutagen.id3 import (
 )
 from mutagen.id3._util import ID3NoHeaderError
 
+from . import covers
+
 log = logging.getLogger("download_center.tagger")
-
-
-# urllib honours file:// and ftp:// as happily as http. The URL comes from
-# Spotify or from whatever yt-dlp scraped, so it is not ours to trust with a
-# scheme that can read the filesystem.
-ALLOWED_COVER_SCHEMES = ("http", "https")
-
-
-def _fetch_cover(url: str) -> bytes | None:
-    scheme = urllib.parse.urlparse(url).scheme.lower()
-    if scheme not in ALLOWED_COVER_SCHEMES:
-        log.debug("refusing to fetch cover over %r", scheme)
-        return None
-    try:
-        request = urllib.request.Request(url, headers={"User-Agent": "download-center"})
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return response.read()
-    except Exception as exc:
-        log.debug("cover fetch failed for %s: %s", url, exc)
-        return None
 
 
 def tag(path: Path, item: dict[str, Any], embed_cover: bool = True) -> None:
@@ -83,9 +63,12 @@ def tag(path: Path, item: dict[str, Any], embed_cover: bool = True) -> None:
         tags.add(TXXX(encoding=3, desc="SPOTIFY_ID", text=item["spotify_id"]))
 
     if embed_cover and item.get("cover_url"):
-        cover = _fetch_cover(item["cover_url"])
+        cover = covers.fetch(item["cover_url"])
         if cover:
-            tags.add(APIC(encoding=3, mime="image/jpeg", type=3,
-                          desc="Cover", data=cover))
+            # Squared because a YouTube cover is the video frame, bars and
+            # all. A Spotify cover is square already and passes untouched.
+            data, mime = covers.square(cover)
+            tags.add(APIC(encoding=3, mime=mime, type=3,
+                          desc="Cover", data=data))
 
     tags.save(path, v2_version=4)

@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, beets_runner, diskaudit, duplicates
+from . import auth, beets_runner, combine, covers, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
 from . import filer, inbox, library, overview, registry, replaygain, spotify
@@ -1261,21 +1261,59 @@ async def library_list(
     offset: int = 0,
     show: str = "all",
     q: str = "",
+    kind: str = "all",
+    sort: str = "recent",
+    artist: str = "",
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """Every album this person owns, newest first.
+    """Every album this person owns, newest first unless `sort` says not.
 
     `show` narrows it: `unmatched` to albums MusicBrainz has not confirmed,
     `review` to the ones of those nobody has dealt with yet, `nogain` to
     albums with a track lacking ReplayGain. A filter, not the definition of
     the list - hiding the rest is what made a matched album unreachable
-    once it had been matched.
+    once it had been matched. `kind` is `album` or `single`, and `artist`
+    one album artist exactly, for that artist's page.
     """
     try:
         return await asyncio.to_thread(
-            library.listing, session.identity, limit, offset, show, q)
+            functools.partial(library.listing, session.identity, limit,
+                              offset, show, q, kind=kind, sort=sort,
+                              artist=artist))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/library/artists")
+async def library_artists(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Every album artist this person owns, and how much of each."""
+    return await asyncio.to_thread(library.artists, session.identity)
+
+
+@app.get("/api/library/attention")
+async def library_attention(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """What wants a person: singles to combine, albums to review or measure."""
+    return await asyncio.to_thread(library.attention, session.identity)
+
+
+@app.get("/api/library/attention/covers")
+async def library_attention_covers(
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Every album whose cover is the wrong shape.
+
+    Apart from the rest of the attention list because it opens a file per
+    album, which is slow the first time on the Pi - the page shows the
+    other sections while this one is still reading.
+    """
+    try:
+        return await asyncio.to_thread(library.cover_survey, session.identity)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/api/library/genres")
@@ -1723,6 +1761,191 @@ async def library_match_apply(
     operation, started = operations.start(
         "import", session.identity.username, run)
     return {"started": started, "operation": operation.as_dict()}
+
+
+class CoverChoice(BaseModel):
+    library_id: int
+    folder: str
+    # One of the URLs `library_cover_candidates` offered, or none at all to
+    # square the cover the album already has.
+    url: str | None = None
+
+
+def _cover_target(session: auth.Session, library_id: int,
+                  folder: str) -> tuple[Path, list[Path]]:
+    try:
+        path = library.album_dir(session.identity, library_id, folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    tracks = filer.audio_in(path)
+    if not tracks:
+        raise HTTPException(status_code=404, detail="That album has no tracks on disk.")
+    return path, tracks
+
+
+@app.post("/api/library/cover/candidates")
+async def library_cover_candidates(
+    body: AlbumTarget,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Covers this album could have, to choose between - and nothing else.
+
+    "Find matches" brings art too, but it also rewrites every tag from
+    MusicBrainz and can move the files. This is for when the picture is the
+    only thing wrong, which is every YouTube download that arrived with bars.
+    """
+    path, tracks = _cover_target(session, body.library_id, body.folder)
+
+    def run() -> list[dict[str, Any]]:
+        meta = filer.read_meta(tracks[0])
+        album = meta.album if meta.names_album else meta.title
+        return covers.candidates(path, tracks, meta.albumartist, album)
+
+    return {"candidates": await asyncio.to_thread(run)}
+
+
+@app.post("/api/library/cover/apply")
+async def library_cover_apply(
+    body: CoverChoice,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Put the chosen cover on every track of the album, and nothing else."""
+    if body.url is not None and not covers.choosable(body.url):
+        raise HTTPException(status_code=400,
+                            detail="That cover is not one this offered.")
+    path, tracks = _cover_target(session, body.library_id, body.folder)
+    if not inbox.settled(path):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{path.name} is still arriving; try again shortly.")
+
+    def run() -> dict[str, Any]:
+        data = (covers.fetch(body.url) if body.url
+                else covers.current(path, tracks))
+        if not data:
+            raise HTTPException(
+                status_code=502 if body.url else 404,
+                detail="Could not fetch that cover." if body.url
+                else "This album has no cover to square.")
+        if not body.url and covers.is_square(data):
+            # Squaring a square is every file rewritten for nothing - and a
+            # bulk "square these" reaches plenty of covers that already are.
+            return {"written": 0, "failed": [], "already_square": True}
+        result = covers.apply(path, tracks, data)
+        navidrome.notify()
+        return result
+
+    return await asyncio.to_thread(run)
+
+
+class CombineRequest(BaseModel):
+    library_id: int
+    albumartist: str
+    album: str
+    # Whole album folders, and single tracks picked out of other albums -
+    # both as the library listing names them.
+    albums: list[str] = []
+    tracks: list[str] = []
+    # The selected album whose identity survives. None lets the first carry
+    # it, or an album already called `albumartist`/`album` win if there is one.
+    keep: str | None = None
+    # Every file, in the order to number them. Empty leaves numbers alone.
+    order: list[str] = []
+    # One of the selected album folders to take the cover from, or a URL
+    # `combine/guess` offered.
+    cover_folder: str | None = None
+    cover_url: str | None = None
+
+
+@app.post("/api/library/combine")
+async def library_combine(
+    body: CombineRequest,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Make several albums and loose tracks into one album.
+
+    An operation, because a combine of three albums is dozens of files each
+    retagged and moved, which on the Pi takes longer than a request should
+    be held open. Progress and the outcome arrive over the websocket.
+    """
+    _named(body.albumartist, body.album)
+    identity = session.identity
+    try:
+        space = workspace.for_session(identity, body.library_id)
+        folders = {name: library.album_dir(identity, body.library_id, name)
+                   for name in dict.fromkeys(body.albums)}
+        files = {name: library.track_path(identity, body.library_id, name)
+                 for name in dict.fromkeys(body.tracks + body.order)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if body.keep is not None and body.keep not in folders:
+        raise HTTPException(status_code=400,
+                            detail="The album to keep has to be one of those selected.")
+    if body.cover_folder is not None and body.cover_folder not in folders:
+        raise HTTPException(status_code=400,
+                            detail="The cover has to come from one of those selected.")
+    if body.cover_url is not None and not covers.choosable(body.cover_url):
+        raise HTTPException(status_code=400,
+                            detail="That cover is not one this offered.")
+    count = (sum(len(filer.audio_in(path)) for path in folders.values())
+             + len(body.tracks))
+    if count < 2:
+        raise HTTPException(status_code=400,
+                            detail="Choose at least two tracks to combine.")
+    for path in [*folders.values(), *(files[name] for name in body.tracks)]:
+        if not inbox.settled(path):
+            raise HTTPException(
+                status_code=409,
+                detail=f"{path.name} is still arriving; try again shortly.")
+
+    def run() -> dict[str, Any]:
+        survivor = body.keep or next(iter(folders), None)
+        ids = (_before_edit(identity, body.library_id, survivor)
+               if survivor else set())
+        # Read before anything moves: the folder it lives in may not
+        # survive the combine.
+        cover = None
+        if body.cover_url:
+            cover = covers.fetch(body.cover_url)
+        elif body.cover_folder:
+            path = folders[body.cover_folder]
+            cover = covers.current(path, filer.audio_in(path))
+        result = combine.combine(
+            space, albumartist=body.albumartist.strip(),
+            album=body.album.strip(),
+            albums=list(folders.values()),
+            tracks=[files[name] for name in body.tracks],
+            keep=folders.get(body.keep) if body.keep else None,
+            order=[files[name] for name in body.order],
+            cover=cover,
+            report=functools.partial(operations.report, "combine"))
+        _reviewed(identity, body.library_id, ids, "edited")
+        navidrome.notify()
+        return result
+
+    operation, started = operations.start("combine", identity.username, run)
+    return {"started": started, "operation": operation.as_dict()}
+
+
+class CombineGuess(BaseModel):
+    artist: str
+    titles: list[str]
+
+
+@app.post("/api/library/combine/guess")
+async def library_combine_guess(
+    body: CombineGuess,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """Which album these songs are probably from, to name the combine.
+
+    A suggestion for the form, never applied by itself: an empty answer is
+    normal, and the form just leaves the name for a person to type.
+    """
+    guess = await asyncio.to_thread(combine.guess_album, body.artist,
+                                    body.titles)
+    return {"guess": guess}
 
 
 class GainTarget(BaseModel):
