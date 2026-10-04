@@ -14,7 +14,7 @@
 import { setBanner } from "./core.js";
 import { monthlyChart, artistBars, stat } from "./charts.js";
 import { showView } from "./nav.js";
-import { selectRange } from "./listening.js";
+import { selectDates } from "./listening.js";
 
 const homeGreeting = document.getElementById("home-greeting");
 const homeHero = document.getElementById("home-hero");
@@ -227,13 +227,17 @@ function homeTiles(data) {
     // this month's bar is the one on the right.
     stat("This month", (heard.this_month || 0).toLocaleString(), versus,
          () => homeChart.scrollIntoView({ behavior: "smooth", block: "start" })),
-    // "Year" is already the name of a range button on the track list below
-    // - the breakdown of which tracks made up this total.
+    // Opens the track list below on the same calendar year - the breakdown
+    // of which tracks made up this total. Not the Year button, which is the
+    // last 365 days and showed a different number.
     stat("In " + (year.year || new Date().getFullYear()),
          (year.tracks || 0).toLocaleString(),
          "different tracks, about " + hours.toLocaleString() + " hours",
-         () => { selectRange(365); homeListening.scrollIntoView(
-           { behavior: "smooth", block: "start" }); }),
+         () => {
+           const shown = year.year || new Date().getFullYear();
+           selectDates(`${shown}-01-01`, `${shown}-12-31`);
+           homeListening.scrollIntoView({ behavior: "smooth", block: "start" });
+         }),
   ];
   if (held.available) {
     tiles.push(stat("Your library", (held.tracks || 0).toLocaleString(),

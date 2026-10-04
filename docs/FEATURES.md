@@ -187,7 +187,9 @@ browser so other pages start themed.
 - **This month** — plays this month, and the change on last month. Tap to
   scroll to the monthly chart.
 - **In *year*** — different tracks played this calendar year and roughly how
-  many hours. Tap to jump to the statistics, switched to the Year range.
+  many hours. Tap to jump to the statistics, showing that calendar year
+  (as Dates, 1 January to 31 December) - not the Year button, which is the
+  last 365 days.
 - **Your library** — tracks and albums in the libraries you can see. Tap to
   open Library.
 

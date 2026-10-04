@@ -471,3 +471,9 @@ def test_the_file_picker_offers_covers_and_every_audio_extension():
 def test_an_artist_page_reads_every_record_not_one_page():
     """It asked for one page of 200 and stopped there without a word (L24)."""
     assert "const want = view.artist ? Infinity" in JS_FILES["library.js"]
+
+
+def test_the_year_tile_opens_its_own_calendar_year():
+    """It counted the calendar year and opened the last 365 days (L29)."""
+    assert "selectDates(`${shown}-01-01`, `${shown}-12-31`)" in JS_FILES["home.js"]
+    assert "selectRange(365)" not in JS_FILES["home.js"]

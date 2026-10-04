@@ -150,8 +150,19 @@ export async function loadListening() {
   }
 }
 
-// Shared with the "In <year>" home tile, which jumps here already filtered
-// to the Year button rather than leaving the visitor to click it themselves.
+// A chosen range of dates, both ends inclusive, as if picked under Dates.
+// The "In <year>" home tile jumps here with its calendar year: the Year
+// button is the last 365 days, which is not the number the tile shows.
+export function selectDates(start, end) {
+  listeningDates = { start, end };
+  listenFrom.value = start;
+  listenTo.value = end;
+  markShown();
+  listenDates.hidden = true;
+  listenCustom.setAttribute("aria-expanded", "false");
+  loadListening();
+}
+
 export function selectRange(days) {
   listeningDays = days;
   listeningDates = null;
