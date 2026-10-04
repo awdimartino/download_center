@@ -60,7 +60,8 @@ def test_an_album_the_files_agree_on_is_recorded(state_db, library):
     result = backfill.run(1, library, apply=True)
 
     assert [row.name for row in result.written] == ["The Beatles - Abbey Road"]
-    assert registry.album_uuid_for(1, "The Beatles", "Abbey Road") == A
+    assert registry.known(
+        1, registry.album_key("The Beatles", "Abbey Road")) == A
 
 
 def test_a_partly_stamped_album_is_recorded_too(state_db, library):
@@ -70,7 +71,8 @@ def test_a_partly_stamped_album_is_recorded_too(state_db, library):
 
     backfill.run(1, library, apply=True)
 
-    assert registry.album_uuid_for(1, "The Beatles", "Abbey Road") == A
+    assert registry.known(
+        1, registry.album_key("The Beatles", "Abbey Road")) == A
 
 
 def test_a_later_download_joins_the_album_instead_of_splitting_it(state_db,

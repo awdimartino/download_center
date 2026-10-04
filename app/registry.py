@@ -157,11 +157,6 @@ def loose_key(track_uuid: str) -> str:
     return f"{SEPARATOR}{SEPARATOR}{track_uuid}"
 
 
-def album_uuid_for(library_id: int, albumartist: str, album: str) -> str:
-    """The album UUID for this record in this library, minting one on a miss."""
-    return uuid_for_key(library_id, album_key(albumartist, album))
-
-
 def uuid_for_key(library_id: int, key: str, on_miss: str | None = None) -> str:
     """The album UUID for this key, recording one if there is not one yet.
 

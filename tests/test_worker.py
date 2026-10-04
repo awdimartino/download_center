@@ -409,6 +409,26 @@ async def test_an_identified_track_carries_no_warning(library):
 
 
 @pytest.mark.asyncio
+async def test_an_item_says_filing_while_it_is_filed(library, monkeypatch):
+    """The front end has a Filing state; nothing used to set it (R4)."""
+    from app import inbox
+
+    seen = []
+    real = inbox.deliver
+
+    def deliver(space, path):
+        seen.append(items[0]["status"])
+        return real(space, path)
+
+    monkeypatch.setattr(worker.inbox, "deliver", deliver)
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    assert seen == ["filing"]
+    assert items[0]["status"] == "complete"
+
+
+@pytest.mark.asyncio
 async def test_a_download_that_cannot_be_tagged_fails_instead_of_filing(
         library, monkeypatch):
     """Untagged, it went in as Unknown Artist/Unknown Album/<id>.mp3 and the

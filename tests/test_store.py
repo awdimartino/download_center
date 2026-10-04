@@ -120,9 +120,10 @@ def test_the_registry_schema_is_applied_once_per_connection(tmp_path):
     access was the other half of the same problem."""
     store.connect(tmp_path / "state.db")
     try:
-        registry.album_uuid_for(1, "The Beatles", "Abbey Road")
+        registry.uuid_for_key(
+            1, registry.album_key("The Beatles", "Abbey Road"))
         first = registry._schema_on
-        registry.album_uuid_for(1, "The Beatles", "Revolver")
+        registry.uuid_for_key(1, registry.album_key("The Beatles", "Revolver"))
         assert registry._schema_on is first
     finally:
         _close()
@@ -131,13 +132,13 @@ def test_the_registry_schema_is_applied_once_per_connection(tmp_path):
 def test_a_reconnect_applies_the_registry_schema_again(tmp_path):
     """Which is what every test does, and what a restart does."""
     store.connect(tmp_path / "one.db")
-    registry.album_uuid_for(1, "A", "B")
+    registry.uuid_for_key(1, registry.album_key("A", "B"))
     _close()
 
     store.connect(tmp_path / "two.db")
     try:
         assert registry.count() == 0
-        registry.album_uuid_for(1, "A", "B")
+        registry.uuid_for_key(1, registry.album_key("A", "B"))
         assert registry.count() == 1
     finally:
         _close()

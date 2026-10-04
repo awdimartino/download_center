@@ -353,8 +353,8 @@ def test_a_retag_moves_the_key_not_the_identity(space, tmp_path):
     filer.after_retag(space, [filed.path], was)
 
     assert registry.known(space.library_id, was) is None
-    assert registry.album_uuid_for(space.library_id, "The Beatles",
-                                   "Abbey Road") == filed.album_uuid
+    assert registry.known(space.library_id, registry.album_key(
+        "The Beatles", "Abbey Road")) == filed.album_uuid
 
 
 def test_a_retag_onto_an_album_already_there_merges_into_it(space, tmp_path):
@@ -389,8 +389,8 @@ def test_an_album_never_registered_keeps_the_uuid_on_its_files(space,
     settled = filer.after_retag(space, [path], was)
 
     assert settled == existing
-    assert registry.album_uuid_for(space.library_id, "The Beatles",
-                                   "Abbey Road") == existing
+    assert registry.known(space.library_id, registry.album_key(
+        "The Beatles", "Abbey Road")) == existing
 
 
 def test_every_track_of_a_retagged_album_ends_up_on_one_uuid(space, tmp_path):

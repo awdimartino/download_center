@@ -61,9 +61,14 @@ def test_the_artist_and_album_cannot_bleed_into_each_other():
 
 # --- minting and looking up -------------------------------------------------
 
+def album_uuid_for(library_id, albumartist, album):
+    return registry.uuid_for_key(library_id,
+                                 registry.album_key(albumartist, album))
+
+
 def test_the_first_track_mints_a_uuid_and_the_rest_find_it(state_db):
-    first = registry.album_uuid_for(1, "The Beatles", "Abbey Road")
-    second = registry.album_uuid_for(1, "The Beatles", "Abbey Road")
+    first = album_uuid_for(1, "The Beatles", "Abbey Road")
+    second = album_uuid_for(1, "The Beatles", "Abbey Road")
     assert first == second
 
 
@@ -71,25 +76,25 @@ def test_a_track_arriving_months_later_joins_the_same_album(state_db):
     """The bug this replaces: downloading track five of an album already in
     the library gave it a fresh UUID, so it arrived as a second, one-track
     copy of that record."""
-    original = registry.album_uuid_for(1, "Mk.gee", "A Museum of Contradiction")
-    latecomer = registry.album_uuid_for(1, "mk.gee",
-                                        "A Museum of Contradiction ")
+    original = album_uuid_for(1, "Mk.gee", "A Museum of Contradiction")
+    latecomer = album_uuid_for(1, "mk.gee",
+                               "A Museum of Contradiction ")
     assert latecomer == original
 
 
 def test_two_albums_do_not_share_a_uuid(state_db):
     """745 files across 101 albums got one UUID, because the old assignment
     keyed on the directory rather than on the album."""
-    one = registry.album_uuid_for(1, "The Beatles", "Abbey Road")
-    other = registry.album_uuid_for(1, "The Beatles", "Revolver")
+    one = album_uuid_for(1, "The Beatles", "Abbey Road")
+    other = album_uuid_for(1, "The Beatles", "Revolver")
     assert one != other
 
 
 def test_the_same_album_in_two_libraries_gets_two_uuids(state_db):
     """A UUID identifies a file, not a recording. Alex's copy and Kelly's
     copy are different files."""
-    alex = registry.album_uuid_for(1, "The Beatles", "Abbey Road")
-    kelly = registry.album_uuid_for(2, "The Beatles", "Abbey Road")
+    alex = album_uuid_for(1, "The Beatles", "Abbey Road")
+    kelly = album_uuid_for(2, "The Beatles", "Abbey Road")
     assert alex != kelly
 
 
@@ -105,14 +110,14 @@ def test_a_uuid_on_disk_is_kept_rather_than_replaced(state_db):
     key = registry.album_key("The Beatles", "Abbey Road")
     existing = "11111111-1111-4111-8111-111111111111"
     assert registry.uuid_for_key(1, key, on_miss=existing) == existing
-    assert registry.album_uuid_for(1, "The Beatles", "Abbey Road") == existing
+    assert album_uuid_for(1, "The Beatles", "Abbey Road") == existing
 
 
 def test_a_uuid_on_disk_never_overrules_a_registered_album(state_db):
     """Whoever asks second gets the same answer as whoever asked
     first - that is the whole contract, whatever they bring."""
     key = registry.album_key("The Beatles", "Abbey Road")
-    registered = registry.album_uuid_for(1, "The Beatles", "Abbey Road")
+    registered = album_uuid_for(1, "The Beatles", "Abbey Road")
     assert registry.uuid_for_key(
         1, key, on_miss="22222222-2222-4222-8222-222222222222") \
         == registered
@@ -126,9 +131,9 @@ def test_forgetting_an_album_lets_a_fresh_uuid_be_minted(state_db):
 
 
 def test_counting_is_per_library_or_overall(state_db):
-    registry.album_uuid_for(1, "The Beatles", "Abbey Road")
-    registry.album_uuid_for(1, "The Beatles", "Revolver")
-    registry.album_uuid_for(2, "The Beatles", "Abbey Road")
+    album_uuid_for(1, "The Beatles", "Abbey Road")
+    album_uuid_for(1, "The Beatles", "Revolver")
+    album_uuid_for(2, "The Beatles", "Abbey Road")
     assert registry.count(1) == 2
     assert registry.count(2) == 1
     assert registry.count() == 3
@@ -152,12 +157,12 @@ def test_concurrent_first_tracks_agree_on_one_uuid(state_db):
 def test_a_retag_keeps_the_album_uuid(state_db):
     """The album keeps its Navidrome identity, so album-level stars and play
     counts survive and no file needs its UUID rewritten."""
-    before = registry.album_uuid_for(1, "Unknown Artist", "Unknown Album")
+    before = album_uuid_for(1, "Unknown Artist", "Unknown Album")
     old = registry.album_key("Unknown Artist", "Unknown Album")
     new = registry.album_key("The Beatles", "Abbey Road")
 
     assert registry.repoint(1, old, new) == before
-    assert registry.album_uuid_for(1, "The Beatles", "Abbey Road") == before
+    assert album_uuid_for(1, "The Beatles", "Abbey Road") == before
 
 
 def test_a_retag_drops_the_key_it_came_from(state_db):
@@ -174,7 +179,7 @@ def test_a_retag_drops_the_key_it_came_from(state_db):
 def test_the_album_already_in_the_library_wins(state_db):
     """Only the newcomer can be rewritten, so choosing its value would not
     move the established album - it would split it."""
-    incumbent = registry.album_uuid_for(1, "The Beatles", "Abbey Road")
+    incumbent = album_uuid_for(1, "The Beatles", "Abbey Road")
     old = registry.album_key("The Beatels", "Abbey Road")
     registry.uuid_for_key(1, old)
 
@@ -214,7 +219,7 @@ def test_nothing_works_without_a_database():
     caller that reaches it before state.db is connected must fail loudly
     rather than mint UUIDs nothing will remember."""
     with pytest.raises(AssertionError):
-        registry.album_uuid_for(1, "The Beatles", "Abbey Road")
+        album_uuid_for(1, "The Beatles", "Abbey Road")
 
 
 # --- names made entirely of punctuation ------------------------------------
@@ -253,7 +258,7 @@ def test_a_genuinely_empty_name_is_still_empty():
 
 
 def test_the_punctuation_fallback_mints_separate_uuids(state_db):
-    plus = registry.album_uuid_for(1, "Ed Sheeran", "+")
-    minus = registry.album_uuid_for(1, "Ed Sheeran", "-")
+    plus = album_uuid_for(1, "Ed Sheeran", "+")
+    minus = album_uuid_for(1, "Ed Sheeran", "-")
     assert plus != minus
     assert registry.count(1) == 2

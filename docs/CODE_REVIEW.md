@@ -1093,9 +1093,16 @@ it less likely.
       library.js the dead `busy` branch is gone and a retag's notice no longer
       promises the album kept its identity, since after_retag can join it to
       an existing one. Historical notes that say "used to" were left.
-- [ ] **R4. Dead code:** `playcounts.last_complete_day` and `taken_on()`,
+- [x] **R4. Dead code:** `playcounts.last_complete_day` and `taken_on()`,
       `registry.album_uuid_for` (tests only), the `filing` item status (only
       the front end knows it — set it before `deliver`, or drop it).
+      **Fixed:** `last_complete_day`, `taken_on` and `album_uuid_for` are
+      deleted; their tests now ask the run log or `registry.known` /
+      `uuid_for_key` directly, and the two tests that only pinned
+      `last_complete_day`'s date arithmetic went with it. The worker now sets
+      `filing` before handing a download to the inbox, so the Filing state
+      Browse and Downloads already draw is reachable; a new test fails on the
+      old worker, which went straight from tagging to complete.
 - [ ] **R5. Duplication:** `_download_with_retries` and
       `_match_with_retries` share one backoff loop (`worker.py:68-117`);
       `create_job` still writes a beets config even when beets is disabled

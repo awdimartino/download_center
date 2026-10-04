@@ -158,22 +158,6 @@ def next_day(day: str) -> str:
             + timedelta(days=1)).strftime("%Y-%m-%d")
 
 
-def last_complete_day() -> str:
-    """The most recent day that has actually finished.
-
-    A snapshot records a cumulative total at the moment it runs, so the only
-    day it can describe in full is the one before it. Labelling it with
-    today's date was an off-by-one that attributed every delta a day late.
-
-    Yesterday, always - not "yesterday if it is still early". That version
-    had an edge the loop fell straight into: a restart at four in the
-    afternoon wrote a *partial* reading of today under today's label, and
-    because the day was then marked done, the run after midnight skipped it.
-    The day was left permanently half-closed and nothing said so. Aiming at
-    yesterday means the target only changes when a day genuinely ends.
-    """
-    return (datetime.now(zone()) - timedelta(days=1)).strftime("%Y-%m-%d")
-
 
 # --- reading what Navidrome currently believes -----------------------------
 
@@ -369,18 +353,6 @@ def _take(when: str | None = None) -> dict[str, Any]:
              if anomalies else "")
     return result
 
-
-def taken_on(day: str) -> bool:
-    """Whether a snapshot was *run* for that day.
-
-    Asked of the run log, not of the rows. Only changed counts are stored,
-    so a quiet day writes nothing at all - and answering this from
-    play_snapshot would call such a day incomplete for ever.
-    """
-    row = store.connection().execute(
-        "SELECT 1 FROM play_snapshot_run WHERE day = ? LIMIT 1",
-        (day,)).fetchone()
-    return row is not None
 
 
 # Six missed readings at the cadence in main.py. Long enough that a slow

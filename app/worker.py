@@ -227,6 +227,8 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
         # Into the inbox, and filed from there - the same road a
         # hand-dropped file takes. The worker only calls it directly rather
         # than waiting for the poller to work out what it already knows.
+        # Its own status, which Browse and Downloads show as Filing.
+        _mark(item, "filing")
         try:
             filed = await asyncio.to_thread(inbox.deliver, space, path)
         except Exception as exc:
