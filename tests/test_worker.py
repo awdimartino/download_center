@@ -380,3 +380,29 @@ async def test_an_unexpected_error_fails_one_item_and_the_job_finishes(
     assert "No space left" in items[0]["error"]
     assert items[1]["status"] == "complete"
     assert job["status"] == "partial"
+
+
+# --- a track filed without its identity (L5) ---------------------------------
+
+@pytest.mark.asyncio
+async def test_a_track_filed_without_uuids_does_not_just_say_done(library,
+                                                                 monkeypatch):
+    """It is in the library and playable, so it is complete - but nothing
+    can follow it, and the worker used to drop that on the floor."""
+    from app import filer
+
+    monkeypatch.setattr(filer, "_write_identity", lambda *a: False)
+    items = [_track(1, "Come Together"), _track(2, "Something")]
+    job = await _run(library, items)
+
+    assert job["status"] == "complete"
+    assert all(item["status"] == "complete" for item in items)
+    assert all("identity" in item["warning"] for item in items)
+
+
+@pytest.mark.asyncio
+async def test_an_identified_track_carries_no_warning(library):
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    assert "warning" not in items[0]

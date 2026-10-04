@@ -780,8 +780,11 @@ it less likely.
       filing raises, so the job's discard clears it and Retry fetches it
       once. If even that move fails it stays for the poller, logged.
       Reproduced first.
-- [ ] **L5.** The worker ignores `Filed.identified` (`worker.py:188`): a track
+- [x] **L5.** The worker ignores `Filed.identified` (`worker.py:188`): a track
       filed without UUIDs shows Done.
+      **Fixed:** the item keeps `complete` (it is filed and playable) but
+      carries a `warning`; its row reads "Done, no identity" and the
+      finished card counts them, in the warning colour. Reproduced first.
 - [ ] **L6.** A tag write failure leaves the file tagless (tags were deleted
       first) and filed as `Unknown Artist/Unknown Album/<hex id>.mp3`, shown
       as Done (`worker.py:167-176`, `tagger.py:31`).

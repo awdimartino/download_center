@@ -90,6 +90,8 @@ function describe(job) {
   const n = job.items.length;
   if (job.status === "resolving") return "Reading the link…";
   if (job.status === "complete") {
+    const unnamed = job.items.filter((i) => i.warning).length;
+    if (unnamed) return `${plural(unnamed, "track")} filed without identity tags`;
     // The title already names the artist; say only what it does not.
     return n === 1 ? `Downloaded ${ago(job.created_at)}` : `${plural(n, "track")} · ${ago(job.created_at)}`;
   }
@@ -170,6 +172,7 @@ function updateJob(job) {
   parts.title.title = name;
   parts.sub.textContent = describe(job);
   parts.sub.classList.toggle("tone-bad", group === "attention");
+  parts.sub.classList.toggle("tone-warn", group === "done" && job.items.some((i) => i.warning));
   parts.bar.hidden = group !== "active";
   parts.fill.style.width = `${Math.round(jobProgress(job) * 100)}%`;
   const label = group === "active" ? `Cancel ${name}` : `Clear ${name}`;
@@ -183,9 +186,10 @@ function updateJob(job) {
   if (open) {
     const rows = job.items.map((item) => {
       const row = el("div", "dl-trk");
-      const status = el("span", `dl-trk-st ${item.status}`, STEP[item.status] || item.status);
+      const status = el("span", `dl-trk-st ${item.status}${item.warning ? " warn" : ""}`,
+        item.warning ? "Done, no identity" : STEP[item.status] || item.status);
       const name = el("span", "dl-trk-name", item.title);
-      if (item.error) name.title = item.error;
+      if (item.error || item.warning) name.title = item.error || item.warning;
       row.append(name, status);
       return row;
     });

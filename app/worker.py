@@ -206,6 +206,13 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
             return
 
         _mark(item, "complete", file_path=str(filed.path))
+        if not filed.identified:
+            # Filed and playable, but nothing can follow it: stars, play
+            # counts and the Library's album records all hang off the UUIDs.
+            # The inbox reports the same thing for a hand-dropped file.
+            item["warning"] = ("Filed, but its identity tags could not be "
+                               "written, so stars and play counts cannot "
+                               "follow it.")
 
         if settings.rate_limit_sleep:
             await asyncio.sleep(settings.rate_limit_sleep)

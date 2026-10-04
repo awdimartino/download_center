@@ -419,7 +419,9 @@ with *Retry failed*), and **finished** (folded; *Clear* forgets them, and
 nothing is deleted from the library). A card shows the cover, progress, and
 "x of N · current track"; open it for every track's step — Waiting, Finding
 a match, Downloading, Retrying, Tagging, Done, Failed — with the error on
-hover.
+hover. A track filed without its identity tags (the UUID write failed)
+shows **Done, no identity**, and its finished card says how many: it is
+playable, but stars and play counts cannot follow it.
 
 The ✕ on an active job stops it and removes it: its task is cancelled **and
 awaited** before its scratch files are deleted (deleting first once left

@@ -1072,6 +1072,7 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 .dl-job-title { font-size: var(--t-md); font-weight: var(--w-medium); }
 .dl-job-sub { color: var(--muted); font-size: var(--t-sm); }
 .dl-job-sub.tone-bad { color: var(--bad); }
+.dl-job-sub.tone-warn { color: var(--warn); }
 .dl-job-bar { height: 3px; margin-top: var(--s-1); overflow: hidden; border-radius: 2px; background: var(--panel-3); }
 .dl-job-fill { height: 100%; background: var(--accent); transition: width .4s ease; }
 .dl-job-remove {
@@ -1100,6 +1101,7 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 .dl-trk-st { flex: none; color: var(--faint); font-size: var(--t-xs); }
 .dl-trk-st.complete { color: var(--ok); }
 .dl-trk-st.failed { color: var(--bad); }
+.dl-trk-st.complete.warn { color: var(--warn); }
 .dl-trk-st.matching, .dl-trk-st.downloading, .dl-trk-st.retrying,
 .dl-trk-st.tagging, .dl-trk-st.filing { color: var(--accent); }
 .dl-retry { margin-top: var(--s-2); min-height: 28px; font-size: var(--t-xs); }
