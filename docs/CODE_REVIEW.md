@@ -879,10 +879,15 @@ it less likely.
       move to the matching place in the quarantine and the folder is
       removed, walking up through emptied parents; any other file keeps
       it. Reproduced first.
-- [ ] **L21.** The barred-cover memory is lost on restart; `barred_known`
+- [x] **L21.** The barred-cover memory is lost on restart; `barred_known`
       ignores the stamp, so a squared cover stays flagged until the next
       survey; and a card already flagged *Review* never gets the *Cover*
       flag (`library.js:273` tests any `.tone-warn`).
+      **Fixed:** the survey's answers are saved to
+      `config/.cover-survey.json` after each survey (pruned to the folders
+      it visited) and read back on first use; `covers.apply` forgets the
+      album it squared; the page looks for its own `.flag-cover`.
+      Reproduced first.
 - [ ] **L22.** Cover fetching has no size cap and no image check; an HTML
       error page would be embedded as art (`covers.py:43-59, 105-110`).
 - [ ] **L23.** The album editor's merge search spans every library; picking

@@ -252,7 +252,7 @@ function isBarred(album) {
 function flags(album) {
   const box = el("span", "lib-flags");
   if (album.kind === "single") box.append(el("span", "lib-flag", "Single"));
-  if (isBarred(album)) box.append(el("span", "lib-flag tone-warn", "Cover"));
+  if (isBarred(album)) box.append(el("span", "lib-flag tone-warn flag-cover", "Cover"));
   if (album.needs_review) box.append(el("span", "lib-flag tone-warn", "Review"));
   if (album.albums_here > 1) {
     box.append(el("span", "lib-flag tone-warn", `${album.albums_here} albums`));
@@ -285,8 +285,10 @@ async function surveyCovers() {
   barredKeys = new Set(coverSurvey.albums.map(albumKey));
   updateTodoCount();
   libraryEl.querySelectorAll(".lib-card, .lib-row").forEach((node) => {
-    if (!barredKeys.has(node.dataset.key) || node.querySelector(".tone-warn")) return;
-    node.querySelector(".lib-flags").append(el("span", "lib-flag tone-warn", "Cover"));
+    // Its own flag, not any warning: a card already flagged Review never
+    // got the Cover flag beside it.
+    if (!barredKeys.has(node.dataset.key) || node.querySelector(".flag-cover")) return;
+    node.querySelector(".lib-flags").prepend(el("span", "lib-flag tone-warn flag-cover", "Cover"));
   });
 }
 

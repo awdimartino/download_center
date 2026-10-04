@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 import os
 import threading
@@ -180,7 +181,77 @@ def is_square(data: bytes) -> bool:
 # folder -> (newest mtime of its first track, barred). Reading a cover means
 # reading a tag and an image header off the Pi's disk for every album, which
 # is seconds over a whole library - so it is done once per file change.
+#
+# Kept on disk between runs, so a restart does not clear every Cover flag
+# until the next survey has re-read the library. A cache, not a record: it
+# lives beside the Spotify token rather than in state.db, and losing it costs
+# one slow survey.
 _barred_cache: dict[str, tuple[int, bool]] = {}
+_barred_loaded = False
+_barred_dirty = False
+_barred_lock = threading.Lock()
+
+
+def _survey_file() -> Path:
+    from .config import CONFIG_DIR
+    return CONFIG_DIR / ".cover-survey.json"
+
+
+def _load_barred() -> None:
+    global _barred_loaded
+    if _barred_loaded:
+        return
+    _barred_loaded = True
+    try:
+        saved = json.loads(_survey_file().read_text(encoding="utf-8"))
+        _barred_cache.update({folder: (int(stamp), bool(flag))
+                              for folder, (stamp, flag) in saved.items()
+                              if folder not in _barred_cache})
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        log.warning("ignoring the saved cover survey: %s", exc)
+
+
+def save_barred(keep: set[str] | None = None) -> None:
+    """Write the survey's answers out, if anything changed. After a survey,
+    which passes the folders it visited so albums since moved or deleted do
+    not pile up in the file."""
+    global _barred_dirty
+    with _barred_lock:
+        if keep is not None:
+            for folder in set(_barred_cache) - keep:
+                del _barred_cache[folder]
+                _barred_dirty = True
+        if not _barred_dirty:
+            return
+        snapshot = dict(_barred_cache)
+        _barred_dirty = False
+    path = _survey_file()
+    try:
+        temp = path.with_name(path.name + ".tmp")
+        temp.write_text(json.dumps(snapshot), encoding="utf-8")
+        os.replace(temp, path)
+    except OSError as exc:
+        log.warning("could not save the cover survey: %s", exc)
+
+
+def known_folders() -> set[str]:
+    _load_barred()
+    with _barred_lock:
+        return set(_barred_cache)
+
+
+def forget(folder: Path) -> None:
+    """Drop what the survey knew about one album, after its cover changed.
+
+    The flag in the list reads this without checking the files, so a cover
+    squared by `apply` stayed flagged until the next survey re-read it.
+    """
+    global _barred_dirty
+    with _barred_lock:
+        if _barred_cache.pop(str(folder), None) is not None:
+            _barred_dirty = True
 
 
 def _look(folder: Path) -> tuple[list[os.DirEntry], list[os.DirEntry]]:
@@ -229,19 +300,24 @@ def barred(folder: Path) -> bool | None:
                     + [entry.stat().st_mtime_ns for entry in found])
     except OSError:
         return None
+    global _barred_dirty
+    _load_barred()
     hit = _barred_cache.get(str(folder))
     if hit and hit[0] == stamp:
         return hit[1]
     data = current(folder, tracks, [Path(entry.path) for entry in found])
     result = None if data is None else not is_square(data)
     if result is not None:
-        _barred_cache[str(folder)] = (stamp, result)
+        with _barred_lock:
+            _barred_cache[str(folder)] = (stamp, result)
+            _barred_dirty = True
     return result
 
 
 def barred_known(folder: Path) -> bool:
     """What the survey last found, without reading anything. For the list,
     which must not open a file per row to draw a flag."""
+    _load_barred()
     hit = _barred_cache.get(str(folder))
     return bool(hit and hit[1])
 
@@ -383,6 +459,7 @@ def apply(folder: Path, tracks: list[Path], data: bytes) -> dict[str, Any]:
     if covers:
         (folder / "cover.jpg").write_bytes(data)
 
+    forget(folder)
     return {"written": written, "failed": failed}
 
 

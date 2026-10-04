@@ -287,3 +287,59 @@ def test_a_failed_cover_fetch_is_tried_again(monkeypatch, fresh_cache):
 
     assert covers.squared("https://x.test/c.jpg") is None
     assert covers.squared("https://x.test/c.jpg") is not None
+
+
+# --- what the survey remembers (L21) ---------------------------------------------
+
+@pytest.fixture
+def survey_file(tmp_path, monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path / "config")
+    (tmp_path / "config").mkdir()
+    monkeypatch.setattr(covers, "_barred_cache", {})
+    monkeypatch.setattr(covers, "_barred_loaded", False, raising=False)
+    monkeypatch.setattr(covers, "_barred_dirty", False, raising=False)
+    return tmp_path / "config" / ".cover-survey.json"
+
+
+def test_the_survey_survives_a_restart(tmp_path, monkeypatch, survey_file):
+    folder = _album(tmp_path, cover=_letterboxed())
+    assert covers.barred(folder) is True
+    covers.save_barred()
+
+    # A restart: the memory is empty, and nothing has surveyed yet.
+    monkeypatch.setattr(covers, "_barred_cache", {})
+    monkeypatch.setattr(covers, "_barred_loaded", False)
+
+    assert covers.barred_known(folder) is True
+
+
+def test_a_squared_cover_is_no_longer_flagged(tmp_path, survey_file):
+    folder = _album(tmp_path, cover=_letterboxed())
+    assert covers.barred(folder) is True
+
+    covers.apply(folder, sorted(folder.glob("*.mp3")), _letterboxed())
+
+    assert covers.barred_known(folder) is False
+
+
+def test_the_survey_file_forgets_albums_no_longer_there(tmp_path, survey_file):
+    import json
+
+    folder = _album(tmp_path, cover=_letterboxed())
+    covers.barred(folder)
+    covers._barred_cache["/gone/Artist/Album"] = (1, True)
+
+    covers.save_barred(keep={str(folder)})
+
+    assert list(json.loads(survey_file.read_text())) == [str(folder)]
+
+
+def test_a_card_flagged_for_review_still_gets_its_cover_flag():
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent / "app" / "static" / "js"
+          / "library.js").read_text(encoding="utf-8")
+    assert 'node.querySelector(".tone-warn")' not in js
+    assert 'node.querySelector(".flag-cover")' in js

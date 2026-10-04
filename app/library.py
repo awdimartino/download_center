@@ -631,14 +631,22 @@ def cover_survey(identity: navidrome.Identity) -> dict[str, Any]:
     every = _albums_or_raise(identity)
     every.sort(key=lambda a: (a.added, a.sort_name), reverse=True)
     found = []
+    visited = set()
     for album in every:
         root = _root(identity, album.library_id)
         if root is None or not album.folder:
             continue
         folder = root / album.folder
+        visited.add(str(folder))
         if folder.is_dir() and covers.barred(folder):
             album.barred = True
             found.append(album)
+    # Only this person's libraries were visited; another person's answers
+    # are theirs to prune.
+    roots = [Path(lib["path"]) for lib in identity.libraries]
+    others = {f for f in covers.known_folders()
+              if not any(Path(f).is_relative_to(root) for root in roots)}
+    covers.save_barred(keep=visited | others)
     return {"count": len(found), "albums": [a.as_dict() for a in found]}
 
 
