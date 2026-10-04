@@ -132,3 +132,38 @@ def test_an_item_without_a_primary_artist_falls_back(tmp_path):
 # registry answers it by lookup now, and the same property is pinned by
 # test_registry.test_the_album_already_in_the_library_wins and
 # test_filer.test_a_retag_onto_an_album_already_there_merges_into_it.
+
+
+# --- a tag write that fails (L6) ----------------------------------------------
+# The old tags were deleted from the file first, so a failure partway left a
+# tagless file that was filed as Unknown Artist/Unknown Album and shown Done.
+
+def test_a_failed_tag_write_leaves_the_file_as_it_was(tmp_path):
+    path = tmp_path / "track.mp3"
+    shutil.copy(SILENCE, path)
+    before = EasyID3(path)
+    before["title"] = "From YouTube"
+    before.save()
+
+    item = _item()
+    del item["album"]          # fails after the old tags were dealt with
+    try:
+        tagger.tag(path, item, embed_cover=False)
+    except KeyError:
+        pass
+
+    assert EasyID3(path)["title"] == ["From YouTube"]
+
+
+def test_what_was_on_the_file_does_not_survive_a_retag(tmp_path):
+    from mutagen.id3 import ID3, TXXX
+
+    path = tmp_path / "track.mp3"
+    shutil.copy(SILENCE, path)
+    tags = ID3()
+    tags.add(TXXX(encoding=3, desc="purl", text="https://youtube.com/x"))
+    tags.save(path)
+
+    tagger.tag(path, _item(), embed_cover=False)
+
+    assert not ID3(path).getall("TXXX:purl")

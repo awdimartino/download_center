@@ -27,8 +27,10 @@ def tag(path: Path, item: dict[str, Any], embed_cover: bool = True) -> None:
     try:
         tags = ID3(path)
         # yt-dlp and ffmpeg leave YouTube-derived frames behind; none of them
-        # should survive into what beets reads.
-        tags.delete()
+        # should survive into what beets reads. Cleared in memory, not on
+        # disk: `delete()` stripped the file at once, so any failure before
+        # the save below left it with no tags at all.
+        tags.clear()
     except ID3NoHeaderError:
         tags = ID3()
 

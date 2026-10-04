@@ -188,12 +188,15 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
         try:
             await asyncio.to_thread(tagger.tag, path, item)
         except Exception as exc:
-            # Not fatal, but it costs more than it used to. These tags are no
-            # longer a hint to a matcher that will overwrite them - they are
-            # what the file is filed by and what Navidrome will show. A file
-            # that loses them lands under Unknown Artist and appears in the
-            # review list, which is still better than discarding the audio.
+            # Fatal. These tags are what the file is filed by and what
+            # Navidrome shows, so an untagged download went in as
+            # Unknown Artist/Unknown Album/<item id>.mp3 and said Done. The
+            # file stays in scratch space, cleared with the job, and Retry
+            # fetches it again.
             log.warning("tagging failed for %s: %s", item["title"], exc)
+            _mark(item, "failed", error=f"Could not tag the download: {exc}"[:200],
+                  progress=0)
+            return
 
         # Into the inbox, and filed from there - the same road a
         # hand-dropped file takes. The worker only calls it directly rather

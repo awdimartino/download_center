@@ -406,3 +406,24 @@ async def test_an_identified_track_carries_no_warning(library):
     await _run(library, items)
 
     assert "warning" not in items[0]
+
+
+@pytest.mark.asyncio
+async def test_a_download_that_cannot_be_tagged_fails_instead_of_filing(
+        library, monkeypatch):
+    """Untagged, it went in as Unknown Artist/Unknown Album/<id>.mp3 and the
+    row said Done (L6)."""
+    from app import inbox
+
+    def broken(path, item, embed_cover=True):
+        raise OSError("read-only file")
+
+    monkeypatch.setattr(worker.tagger, "tag", broken)
+    items = [_track(1, "Come Together")]
+    job = await _run(library, items)
+
+    assert items[0]["status"] == "failed"
+    assert "Could not tag" in items[0]["error"]
+    assert job["status"] == "failed"
+    assert not list(library.library_path.rglob("*.mp3"))
+    assert not inbox.scratch_root(library, "job1").exists()

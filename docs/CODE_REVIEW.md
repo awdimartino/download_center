@@ -785,9 +785,13 @@ it less likely.
       **Fixed:** the item keeps `complete` (it is filed and playable) but
       carries a `warning`; its row reads "Done, no identity" and the
       finished card counts them, in the warning colour. Reproduced first.
-- [ ] **L6.** A tag write failure leaves the file tagless (tags were deleted
+- [x] **L6.** A tag write failure leaves the file tagless (tags were deleted
       first) and filed as `Unknown Artist/Unknown Album/<hex id>.mp3`, shown
       as Done (`worker.py:167-176`, `tagger.py:31`).
+      **Fixed:** the tagger clears the old frames in memory, so a failure
+      before the save leaves the file as it was; a tagging failure now
+      fails the item ("Could not tag the download") and the file is
+      cleared with the job's scratch space. Reproduced first.
 - [ ] **L7.** Drops and uploads never ask Navidrome to scan (`main.py:253, 861`);
       only downloads do.
 - [ ] **L8.** Retry ignores the five-active-jobs limit (`main.py:744-768`); the
