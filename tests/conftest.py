@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store  # noqa: E402
+from app import memo, store  # noqa: E402
 
 
 @pytest.fixture
@@ -26,6 +26,9 @@ def state_db(tmp_path, monkeypatch):
     """A connected ledger on a throwaway database."""
     path = tmp_path / "state.db"
     store.connect(path)
+    # A result cached by the last test is versioned against that test's
+    # database; clearing it keeps one test's answer out of the next.
+    memo.clear()
     yield path
     if store._conn is not None:
         store._conn.close()

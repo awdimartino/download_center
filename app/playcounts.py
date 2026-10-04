@@ -38,12 +38,14 @@ Navidrome's database is opened read-only, like everywhere else here.
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
+import threading
 from datetime import datetime, timedelta, tzinfo, UTC
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from . import navidrome, store
+from . import memo, navidrome, store
 from .config import settings
 
 log = logging.getLogger("download_center.playcounts")
@@ -311,6 +313,9 @@ def take(when: str | None = None) -> dict[str, Any]:
         "changed": len(changed),
         "anomalies": len(anomalies),
         "without_uuid": unidentifiable,
+        # Whose history this reading moved, so their statistics can be
+        # recomputed now rather than on their next visit.
+        "users": sorted({row[2] for row in changed}),
     }
     log.info("play snapshot %s: %d changed of %d tracked%s%s", at,
              len(changed), len(current),
@@ -420,11 +425,137 @@ def status() -> dict[str, Any]:
 
 # --- reading it back --------------------------------------------------------
 
+def history_version() -> tuple:
+    """Changes whenever the listening history does, and costs next to nothing.
+
+    Derived from the rows rather than bumped by the writers, so a hand edit
+    in the sqlite shell (the documented undo for the Last.fm import is one)
+    moves it too. `INSERT OR REPLACE` deletes and re-inserts, so a rewritten
+    reading still raises the highest rowid; a delete lowers the count.
+    """
+    db = store.connection()
+    snapshots = db.execute(
+        "SELECT MAX(rowid), COUNT(*) FROM play_snapshot").fetchone()
+    imported = db.execute(
+        "SELECT MAX(rowid), COUNT(*) FROM play_imported").fetchone()
+    return (store.generation, tuple(snapshots), tuple(imported))
+
+
+# What Navidrome calls each track, read in one pass and kept until its
+# database file changes. Looking titles up per call scanned the whole
+# media_file table - JSON tags parsed on every row - once for every 500
+# UUIDs asked about, which was most of what Home spent its time on.
+_index_lock = threading.Lock()
+_index: dict[str, Any] = {"stamp": None, "version": 0, "tracks": {}}
+
+
+def _db_stamp() -> tuple | None:
+    """Navidrome's database files as the filesystem sees them.
+
+    The write-ahead log is included because that is where Navidrome's writes
+    land first; the main file can go unchanged for a long time.
+    """
+    path = settings.navidrome_db
+    stamp = [str(path)]
+    for name in (str(path), f"{path}-wal"):
+        try:
+            info = os.stat(name)
+        except OSError:
+            stamp.append(None)
+            continue
+        stamp.append((info.st_mtime_ns, info.st_size))
+    return tuple(stamp) if stamp[1] is not None else None
+
+
+def track_index() -> tuple[int, dict[str, dict[str, Any]]]:
+    """(version, track UUID -> what it is called), from Navidrome's index.
+
+    Rebuilt only when Navidrome's database file has changed, and the version
+    moves only when the rebuild came out different. Navidrome writes to its
+    database on every play, so a version tied to the file alone would throw
+    away every cached statistic each time a song finished, for a track list
+    that had not changed at all.
+
+    A UUID with no row here is a track that has since left the library.
+    """
+    stamp = _db_stamp()
+    with _index_lock:
+        if stamp is not None and stamp == _index["stamp"]:
+            return _index["version"], _index["tracks"]
+        tracks = _read_index()
+        if tracks is None:
+            # Unavailable is not "the library is empty". Not remembered, so
+            # the next call tries again rather than serving nothing for ever.
+            return -1, {}
+        if tracks != _index["tracks"]:
+            _index["version"] += 1
+            _index["tracks"] = tracks
+        _index["stamp"] = stamp
+        return _index["version"], _index["tracks"]
+
+
+def _read_index() -> dict[str, dict[str, Any]] | None:
+    try:
+        connection = navidrome.open_db()
+    except navidrome.Unavailable as exc:
+        log.warning("cannot name tracks: %s", exc)
+        return None
+    found: dict[str, dict[str, Any]] = {}
+    try:
+        with connection:
+            live = navidrome.live_clause(connection)
+            rows = connection.execute(f"""
+                select json_extract(mf.tags, '{UUID_TAG}') as uuid,
+                       mf.title, mf.artist, mf.album, mf.duration,
+                       coalesce(nullif(mf.album_artist, ''), mf.artist),
+                       mf.id,
+                       json_extract(mf.tags, '{GENRE_TAG}') as genre,
+                       ({live}) as live
+                  from media_file mf
+                 where json_extract(mf.tags, '{UUID_TAG}') is not null
+            """).fetchall()
+    except sqlite3.Error as exc:
+        log.warning("cannot name tracks: %s", exc)
+        return None
+    finally:
+        connection.close()
+    for (uuid, title, artist, album, duration, album_artist, media_id,
+         genre, live) in rows:
+        # A UUID on two files - a live one and a copy left behind as
+        # missing - names the one still there.
+        if uuid in found and not live:
+            continue
+        found[uuid] = {"title": title or "", "artist": artist or "",
+                       # The library's own id for the file, which is what
+                       # the cover endpoint is asked for.
+                       "id": media_id,
+                       "album": album or "",
+                       # Carried for the callers that turn plays into hours.
+                       "duration": duration or 0.0,
+                       # Whose album this is, not who is credited on this
+                       # particular track - a compilation's tracks should
+                       # still group under one album.
+                       "album_artist": album_artist or "",
+                       "genre": genre or ""}
+    return found
+
+
 def plays_between(start: str, end: str,
                   user_id: str | None = None) -> list[dict[str, Any]]:
     """Plays per track over a date range, as deltas between snapshots.
 
-    The value on a given day is the most recent snapshot at or before it,
+    Shared between callers until the history changes - the Listening panel
+    asks the same range for its tracks, albums and genres - so the rows are
+    read-only. A caller that wants to add to one copies it first.
+    """
+    return memo.cached(("plays_between", start, end, user_id),
+                       history_version(),
+                       lambda: _plays_between(start, end, user_id))
+
+
+def _plays_between(start: str, end: str,
+                   user_id: str | None = None) -> list[dict[str, Any]]:
+    """The value on a given day is the most recent snapshot at or before it,
     because only changes are stored. A count that fell is reported as zero
     plays rather than a negative number; the drop itself is in play_anomaly.
     """
@@ -503,46 +634,15 @@ def _titles(uuids: list[str]) -> dict[str, dict[str, Any]]:
     """
     if not uuids:
         return {}
-    found: dict[str, dict[str, Any]] = {}
-    try:
-        connection = navidrome.open_db()
-    except navidrome.Unavailable as exc:
-        log.warning("cannot name tracks: %s", exc)
-        return found
-    with connection:
-        # Chunked: SQLite's parameter limit is 999 by default and a year of
-        # listening comfortably exceeds it.
-        for start in range(0, len(uuids), 500):
-            chunk = uuids[start:start + 500]
-            holes = ",".join("?" * len(chunk))
-            rows = connection.execute(f"""
-                select json_extract(mf.tags, '{UUID_TAG}') as uuid,
-                       mf.title, mf.artist, mf.album, mf.duration,
-                       coalesce(nullif(mf.album_artist, ''), mf.artist),
-                       mf.id
-                  from media_file mf
-                 where json_extract(mf.tags, '{UUID_TAG}') in ({holes})
-            """, chunk).fetchall()
-            for uuid, title, artist, album, duration, album_artist, media_id in rows:
-                found[uuid] = {"title": title or "", "artist": artist or "",
-                               # The library's own id for the file, which is
-                               # what the cover endpoint is asked for.
-                               "id": media_id,
-                               "album": album or "",
-                               # Carried for the one caller that turns plays
-                               # into hours; the rest ignore it.
-                               "duration": duration or 0.0,
-                               # Whose album this is, not who is credited on
-                               # this particular track - a compilation's
-                               # tracks should still group under one album.
-                               "album_artist": album_artist or ""}
-    return found
+    _version, tracks = track_index()
+    return {uuid: tracks[uuid] for uuid in uuids if uuid in tracks}
 
 
 def top_tracks(start: str, end: str, user_id: str,
                limit: int = 25) -> list[dict[str, Any]]:
     """The most played tracks over a range, named and ready to show."""
-    rows = plays_between(start, end, user_id)[:limit]
+    # Copied: plays_between's rows are shared with every other caller.
+    rows = [dict(row) for row in plays_between(start, end, user_id)[:limit]]
     names = _titles([row["track_uuid"] for row in rows])
     for row in rows:
         known = names.get(row["track_uuid"])
@@ -580,33 +680,13 @@ def top_albums(start: str, end: str, user_id: str,
 
 
 def _genres(uuids: list[str]) -> dict[str, str]:
-    """Track UUID -> its first genre tag, from Navidrome's index.
-
-    Mirrors `_titles`: chunked for SQLite's parameter limit, and a UUID with
-    no row here is a track that has since left the library.
-    """
+    """Track UUID -> its first genre tag, from the same index `_titles`
+    reads. A UUID with no entry is untagged or has left the library."""
     if not uuids:
         return {}
-    found: dict[str, str] = {}
-    try:
-        connection = navidrome.open_db()
-    except navidrome.Unavailable as exc:
-        log.warning("cannot read genres: %s", exc)
-        return found
-    with connection:
-        for start in range(0, len(uuids), 500):
-            chunk = uuids[start:start + 500]
-            holes = ",".join("?" * len(chunk))
-            rows = connection.execute(f"""
-                select json_extract(mf.tags, '{UUID_TAG}') as uuid,
-                       json_extract(mf.tags, '{GENRE_TAG}') as genre
-                  from media_file mf
-                 where json_extract(mf.tags, '{UUID_TAG}') in ({holes})
-            """, chunk).fetchall()
-            for uuid, genre in rows:
-                if genre:
-                    found[uuid] = genre
-    return found
+    _version, tracks = track_index()
+    return {uuid: tracks[uuid]["genre"] for uuid in uuids
+            if uuid in tracks and tracks[uuid]["genre"]}
 
 
 def top_genres(start: str, end: str, user_id: str,
@@ -639,6 +719,23 @@ def coverage(user_id: str) -> dict[str, Any]:
     collection.
     """
     db = store.connection()
+    return {
+        **memo.cached(("coverage", user_id), history_version(),
+                      lambda: _person_coverage(user_id)),
+        # About the job, not the person - and about the clock, so never
+        # cached: the last reading moves every few minutes even when nobody
+        # is listening.
+        "days_run": db.execute(
+            "SELECT COUNT(*) FROM play_snapshot_run").fetchone()[0],
+        "last_run": db.execute(
+            "SELECT MAX(day) FROM play_snapshot_run").fetchone()[0],
+        "up_to_date": read_recently(),
+        "last_reading": last_reading(),
+    }
+
+
+def _person_coverage(user_id: str) -> dict[str, Any]:
+    db = store.connection()
     imported, first, last = db.execute(
         "SELECT COALESCE(SUM(plays), 0),"
         "       substr(MIN(played_at), 1, 10), substr(MAX(played_at), 1, 10)"
@@ -658,11 +755,4 @@ def coverage(user_id: str) -> dict[str, Any]:
         "imported_to": last,
         "imported_sources": sources,
         "snapshot_days": snapshot_days,
-        # About the job, not the person.
-        "days_run": db.execute(
-            "SELECT COUNT(*) FROM play_snapshot_run").fetchone()[0],
-        "last_run": db.execute(
-            "SELECT MAX(day) FROM play_snapshot_run").fetchone()[0],
-        "up_to_date": read_recently(),
-        "last_reading": last_reading(),
     }

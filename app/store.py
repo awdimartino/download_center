@@ -38,6 +38,9 @@ from typing import Any
 
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
+# Bumped by every connect(), so anything cached against this database's
+# contents can tell a different database with the same row counts apart.
+generation = 0
 
 SCHEMA = """
 -- Duplicate groups deliberately kept as they are. Without this a pair you
@@ -169,9 +172,10 @@ CREATE TABLE IF NOT EXISTS play_anomaly (
 
 
 def connect(path: Path) -> None:
-    global _conn
+    global _conn, generation
     path.parent.mkdir(parents=True, exist_ok=True)
     _conn = sqlite3.connect(path, check_same_thread=False)
+    generation += 1
     _migrate(_conn)
     _conn.executescript(SCHEMA)
     _conn.commit()

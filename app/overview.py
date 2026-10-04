@@ -30,7 +30,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from . import navidrome, playcounts, store
+from . import memo, navidrome, playcounts, store
 
 log = logging.getLogger("download_center.overview")
 
@@ -47,7 +47,26 @@ TOP_ARTISTS = 6
 SESSION_GAP = timedelta(minutes=30)
 
 
+def _versions() -> tuple:
+    """What every statistic here is computed from: the history, the names
+    in the track index, and the day - "this month" and "this year" move at
+    midnight even when nothing else does. Both the local and the UTC day,
+    because the month buckets are cut in UTC and the windows in local time.
+    """
+    index_version, _tracks = playcounts.track_index()
+    return (playcounts.history_version(), index_version, playcounts.today(),
+            datetime.now(UTC).strftime("%Y-%m-%d"))
+
+
 def _increments(user_id: str) -> list[tuple[str, str, int]]:
+    """Every play this person made, as (when, track uuid, how many).
+
+    Shared between callers until the history changes; read-only."""
+    return memo.cached(("increments", user_id), playcounts.history_version(),
+                       lambda: _read_increments(user_id))
+
+
+def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
     """Every play this person made, as (when, track uuid, how many).
 
     Both sources flattened into the same shape, so everything downstream is
@@ -96,6 +115,15 @@ def _increments(user_id: str) -> list[tuple[str, str, int]]:
 def _timed_plays(user_id: str) -> list[tuple[datetime, str, int]]:
     """This person's plays that carry an actual moment, oldest first.
 
+    Shared between the hourly chart and the sessions until the history
+    changes; read-only."""
+    return memo.cached(("timed_plays", user_id), playcounts.history_version(),
+                       lambda: _read_timed_plays(user_id))
+
+
+def _read_timed_plays(user_id: str) -> list[tuple[datetime, str, int]]:
+    """This person's plays that carry an actual moment, oldest first.
+
     `_increments` also returns plays whose only clock is the day the reading
     was taken or the import ran on - a bare "2026-09-25" with no time in it.
     Those cannot say which hour a play fell in or how far it sat from the
@@ -118,8 +146,12 @@ def _timed_plays(user_id: str) -> list[tuple[datetime, str, int]]:
 def hourly_distribution(user_id: str, start: str, end: str) -> list[dict[str, Any]]:
     """Plays by hour of day, local time, for plays inside [start, end]."""
     buckets: dict[int, int] = collections.Counter()
+    # Compared as dates, not formatted strings: formatting every play in
+    # the history was most of what this cost.
+    first = datetime.strptime(start, "%Y-%m-%d").date()
+    last = datetime.strptime(end, "%Y-%m-%d").date()
     for moment, _track, n in _timed_plays(user_id):
-        if start <= moment.strftime("%Y-%m-%d") <= end:
+        if first <= moment.date() <= last:
             buckets[moment.hour] += n
     return [{"hour": hour, "plays": buckets.get(hour, 0)} for hour in range(24)]
 
@@ -130,7 +162,16 @@ def _sessions(user_id: str) -> list[dict[str, Any]]:
     Built once over the whole history rather than cut to a range first: a
     range boundary that happened to fall in the middle of an evening would
     otherwise split one session into two and report a shorter one of each.
+    Which also makes it the same answer for every range, so it is kept until
+    the history or the track index changes.
     """
+    index_version, _tracks = playcounts.track_index()
+    return memo.cached(("sessions", user_id),
+                       (playcounts.history_version(), index_version),
+                       lambda: _find_sessions(user_id))
+
+
+def _find_sessions(user_id: str) -> list[dict[str, Any]]:
     plays = _timed_plays(user_id)
     if not plays:
         return []
@@ -174,6 +215,64 @@ def longest_session(user_id: str, start: str, end: str) -> dict[str, Any]:
     return {**longest, "count": len(in_range)}
 
 
+def days_back(end: str, days: int) -> str:
+    """The first day of a window `days` long that ends on `end`, inclusive."""
+    return (datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
+            - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+
+
+def window(user_id: str, start: str, end: str, days: int,
+           limit: int) -> dict[str, Any]:
+    """What the Listening panel shows for one range, all over the same days.
+
+    Kept until the history, the track index or the day changes; read-only.
+    """
+    def compute() -> dict[str, Any]:
+        tracks = playcounts.top_tracks(start, end, user_id, limit)
+        return {
+            "start": start, "end": end, "days": days,
+            "tracks": tracks,
+            "plays": sum(track["plays"] for track in tracks),
+            "albums": playcounts.top_albums(start, end, user_id, 10),
+            "genres": playcounts.top_genres(start, end, user_id, 10),
+            "hourly": hourly_distribution(user_id, start, end),
+            "longest_session": longest_session(user_id, start, end),
+        }
+
+    return memo.cached(("window", user_id, start, end, days, limit),
+                       _versions(), compute)
+
+
+# What Home asks for when it opens: the Listening panel's default range and
+# row count (listening.js). Warmed ahead of time so the first visit after a
+# new play finds it ready.
+OPENING_DAYS = 3650
+OPENING_LIMIT = 50
+
+
+def warm(user_ids: list[str] | None = None) -> None:
+    """Compute what Home will ask for, before anybody asks.
+
+    Run after a reading that recorded new plays, which is exactly when every
+    cached statistic for that person has just gone out of date. Otherwise
+    the next visit to Home would be the one that paid for it. None means
+    everyone with any history, for a freshly started server.
+    """
+    if user_ids is None:
+        user_ids = [row[0] for row in store.connection().execute(
+            "select user_id from play_snapshot union"
+            " select user_id from play_imported").fetchall()]
+    end = playcounts.today()
+    for user_id in user_ids:
+        try:
+            _listening_cached(user_id)
+            window(user_id, days_back(end, OPENING_DAYS), end, OPENING_DAYS,
+                   OPENING_LIMIT)
+        except Exception as exc:
+            # Only a head start; the request will compute it if this fails.
+            log.warning("cannot warm the statistics for %s: %s", user_id, exc)
+
+
 def _months_back(count: int) -> list[str]:
     """The last `count` months as YYYY-MM, oldest first, none skipped.
 
@@ -193,8 +292,19 @@ def _months_back(count: int) -> list[str]:
 
 
 def listening(identity: navidrome.Identity) -> dict[str, Any]:
-    """One pass over this person's listening, shaped for the landing page."""
-    plays = _increments(identity.user_id)
+    """One pass over this person's listening, shaped for the landing page.
+
+    Kept until the history, the track index or the day changes; read-only."""
+    return _listening_cached(identity.user_id)
+
+
+def _listening_cached(user_id: str) -> dict[str, Any]:
+    return memo.cached(("listening", user_id), _versions(),
+                       lambda: _listening(user_id))
+
+
+def _listening(user_id: str) -> dict[str, Any]:
+    plays = _increments(user_id)
 
     by_month: dict[str, int] = collections.Counter()
     for day, _track, n in plays:
@@ -270,6 +380,16 @@ def collection(identity: navidrome.Identity) -> dict[str, Any]:
     allowed = [lib["id"] for lib in identity.libraries]
     if not allowed:
         return {"tracks": 0, "albums": 0, "available": False}
+    stamp = playcounts._db_stamp()
+    if stamp is None:
+        return _count_collection(allowed)
+    # Kept until Navidrome's database file changes. Not the track index's
+    # version: that only covers tracks carrying a UUID, and this counts all.
+    return memo.cached(("collection", tuple(sorted(allowed))), stamp,
+                       lambda: _count_collection(allowed))
+
+
+def _count_collection(allowed: list[int]) -> dict[str, Any]:
     try:
         connection = navidrome.open_db()
         with connection:
@@ -414,10 +534,11 @@ def _snapshot_health() -> dict[str, Any]:
     music, and it earns its place: Navidrome keeps only a running total, so
     every interval this does not run is listening nobody can recover.
     """
+    # The two answers alone, not the whole of status(): that also counts
+    # every reading ever taken, which this page never shows.
     try:
-        status = playcounts.status()
+        return {"up_to_date": playcounts.read_recently(),
+                "last_reading": playcounts.last_reading()}
     except Exception as exc:
         log.warning("cannot read snapshot status: %s", exc)
         return {"up_to_date": None, "last_reading": ""}
-    return {"up_to_date": bool(status.get("up_to_date")),
-            "last_reading": status.get("last_reading") or ""}

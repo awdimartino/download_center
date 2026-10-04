@@ -9,7 +9,7 @@ import hashlib
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,7 @@ from fastapi import (Depends, FastAPI, File, Form, HTTPException, Request,
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.gzip import GZipMiddleware
 
 from . import auth, beets_runner, combine, covers, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
@@ -285,9 +286,18 @@ async def _snapshot_loop() -> None:
     changed counts are stored, so a reading that finds nothing new writes
     nothing but the run-log row that says the collector is alive.
     """
+    # Everyone on the first pass, so the first visit after a restart or a
+    # deploy is not the one that computes; after that, whoever just played
+    # something - a reading with new plays is what makes their cached
+    # statistics stale.
+    first = True
     while True:
         try:
-            await asyncio.to_thread(playcounts.take)
+            taken = await asyncio.to_thread(playcounts.take)
+            if first or taken.get("users"):
+                await asyncio.to_thread(
+                    overview.warm, None if first else taken["users"])
+            first = False
         except Exception:
             log.exception("play-count snapshot failed")
         await asyncio.sleep(SNAPSHOT_MINUTES * 60)
@@ -342,6 +352,29 @@ _warned_missing: set[str] = set()
 
 
 app = FastAPI(title="Download Center", lifespan=lifespan)
+
+
+class TextGZip:
+    """Compresses what is worth compressing: the page, its scripts and
+    stylesheet, and the JSON behind it - a few hundred kilobytes a load,
+    shrinking to about a third. Cover art is already JPEG or PNG, and
+    gzipping it again would spend the Pi's CPU to save nothing.
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.zipped = GZipMiddleware(inner, minimum_size=1024, compresslevel=6)
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "") if scope["type"] == "http" else ""
+        if not path or path.startswith("/api/library/art") or path.endswith(
+                (".png", ".jpg", ".jpeg", ".webp", ".ico", ".woff2")):
+            await self.inner(scope, receive, send)
+        else:
+            await self.zipped(scope, receive, send)
+
+
+app.add_middleware(TextGZip)
 
 
 # --- who is asking --------------------------------------------------------
@@ -2121,21 +2154,16 @@ async def playcount_top(
             # going on; reading every few minutes can, and the panel was
             # otherwise unable to show anything played since midnight.
             window_end = playcounts.today()
-            window_start = (datetime.strptime(window_end, "%Y-%m-%d").replace(tzinfo=UTC)
-                            - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+            window_start = overview.days_back(window_end, days)
         return _listening_window(window_start, window_end, days)
 
     def _listening_window(start: str, end: str, days: int) -> dict[str, Any]:
         user_id = session.identity.user_id
-        tracks = playcounts.top_tracks(start, end, user_id, limit)
+        # The statistics are kept until a new play arrives or the track
+        # index changes; the coverage is not, because "is it collecting"
+        # and "last read at" are about the clock rather than the history.
         return {
-            "start": start, "end": end, "days": days,
-            "tracks": tracks,
-            "plays": sum(track["plays"] for track in tracks),
-            "albums": playcounts.top_albums(start, end, user_id, 10),
-            "genres": playcounts.top_genres(start, end, user_id, 10),
-            "hourly": overview.hourly_distribution(user_id, start, end),
-            "longest_session": overview.longest_session(user_id, start, end),
+            **overview.window(user_id, start, end, days, limit),
             # Theirs, not the installation's. status() counts every account's
             # imported history together, which shown to someone who has never
             # played anything is both baffling and none of their business.

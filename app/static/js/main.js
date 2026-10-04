@@ -139,13 +139,16 @@ function start() {
   started = true;
   connect(handleSessionExpired);
   // The panel the page opens on, so it is not blank until somebody
-  // navigates away and back.
-  loadHome();
-  loadListening();
-  loadHealth();
-  loadLibrary();
-  checkSpotify();
+  // navigates away and back. Everything else waits for it: the Pi works
+  // through requests one at a time near enough, and the health checks and
+  // the library listing sent alongside Home used to be answered first while
+  // the page somebody was actually looking at sat empty.
   resumeOperations();
+  Promise.allSettled([loadHome(), loadListening()]).then(() => {
+    loadHealth();
+    loadLibrary();
+    checkSpotify();
+  });
   healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
 }
 

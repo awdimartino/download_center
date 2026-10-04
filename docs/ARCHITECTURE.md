@@ -544,6 +544,21 @@ quality mechanism.
   Hourly distribution and longest-session live in `overview.py` instead,
   because both need each play's exact moment (`overview._timed_plays`),
   which this module's day-bucketed queries do not carry.
+- **`memo.py`** — Home's statistics, kept until the data under them moves.
+  Each result is stored with the version it was computed from:
+  `playcounts.history_version()` (max rowid and row count of `play_snapshot`
+  and `play_imported`, plus `store.generation`, so a hand `DELETE` counts
+  too), `playcounts.track_index()`'s version, and today's date. Nothing is
+  invalidated by hand. The track index is one scan of `media_file`, redone
+  only when Navidrome's database or WAL file changes on disk, and its version
+  moves only when the scan comes out different; Navidrome writes on every
+  play, so tying the version to the file would discard everything after
+  each song. After a reading records new plays, `_snapshot_loop` calls
+  `overview.warm` for whoever played them, and for everyone on its first
+  pass after a start, so Home is usually computed before anyone opens it.
+  Cached values are shared and must be treated as read-only (`top_tracks`
+  copies its rows before naming them). Measured on the Pi on 2026-10-04: a
+  warm Home costs about 15 ms of server time, against about 2 s before.
 - **`operations.py`** — long work that is not a download: a candidate
   lookup, a retag, a disk audit. One at a time per name, off the request,
   with a status the browser can ask for; starting one already running reports
