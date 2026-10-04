@@ -57,7 +57,13 @@ has been done and written up; fixing what it found comes next.
 - [x] **Fix the review's critical and high findings.** Done 2026-10-04,
       one commit per finding (H6 fell out of C4's fix); each is ticked in
       CODE_REVIEW.md with what changed and what is left.
-- [ ] **Fix the review's medium findings**, top-down.
+- [x] **Fix the review's medium findings.** Done 2026-10-04, one commit
+      each. M29 is only partly done (a lock on `take()`; readers still
+      share state.db's connection) and stays open in CODE_REVIEW.md.
+- [ ] **Deploy and check on the Pi**: the state.db migrations
+      (`play_collection`, `duplicate_dismissed.decided_by`), the new caches'
+      cost, and Health's stamped-but-not-scanned row clearing (H6).
+- [ ] **The review's low findings**, then readability.
 
 ### Next
 
