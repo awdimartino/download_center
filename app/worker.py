@@ -42,18 +42,44 @@ PUSH_INTERVAL = 0.5
 # same problem: it paced one job while the others ignored it, which is not
 # what "stay under YouTube's radar" means.
 #
-# Built lazily because the limit is a setting and can change, and because a
-# Semaphore binds to the running loop.
-_gate: asyncio.Semaphore | None = None
-_gate_size: int = 0
+# Sized by the setting at the moment each download asks, not when the gate
+# was made. Rebuilding a Semaphore when the setting changed left jobs already
+# running on the old one, so old and new together ran past either limit.
+# Lowering the limit holds new downloads until enough finish; raising it
+# lets more in as each one finishes.
+#
+# Built lazily because an asyncio primitive binds to the running loop.
+class Gate:
+    def __init__(self) -> None:
+        self._active = 0
+        self._turn = asyncio.Condition()
+
+    def _room(self) -> bool:
+        return self._active < max(1, settings.concurrency)
+
+    def locked(self) -> bool:
+        return not self._room()
+
+    async def __aenter__(self) -> None:
+        async with self._turn:
+            await self._turn.wait_for(self._room)
+            self._active += 1
+
+    async def __aexit__(self, *exc: object) -> None:
+        async with self._turn:
+            self._active -= 1
+            self._turn.notify_all()
 
 
-def gate() -> asyncio.Semaphore:
-    global _gate, _gate_size
-    if _gate is None or _gate_size != settings.concurrency:
-        _gate = asyncio.Semaphore(settings.concurrency)
-        _gate_size = settings.concurrency
+_gate: Gate | None = None
+
+
+def gate() -> Gate:
+    global _gate
+    if _gate is None:
+        _gate = Gate()
     return _gate
+
 
 Push = Callable[[dict[str, Any]], Awaitable[None]]
 # Job plus only the items whose visible state moved.
@@ -118,7 +144,7 @@ async def _match_with_retries(item: dict[str, Any]) -> Any:
 
 
 async def _process(item: dict[str, Any], space: workspace.Workspace,
-                   job_id: str, gate: asyncio.Semaphore) -> None:
+                   job_id: str, gate: Gate) -> None:
     """One item, whatever goes wrong with it.
 
     Every error is this item's failure, with its message. One that escaped
@@ -138,7 +164,7 @@ async def _process(item: dict[str, Any], space: workspace.Workspace,
 
 
 async def _process_item(item: dict[str, Any], space: workspace.Workspace,
-                        job_id: str, gate: asyncio.Semaphore) -> None:
+                        job_id: str, gate: Gate) -> None:
     # Already in the library. A retry resets the failures and re-runs the
     # whole job, so without this every track that succeeded the first time is
     # downloaded and filed again - one duplicate per completed track, per

@@ -90,7 +90,6 @@ def test_the_download_gate_is_shared_across_jobs(monkeypatch):
     three times the configured concurrency - each spawning yt-dlp and
     ffmpeg, on a Raspberry Pi."""
     monkeypatch.setattr(worker, "_gate", None)
-    monkeypatch.setattr(worker, "_gate_size", 0)
 
     async def check():
         return worker.gate() is worker.gate()
@@ -98,25 +97,69 @@ def test_the_download_gate_is_shared_across_jobs(monkeypatch):
     assert asyncio.run(check()) is True
 
 
-def test_the_gate_is_rebuilt_when_the_setting_changes(monkeypatch):
+def test_changing_the_limit_mid_job_never_runs_past_it(monkeypatch):
+    """Changing the setting used to build a second semaphore: jobs already
+    running kept the old one, and old and new together ran past either
+    limit (L9)."""
     monkeypatch.setattr(worker, "_gate", None)
-    monkeypatch.setattr(worker, "_gate_size", 0)
+    monkeypatch.setattr(settings, "concurrency", 3)
 
-    async def check():
-        monkeypatch.setattr(settings, "concurrency", 2)
-        first = worker.gate()
-        monkeypatch.setattr(settings, "concurrency", 5)
-        second = worker.gate()
-        return first, second
+    current = peak = later_peak = 0
+    later = 0
 
-    first, second = asyncio.run(check())
-    assert first is not second
-    assert second._value == 5
+    async def body(hold, is_later=False):
+        nonlocal current, peak, later, later_peak
+        async with worker.gate():
+            current += 1
+            peak = max(peak, current)
+            if is_later:
+                later += 1
+                later_peak = max(later_peak, later)
+            await hold
+            if is_later:
+                later -= 1
+            current -= 1
+
+    async def run():
+        release = asyncio.get_running_loop().create_future()
+        first = [asyncio.create_task(body(release)) for _ in range(3)]
+        await asyncio.sleep(0.01)
+        monkeypatch.setattr(settings, "concurrency", 1)
+        second = [asyncio.create_task(body(asyncio.sleep(0.01), True))
+                  for _ in range(3)]
+        await asyncio.sleep(0.01)
+        assert current == 3, "a download started past the lowered limit"
+        release.set_result(None)
+        await asyncio.gather(*first, *second)
+
+    asyncio.run(run())
+    assert peak == 3
+    assert later_peak == 1
+
+
+def test_raising_the_limit_lets_more_in(monkeypatch):
+    monkeypatch.setattr(worker, "_gate", None)
+    monkeypatch.setattr(settings, "concurrency", 1)
+    peak = current = 0
+
+    async def body():
+        nonlocal peak, current
+        async with worker.gate():
+            current += 1
+            peak = max(peak, current)
+            await asyncio.sleep(0.01)
+            current -= 1
+
+    async def run():
+        monkeypatch.setattr(settings, "concurrency", 4)
+        await asyncio.gather(*(body() for _ in range(8)))
+
+    asyncio.run(run())
+    assert peak == 4
 
 
 def test_the_gate_actually_limits(monkeypatch):
     monkeypatch.setattr(worker, "_gate", None)
-    monkeypatch.setattr(worker, "_gate_size", 0)
     monkeypatch.setattr(settings, "concurrency", 2)
 
     peak = 0
@@ -248,7 +291,6 @@ async def test_a_cancelled_download_gives_its_gate_slot_back(monkeypatch):
     gate is process-wide, so a task that never releases starves every later
     job of every user - a queue stuck at "running" with nothing in the log."""
     monkeypatch.setattr(worker, "_gate", None)
-    monkeypatch.setattr(worker, "_gate_size", 0)
     monkeypatch.setattr(settings, "concurrency", 1)
 
     holding = asyncio.Event()
@@ -266,8 +308,11 @@ async def test_a_cancelled_download_gives_its_gate_slot_back(monkeypatch):
     await asyncio.gather(task, return_exceptions=True)
 
     # Free again, immediately: the next job is not queued behind a ghost.
-    await asyncio.wait_for(worker.gate().acquire(), timeout=1)
-    worker.gate().release()
+    async def next_one():
+        async with worker.gate():
+            pass
+
+    await asyncio.wait_for(next_one(), timeout=1)
 
 
 # --- the active-job cap holds (L8) ------------------------------------------

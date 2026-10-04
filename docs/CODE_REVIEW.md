@@ -804,8 +804,12 @@ it less likely.
       between them; retry resolves the workspace and checks room before
       resetting anything. Reproduced first (two concurrent creates both
       admitted).
-- [ ] **L9.** Changing `concurrency` mid-job builds a second semaphore, so
+- [x] **L9.** Changing `concurrency` mid-job builds a second semaphore, so
       old and new jobs together exceed it (`worker.py:51-56`).
+      **Fixed:** `worker.Gate` is one condition-based gate whose size is
+      read from the setting each time a download asks. Lowering it holds
+      new downloads until enough finish; raising it lets more in as each
+      finishes. Reproduced first (four at once after lowering 3 → 1).
 - [ ] **L10.** An item's error survives a successful in-run retry and shows
       as a tooltip on a Done row (`worker.py:88, 115, 188`).
 - [ ] **L11.** Browse and Drop never send `library_id`: a multi-library
