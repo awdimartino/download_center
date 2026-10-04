@@ -674,3 +674,16 @@ def test_an_evening_play_is_on_the_same_local_day_everywhere(state_db, monkeypat
     assert [row["plays"] for row in on_the_4th] == [1]
     assert playcounts.plays_between("2026-10-05", "2026-10-05", ALEX) == []
     assert overview._increments(ALEX)[0][0].startswith("2026-10-04T20:58")
+
+
+def test_plays_in_view_counts_every_track_not_just_the_ones_shown(state_db):
+    """It summed the top tracks the panel listed - fifty at most - so a
+    long range read far fewer plays than it held (CODE_REVIEW M4)."""
+    snapshot("2026-09-01", "t0", 1)
+    for n, track in enumerate(("t1", "t2", "t3"), start=1):
+        snapshot("2026-09-05", track, n)
+
+    shown = overview.window(ALEX, "2026-09-02", "2026-09-30", 29, limit=1)
+
+    assert len(shown["tracks"]) <= 1
+    assert shown["plays"] == 6

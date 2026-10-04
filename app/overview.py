@@ -184,7 +184,10 @@ def window(user_id: str, start: str, end: str, days: int,
         return {
             "start": start, "end": end, "days": days,
             "tracks": tracks,
-            "plays": sum(track["plays"] for track in tracks),
+            # The whole range, not the tracks listed: those stop at the
+            # panel's limit, and the figure undercounted any long range.
+            "plays": sum(row["plays"] for row in
+                         playcounts.plays_between(start, end, user_id)),
             "albums": playcounts.top_albums(start, end, user_id, 10),
             "genres": playcounts.top_genres(start, end, user_id, 10),
             "hourly": hourly_distribution(user_id, start, end),

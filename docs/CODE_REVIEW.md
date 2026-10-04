@@ -323,8 +323,10 @@ it less likely.
       **Fixed:** `_current` keeps the higher count. Reproduced first: with
       the 5 row first, the reading was 2.
 
-- [ ] **M4. "Plays in view" sums only the top 50 tracks.**
+- [x] **M4. "Plays in view" sums only the top 50 tracks.**
       `app/overview.py:235`. *Fix:* sum the full range.
+      **Fixed:** summed from `plays_between` over the range. Reproduced
+      first (3 for 6 with a limit of 1).
 
 - [ ] **M5. A slow Listening response can overwrite a newer one.**
       `app/static/js/listening.js:103-141`. Click Year, then All time (cached,
