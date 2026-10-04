@@ -711,13 +711,19 @@ it less likely.
       reviewed*. *Fix:* filter by folder in SQL; memoise the listing on
       Navidrome's database stamp (`memo.py` exists).
 
-- [ ] **M37. The track index is rebuilt on almost every request while music
+- [x] **M37. The track index is rebuilt on almost every request while music
       plays.** *Cost on the Pi unmeasured.* `app/playcounts.py:470-494`,
       `app/overview.py:386`. The change check is the database and WAL files'
       mtime and size, and Navidrome writes on every play, so a full
       `media_file` scan with three JSON lookups per row runs on the request
       path. *Fix:* detect changes with `max(updated_at), count(*)` on
       `media_file`.
+      **Fixed** as suggested: `navidrome.library_stamp` is `count(*)`,
+      `max(updated_at)` and `sum(missing)` on media_file plus missing
+      folders; the track index and Home's collection count are keyed on it.
+      Without an `updated_at` column it falls back to the file stamp.
+      Reproduced first (a play rebuilt the index). Cost on the Pi still
+      unmeasured.
 
 - [ ] **M38. The cover survey costs ~70k filesystem calls, and can run twice
       at once.** `app/covers.py:153-158, 263-268`, `app/static/js/library.js:263-276, 811-826`.

@@ -338,11 +338,11 @@ def collection(identity: navidrome.Identity) -> dict[str, Any]:
     allowed = [lib["id"] for lib in identity.libraries]
     if not allowed:
         return {"tracks": 0, "albums": 0, "available": False}
-    stamp = playcounts._db_stamp()
+    stamp = playcounts._library_stamp()
     if stamp is None:
         return _count_collection(allowed)
-    # Kept until Navidrome's database file changes. Not the track index's
-    # version: that only covers tracks carrying a UUID, and this counts all.
+    # Kept until Navidrome's tracks change. Not the track index's version:
+    # that only covers tracks carrying a UUID, and this counts all.
     return memo.cached(("collection", tuple(sorted(allowed))), stamp,
                        lambda: _count_collection(allowed))
 

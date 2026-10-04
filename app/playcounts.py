@@ -509,18 +509,38 @@ def _db_stamp() -> tuple | None:
     return tuple(stamp) if stamp[1] is not None else None
 
 
+def _library_stamp() -> tuple | None:
+    """What the track index depends on: media_file, not the database file.
+
+    Keyed on the files' mtime it was rebuilt - a full media_file scan with
+    three JSON lookups a row - on nearly every request while music played,
+    because Navidrome writes to its database on every play.
+    """
+    try:
+        connection = navidrome.open_db()
+    except navidrome.Unavailable:
+        return None
+    try:
+        with connection:
+            stamp = navidrome.library_stamp(connection)
+    except sqlite3.Error:
+        return None
+    # No updated_at to go on: the database files, as before.
+    return stamp if stamp is not None else _db_stamp()
+
+
 def track_index() -> tuple[int, dict[str, dict[str, Any]]]:
     """(version, track UUID -> what it is called), from Navidrome's index.
 
-    Rebuilt only when Navidrome's database file has changed, and the version
-    moves only when the rebuild came out different. Navidrome writes to its
+    Rebuilt only when Navidrome's tracks have changed (`_library_stamp`),
+    and the version moves only when the rebuild came out different. Navidrome writes to its
     database on every play, so a version tied to the file alone would throw
     away every cached statistic each time a song finished, for a track list
     that had not changed at all.
 
     A UUID with no row here is a track that has since left the library.
     """
-    stamp = _db_stamp()
+    stamp = _library_stamp()
     with _index_lock:
         if stamp is not None and stamp == _index["stamp"]:
             return _index["version"], _index["tracks"]

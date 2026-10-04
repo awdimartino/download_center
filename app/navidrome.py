@@ -150,6 +150,37 @@ def account(identity: Identity) -> tuple[bool, list[dict[str, Any]]] | None:
     return is_admin, _libraries(current, open_db())
 
 
+def library_stamp(connection: sqlite3.Connection,
+                  user_id: str | None = None) -> tuple | None:
+    """A cheap answer to "has the library changed?".
+
+    The database files' modification time was the old answer, and Navidrome
+    writes on every play, so everything keyed on it was rebuilt after each
+    song. This changes only when tracks do - added, removed, rescanned, gone
+    missing - and, given a user, when that person's plays or ratings do.
+
+    None when there is no `updated_at` to go on: a track retagged in place
+    keeps the same row count, so without it this cannot tell, and callers
+    fall back to something that can.
+    """
+    columns = columns_of(connection, "media_file")
+    if "updated_at" not in columns:
+        return None
+    parts: list[Any] = list(connection.execute(
+        "select count(*), max(updated_at), {} from media_file".format(
+            "sum(missing)" if "missing" in columns else "0")).fetchone())
+    if "missing" in columns_of(connection, "folder"):
+        parts.append(connection.execute(
+            "select count(*) from folder where missing = 1").fetchone()[0])
+    if user_id is not None:
+        annotation = columns_of(connection, "annotation")
+        plays = ("sum(play_count)" if "play_count" in annotation else "0")
+        parts.extend(connection.execute(
+            f"select count(*), {plays}, sum(starred), sum(rating)"
+            " from annotation where user_id = ?", (user_id,)).fetchone())
+    return tuple(parts)
+
+
 def libraries_for(identity: Identity) -> list[dict[str, Any]]:
     """Which libraries this person may see, straight from Navidrome.
 
