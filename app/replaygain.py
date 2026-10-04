@@ -28,7 +28,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import filer, inbox, library, navidrome, operations
+from . import filer, folderlock, inbox, library, navidrome, operations
 
 log = logging.getLogger("navidrome_companion.replaygain")
 
@@ -105,8 +105,13 @@ def measure_all(identity: navidrome.Identity,
             skipped.append(f"{folder}: holds more than one album")
             continue
         try:
-            measure(path)
+            # Held while rsgain rewrites the files, so a rename, cover or
+            # combine cannot move them from under it.
+            with folderlock.holding(path):
+                measure(path)
             done += 1
+        except folderlock.Busy:
+            skipped.append(f"{folder}: being changed by something else")
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
             failed.append(str(exc))
         # Every so often rather than once at the end: a run stopped or

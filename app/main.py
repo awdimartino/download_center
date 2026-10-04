@@ -11,6 +11,7 @@ import time
 import uuid
 from datetime import datetime, UTC
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import (Depends, FastAPI, File, Form, HTTPException, Request,
@@ -24,7 +25,7 @@ from . import auth, beets_runner, combine, covers, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
 from . import filer, inbox, library, overview, registry, replaygain, spotify
-from . import uuidtags
+from . import folderlock, uuidtags
 from . import worker, workspace
 from . import config
 from . import health as health_checks
@@ -1414,6 +1415,15 @@ async def library_album(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _library_folder(identity: navidrome.Identity, library_id: int,
+                    folder: str) -> Path:
+    """A folder of a library this account can see, for locking only - the
+    caller has already validated it through `library.tracks`."""
+    root = next(Path(lib["path"]) for lib in identity.libraries
+                if str(lib["id"]) == str(library_id))
+    return root / folder
+
+
 def _copy_from_track_row(row: dict[str, Any], library_id: int,
                          album: str, artist: str) -> duplicates.Copy:
     """Enough of duplicates.Copy to quarantine a track by hand.
@@ -1457,8 +1467,9 @@ async def api_library_quarantine(
     copies = [_copy_from_track_row(t, body.library_id, body.album,
                                    t["artist"] or body.artist)
               for t in found["items"]]
-    outcome = await asyncio.to_thread(
-        duplicates.quarantine_many, copies, session.identity)
+    outcome = await _locked_request(
+        [_library_folder(session.identity, body.library_id, body.folder)],
+        functools.partial(duplicates.quarantine_many, copies, session.identity))
 
     if outcome.get("quarantined"):
         await asyncio.to_thread(navidrome.notify)
@@ -1500,8 +1511,9 @@ async def api_track_quarantine(
     copy = _copy_from_track_row(track, body.library_id, body.album,
                                 track["artist"] or body.artist)
     try:
-        moved = await asyncio.to_thread(
-            duplicates.quarantine_one, copy, session.identity)
+        moved = await _locked_request(
+            [_library_folder(session.identity, body.library_id, body.folder)],
+            functools.partial(duplicates.quarantine_one, copy, session.identity))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1631,10 +1643,7 @@ async def library_album_edit(
                     space.library_path)) if filed else body.folder,
                 "album_uuid": filed[0].album_uuid if filed else None}
 
-    try:
-        return await asyncio.to_thread(run)
-    except filer.NotEditable as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await _locked_request([folder], run)
 
 
 @app.post("/api/library/track/edit")
@@ -1682,10 +1691,7 @@ async def library_track_edit(
                 "album_uuid": filed.album_uuid,
                 "identified": filed.identified}
 
-    try:
-        return await asyncio.to_thread(run)
-    except filer.NotEditable as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await _locked_request([path.parent], run)
 
 
 # Long, because a cover does not change without the file changing, and the
@@ -1746,6 +1752,24 @@ async def library_rescan(
 class AlbumTarget(BaseModel):
     library_id: int
     folder: str
+
+
+def _locked(folders: list[Path], work: Callable[[], Any]) -> Any:
+    """Run `work` holding these folders against any other change to them
+    (folderlock), or raise folderlock.Busy."""
+    with folderlock.holding(*folders):
+        return work()
+
+
+async def _locked_request(folders: list[Path], work: Callable[[], Any]) -> Any:
+    """The same, for a change made inside the request: Busy is a 409, and a
+    file that cannot be edited a 422."""
+    try:
+        return await asyncio.to_thread(_locked, folders, work)
+    except folderlock.Busy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except filer.NotEditable as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _one_album(path: Path) -> None:
@@ -1880,7 +1904,8 @@ async def library_match_apply(
         return result
 
     operation, started = operations.start(
-        "import", session.identity.username, run)
+        "import", session.identity.username,
+        functools.partial(_locked, [path], run))
     return {"started": started, "operation": operation.as_dict()}
 
 
@@ -1957,7 +1982,7 @@ async def library_cover_apply(
         navidrome.notify()
         return result
 
-    return await asyncio.to_thread(run)
+    return await _locked_request([path], run)
 
 
 class CombineRequest(BaseModel):
@@ -2049,7 +2074,11 @@ async def library_combine(
         navidrome.notify()
         return result
 
-    operation, started = operations.start("combine", identity.username, run)
+    operation, started = operations.start(
+        "combine", identity.username,
+        functools.partial(_locked, [*folders.values(),
+                                    *(files[name].parent for name in body.tracks)],
+                          run))
     return {"started": started, "operation": operation.as_dict()}
 
 

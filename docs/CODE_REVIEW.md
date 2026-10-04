@@ -456,11 +456,18 @@ it less likely.
       marked last since H2. A disk filling mid-write can still interrupt.
       Reproduced first.
 
-- [ ] **M14. Nothing stops two changes hitting one folder at once.**
+- [x] **M14. Nothing stops two changes hitting one folder at once.**
       *Unverified at runtime.* Rename, combine, cover and match run in
       threads with no per-folder lock; a ReplayGain run lasts hours. rsgain
       and mutagen can write one file together, or rsgain can lose a file
       mid-move. *Fix:* a per-`(library, folder)` lock on every mutating path.
+      **Fixed:** `app/folderlock.py`, a non-blocking lock per folder that
+      also covers its parents and children. Album and track edits, cover
+      apply and quarantine answer 409 while it is held; *Use this* and
+      *Combine* fail as operations with the message; ReplayGain holds each
+      folder while rsgain runs and skips one that is busy. Downloads filing
+      into a folder are not locked; M10's `receiving` and H2's check cover
+      those. Still unverified at runtime on the Pi.
 
 - [ ] **M15. beets' own index goes stale after every apply.** *Consequence
       unverified.* `app/beets_match.py:137-170`. Items are added at
