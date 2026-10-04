@@ -730,10 +730,14 @@ it less likely.
       Reproduced first (a play rebuilt the index). Cost on the Pi still
       unmeasured.
 
-- [ ] **M38. The cover survey costs ~70k filesystem calls, and can run twice
+- [x] **M38. The cover survey costs ~70k filesystem calls, and can run twice
       at once.** `app/covers.py:153-158, 263-268`, `app/static/js/library.js:263-276, 811-826`.
       *Fix:* one `scandir` per folder; share one in-flight request in the
       browser.
+      **Fixed** as suggested: `covers._look` does one `scandir` per album
+      and `current()` takes the covers it found; measured locally at 28
+      calls per known album before, one listing after. The page shares one
+      in-flight request.
 
 - [ ] **M39. Health does ~8 full scans and the duplicate finder per
       request, polled every five minutes per open tab.** `app/health.py`,

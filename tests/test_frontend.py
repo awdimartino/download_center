@@ -420,3 +420,8 @@ def test_the_default_listening_range_is_the_one_the_server_warms():
 
 def test_the_selected_range_is_announced_not_only_coloured():
     assert 'setAttribute("aria-pressed"' in JS_FILES["listening.js"]
+
+
+def test_the_cover_survey_is_fetched_from_one_place():
+    """Two callers fetching it at once ran the survey twice (CODE_REVIEW M38)."""
+    assert JS_FILES["library.js"].count('"/api/library/attention/covers"') == 1

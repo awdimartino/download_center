@@ -195,3 +195,40 @@ def test_only_offered_hosts_can_be_fetched_from_the_browser():
     assert not covers.choosable("http://i.scdn.co/image/abc")
     assert not covers.choosable("https://192.168.1.1/admin")
     assert not covers.choosable("file:///etc/passwd")
+
+
+# --- the survey's cost (CODE_REVIEW M38) -------------------------------------
+# Each album was walked recursively and twenty cover names tested twice:
+# about 28 filesystem calls per album even when the answer was known.
+
+def _album(root, cover: bytes | None = None, below: str = ""):
+    folder = root / "A" / "B"
+    (folder / below).mkdir(parents=True, exist_ok=True)
+    for n in range(3):
+        shutil.copy(SILENCE, folder / below / f"{n:02d}.mp3")
+    if cover is not None:
+        (folder / "cover.jpg").write_bytes(cover)
+    return folder
+
+
+def test_a_known_album_is_answered_from_one_listing(tmp_path, monkeypatch):
+    import os
+
+    folder = _album(tmp_path, cover=_letterboxed())
+    assert covers.barred(folder) is True
+
+    calls = []
+    real_scandir = os.scandir
+    monkeypatch.setattr(os, "scandir",
+                        lambda *a: calls.append("scandir") or real_scandir(*a))
+    monkeypatch.setattr(Path, "is_file",
+                        lambda self: calls.append("is_file") or False)
+
+    assert covers.barred(folder) is True
+    assert calls == ["scandir"]
+
+
+def test_a_multi_disc_album_with_no_top_level_tracks_is_still_checked(tmp_path):
+    folder = _album(tmp_path, cover=_letterboxed(), below="CD1")
+
+    assert covers.barred(folder) is True

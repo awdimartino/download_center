@@ -263,10 +263,22 @@ function flags(album) {
 // Run once in the background from the album list. The list cannot read a
 // cover per row, so without this the flags only appeared after somebody had
 // opened Needs attention.
+// One survey in flight at a time. The list and Needs attention each asked
+// for it, and opening one while the other was still waiting ran the whole
+// survey twice over every album.
+let coverSurveyRequest = null;
+function fetchCoverSurvey() {
+  if (!coverSurveyRequest) {
+    coverSurveyRequest = getJSON("/api/library/attention/covers")
+      .finally(() => { coverSurveyRequest = null; });
+  }
+  return coverSurveyRequest;
+}
+
 async function surveyCovers() {
   if (coverSurvey) return;
   try {
-    coverSurvey = await getJSON("/api/library/attention/covers");
+    coverSurvey = await fetchCoverSurvey();
   } catch {
     return;
   }
@@ -826,7 +838,7 @@ async function showCoverSurvey(into) {
       why: "Checking every album's cover…",
     }));
     try {
-      coverSurvey = await getJSON("/api/library/attention/covers");
+      coverSurvey = await fetchCoverSurvey();
       barredKeys = new Set(coverSurvey.albums.map(albumKey));
     } catch (err) {
       into.replaceChildren(todoSection({

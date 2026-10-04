@@ -17,12 +17,15 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import os
 import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageStat
+
+from . import uuidtags
 
 log = logging.getLogger("navidrome_companion.covers")
 
@@ -142,6 +145,30 @@ def is_square(data: bytes) -> bool:
 _barred_cache: dict[str, tuple[int, bool]] = {}
 
 
+def _look(folder: Path) -> tuple[list[os.DirEntry], list[os.DirEntry]]:
+    """(the first audio file, the folder covers) from one directory listing.
+
+    The survey used to walk each album recursively and then test twenty
+    cover names twice - about 28 filesystem calls per album even when the
+    answer was already known, some 70,000 for a library, on a Pi.
+    """
+    from .filer import COVER_NAMES, COVER_SUFFIXES
+
+    try:
+        with os.scandir(folder) as listing:
+            entries = {entry.name: entry for entry in listing}
+    except OSError:
+        return [], []
+    covers = [entries[name + suffix] for name in COVER_NAMES
+              for suffix in COVER_SUFFIXES
+              if name + suffix in entries
+              and entries[name + suffix].is_file()]
+    tracks = sorted((e for e in entries.values()
+                     if e.is_file() and uuidtags.is_audio(Path(e.name))),
+                    key=lambda e: e.name)
+    return tracks[:1], covers
+
+
 def barred(folder: Path) -> bool | None:
     """Whether the album's cover is the wrong shape. None if it has none.
 
@@ -150,18 +177,24 @@ def barred(folder: Path) -> bool | None:
     """
     from .filer import audio_in
 
-    tracks = audio_in(folder)[:1]
-    if not tracks:
-        return None
+    first, found = _look(folder)
+    if first:
+        tracks = [Path(first[0].path)]
+    else:
+        # Nothing at the top: a multi-disc album keeps its tracks below.
+        tracks = audio_in(folder)[:1]
+        if not tracks:
+            return None
     try:
-        stamp = max([tracks[0].stat().st_mtime_ns]
-                    + [p.stat().st_mtime_ns for p in folder_covers(folder)])
+        stamp = max([first[0].stat().st_mtime_ns if first
+                     else tracks[0].stat().st_mtime_ns]
+                    + [entry.stat().st_mtime_ns for entry in found])
     except OSError:
         return None
     hit = _barred_cache.get(str(folder))
     if hit and hit[0] == stamp:
         return hit[1]
-    data = current(folder, tracks)
+    data = current(folder, tracks, [Path(entry.path) for entry in found])
     result = None if data is None else not is_square(data)
     if result is not None:
         _barred_cache[str(folder)] = (stamp, result)
@@ -268,14 +301,17 @@ def folder_covers(folder: Path) -> list[Path]:
             if (folder / f"{name}{suffix}").is_file()]
 
 
-def current(folder: Path, tracks: list[Path]) -> bytes | None:
+def current(folder: Path, tracks: list[Path],
+            found_covers: list[Path] | None = None) -> bytes | None:
     """The cover Navidrome shows for this album.
 
     A folder cover first, because that is what Navidrome prefers by default:
     replacing only the embedded art under a cover.jpg changes nothing anybody
-    can see.
+    can see. `found_covers` is the folder covers when the caller has
+    already listed them.
     """
-    for found in folder_covers(folder):
+    for found in (folder_covers(folder) if found_covers is None
+                  else found_covers):
         try:
             return found.read_bytes()
         except OSError:
