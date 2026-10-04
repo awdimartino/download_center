@@ -886,7 +886,10 @@ recur but rarely do, and facts that are status rather than health.
 
 - **The disk wins.** Where Navidrome's index and the files answer the same
   question, the files' answer is used: the index can be stale.
-- **The disk audit** walks each library reading identity tags directly. It
+- **The disk audit** walks each library reading identity tags directly,
+  skipping what Navidrome skips: the quarantine, and any directory holding
+  an empty `.ndignore` (`walk.py`, shared with `survey`, `unfuse` and
+  `backfill`). It
   runs in the background, re-run when older than six hours, and on demand
   with **Re-read files**. Simultaneous requests share one walk.
 - **Stamped but not yet scanned** is the only check that can tell "never

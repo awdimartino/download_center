@@ -60,6 +60,12 @@ from mutagen.id3._util import ID3NoHeaderError
 
 AUDIO_SUFFIXES = {".mp3"}
 
+# The quarantine inside each library root, and the marker that keeps
+# Navidrome out of a directory. The same rule as app/walk.py, copied because
+# this runs on the host without the app: set-aside copies are not the library.
+QUARANTINE_NAME = "duplicates-removed"
+NDIGNORE = ".ndignore"
+
 ACOUSTID_URL = "https://api.acoustid.org/v2/lookup"
 
 # AcoustID asks for no more than three requests a second. One is plenty for a
@@ -203,6 +209,21 @@ def already_identified(path: Path) -> bool:
     return any(f.owner == "http://musicbrainz.org" for f in tags.getall("UFID"))
 
 
+def library_files(root: Path) -> list[Path]:
+    """Every audio file under `root`, skipping what Navidrome skips."""
+    found = []
+    for directory, subdirectories, files in os.walk(root):
+        here = Path(directory)
+        subdirectories[:] = [
+            name for name in subdirectories
+            if not (here == root and name == QUARANTINE_NAME)
+            and not ((here / name / NDIGNORE).is_file()
+                     and (here / name / NDIGNORE).stat().st_size == 0)]
+        found.extend(here / name for name in files
+                     if Path(name).suffix.lower() in AUDIO_SUFFIXES)
+    return sorted(found)
+
+
 def load_done(checkpoint: Path) -> set[str]:
     if not checkpoint.exists():
         return set()
@@ -261,9 +282,7 @@ def main() -> int:
     else:
         files = []
         for root in args.roots:
-            files.extend(sorted(p for p in root.rglob("*")
-                                if p.is_file()
-                                and p.suffix.lower() in AUDIO_SUFFIXES))
+            files.extend(library_files(root))
 
     done = load_done(args.checkpoint)
     pending = [f for f in files if str(f) not in done]

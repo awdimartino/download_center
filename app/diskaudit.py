@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import uuidtags
+from . import uuidtags, walk
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ def run(root: Path) -> Audit:
         audit.taken_at = started
         return audit
 
-    for path in root.rglob("*"):
+    for path in walk.library_files(root):
         if not path.is_file() or not uuidtags.is_audio(path):
             continue
         relative = str(path.relative_to(root))

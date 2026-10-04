@@ -33,6 +33,7 @@ from typing import Any
 
 from . import navidrome, store
 from .matcher import FEATURING
+from .walk import NDIGNORE, QUARANTINE_NAME
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.duplicates")
@@ -313,8 +314,8 @@ def find(connection: sqlite3.Connection,
 # A directory set aside is still inside the library tree, so the scanner has
 # to be told to skip it.
 #
-# The marker MUST be empty. Since 0.54 Navidrome reads a non-empty .ndignore
-# as a gitignore-style list of patterns and skips only what matches; only an
+# The marker (NDIGNORE, from walk.py) MUST be empty. Since 0.54 Navidrome
+# reads a non-empty .ndignore as a gitignore-style list of patterns and skips only what matches; only an
 # empty one means "skip this whole directory". This file used to carry three
 # lines explaining itself, which Navidrome read as three patterns matching
 # nothing - so the quarantine was scanned, every file set aside came back
@@ -322,10 +323,7 @@ def find(connection: sqlite3.Connection,
 # to, and resolving it again moved it one level deeper. That is why the
 # library grew paths like duplicates-removed/duplicates-removed. The
 # explanation now lives in README.txt beside it, where nothing parses it.
-NDIGNORE = ".ndignore"
 QUARANTINE_README = "README.txt"
-
-QUARANTINE_NAME = "duplicates-removed"
 
 
 def _quarantine_root(root: Path) -> Path:

@@ -95,7 +95,7 @@ it less likely.
       album B. The refusal message still shows another person's operation to
       the browser; that is H3.
 
-- [ ] **C4. `survey` walks the quarantine, and `unfuse --apply` /
+- [x] **C4. `survey` walks the quarantine, and `unfuse --apply` /
       `backfill --apply` act on what it finds.** `app/survey.py:134`,
       feeding `app/unfuse.py:459` and `app/backfill.py:111`.
       `duplicates-removed/` sits inside each library root. An album with 10
@@ -108,6 +108,12 @@ it less likely.
       *Fix:* one shared library walker that skips `duplicates-removed/` and
       any directory with an empty `.ndignore`, used by survey, diskaudit and
       `tools/fingerprint.py`. Do not run `unfuse --apply` until then.
+      **Fixed:** `app/walk.py` (`library_files`) skips `duplicates-removed/`
+      at the root and any directory with an empty `.ndignore`; `survey` (so
+      `unfuse` and `backfill`) and `diskaudit` use it, and
+      `tools/fingerprint.py` carries a copy since it runs without the app.
+      Reproduced first: the old plan retagged all ten live tracks to B and
+      retired A. `tools/fix_broken_m4a.py` still walks everything.
 
 ---
 
@@ -169,7 +175,7 @@ it less likely.
       *Fix:* treat a row as a baseline only if it came from that user's very
       first reading; any later first row counts from 0.
 
-- [ ] **H6. Health raises a permanent false warning because the disk audit
+- [x] **H6. Health raises a permanent false warning because the disk audit
       counts quarantined files.** `app/diskaudit.py:104`; effects at
       `app/health.py:132, 169, 371, 400`. *Stamped but not yet scanned* is
       `audit.stamped − indexed_stamped`, which equals the number of stamped
@@ -177,6 +183,9 @@ it less likely.
       scan can clear. *Tracks with no UUID*, *Duplicate UUIDs*, *Album UUIDs
       spread across directories* and *Audio files* are also inflated.
       *Fix:* the shared walker from C4.
+      **Fixed** by C4's commit: `diskaudit.run` uses `walk.library_files`,
+      and a test checks quarantined files are not counted. Not yet checked
+      against the live Health page on the Pi.
 
 - [ ] **H7. A stray cover image at the inbox root is copied into every
       download's album folder.** `app/filer.py:586`, `app/inbox.py:133-134`.

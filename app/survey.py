@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import filer, registry, uuidtags, workspace
+from . import filer, registry, uuidtags, walk, workspace
 
 log = logging.getLogger("navidrome_companion.survey")
 
@@ -131,7 +131,7 @@ def collect(root: Path) -> Survey:
         return survey
 
     albums: dict[str, Album] = {}
-    for path in sorted(root.rglob("*")):
+    for path in walk.library_files(root):
         if not path.is_file() or not uuidtags.is_audio(path):
             continue
         relative = str(path.relative_to(root))
