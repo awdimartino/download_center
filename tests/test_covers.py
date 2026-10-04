@@ -343,3 +343,39 @@ def test_a_card_flagged_for_review_still_gets_its_cover_flag():
           / "library.js").read_text(encoding="utf-8")
     assert 'node.querySelector(".tone-warn")' not in js
     assert 'node.querySelector(".flag-cover")' in js
+
+
+# --- what a fetch will accept as a cover (L22) -----------------------------------
+
+class _Response:
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, limit=-1):
+        return self.body if limit < 0 else self.body[:limit]
+
+
+def test_an_error_page_is_not_a_cover(monkeypatch):
+    monkeypatch.setattr(covers.urllib.request, "urlopen",
+                        lambda request, timeout: _Response(b"<html>Not found</html>"))
+    assert covers.fetch("https://i.scdn.co/image/x") is None
+
+
+def test_an_oversized_download_is_not_a_cover(monkeypatch):
+    monkeypatch.setattr(covers, "MAX_COVER_BYTES", 1000, raising=False)
+    monkeypatch.setattr(covers.urllib.request, "urlopen",
+                        lambda request, timeout: _Response(_pillarboxed()))
+    assert covers.fetch("https://i.scdn.co/image/x") is None
+
+
+def test_a_real_image_is_a_cover(monkeypatch):
+    body = _pillarboxed()
+    monkeypatch.setattr(covers.urllib.request, "urlopen",
+                        lambda request, timeout: _Response(body))
+    assert covers.fetch("https://i.scdn.co/image/x") == body

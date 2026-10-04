@@ -888,8 +888,12 @@ it less likely.
       it visited) and read back on first use; `covers.apply` forgets the
       album it squared; the page looks for its own `.flag-cover`.
       Reproduced first.
-- [ ] **L22.** Cover fetching has no size cap and no image check; an HTML
+- [x] **L22.** Cover fetching has no size cap and no image check; an HTML
       error page would be embedded as art (`covers.py:43-59, 105-110`).
+      **Fixed:** `covers.fetch` reads at most 25 MB and returns None for
+      anything larger or anything Pillow cannot verify as an image, so
+      every caller (downloads, Fetch cover, combine) gets an image or
+      nothing. Reproduced first.
 - [ ] **L23.** The album editor's merge search spans every library; picking
       another library's album makes a new album instead of merging
       (`library.js:1159`).

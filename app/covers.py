@@ -45,8 +45,19 @@ CHOOSABLE_HOSTS = ("i.scdn.co", "coverartarchive.org")
 
 JPEG = "image/jpeg"
 
+# A cover is a few hundred kilobytes; Cover Art Archive's originals reach
+# ten or so megabytes. Past this it is not a cover, and reading it whole
+# would sit in a Pi's memory for nothing.
+MAX_COVER_BYTES = 25 * 1024 * 1024
+
 
 def fetch(url: str) -> bytes | None:
+    """The image at url, or None - for anything that is not one too.
+
+    Whatever came back used to be embedded: an HTML error page served with
+    a 200 became the album's art, since `square` passes unreadable data
+    through untouched.
+    """
     scheme = urllib.parse.urlparse(url).scheme.lower()
     if scheme not in ALLOWED_SCHEMES:
         log.debug("refusing to fetch cover over %r", scheme)
@@ -54,10 +65,26 @@ def fetch(url: str) -> bytes | None:
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "navidrome-companion"})
         with urllib.request.urlopen(request, timeout=15) as response:
-            return response.read()
+            data = response.read(MAX_COVER_BYTES + 1)
     except Exception as exc:
         log.debug("cover fetch failed for %s: %s", url, exc)
         return None
+    if len(data) > MAX_COVER_BYTES:
+        log.warning("cover at %s is over %d bytes; not used", url, MAX_COVER_BYTES)
+        return None
+    if not _is_image(data):
+        log.warning("cover at %s is not an image; not used", url)
+        return None
+    return data
+
+
+def _is_image(data: bytes) -> bool:
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            image.verify()
+    except Exception:
+        return False
+    return True
 
 
 def choosable(url: str) -> bool:
