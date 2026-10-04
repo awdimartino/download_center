@@ -289,6 +289,58 @@ def loose_in_library(space: workspace.Workspace) -> list[Path]:
                   if path.is_file() and uuidtags.is_audio(path))
 
 
+# What an album drop leaves once its audio has been filed: art, cue sheets,
+# rip logs, playlists and checksums. Anything not on this list is left alone
+# (and so is the folder holding it), because the inbox cannot know what an
+# unfamiliar file is for.
+RESIDUE = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".cue", ".nfo",
+           ".log", ".txt", ".m3u", ".m3u8", ".sfv", ".md5", ".ffp",
+           ".accurip", ".db", ".ini"}
+
+
+def _is_residue(path: Path) -> bool:
+    return path.suffix.lower() in RESIDUE or path.name == ".DS_Store"
+
+
+def _set_aside(path: Path, root: Path, leftovers: Path) -> None:
+    """Move one leftover out of the inbox, keeping its relative path."""
+    target = filer.unused_name(leftovers / path.relative_to(root))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(path), str(target))
+
+
+def _clear_residue(space: workspace.Workspace) -> None:
+    """Move what filing left behind out of the inbox, once it has settled.
+
+    Covers, cue sheets and the like stayed in the inbox for ever, and the
+    folders holding them were never pruned - so it was never empty at rest,
+    and a cover.jpg left at the top was carried into every later download
+    (CODE_REVIEW H7, M17). Moved, not deleted: they are somebody's files.
+    Only settled, known residue goes, and only where no audio is left to
+    file.
+    """
+    root = space.inbox_dir
+    if not root.is_dir():
+        return
+    for entry in sorted(root.iterdir()):
+        if entry.name.startswith("."):
+            continue
+        try:
+            if entry.is_file():
+                if _is_residue(entry) and settled(entry):
+                    _set_aside(entry, root, space.leftovers_dir)
+                continue
+            if not settled(entry):
+                continue
+            inside = [p for p in entry.rglob("*") if p.is_file()]
+            if inside and all(_is_residue(p) for p in inside):
+                for path in inside:
+                    _set_aside(path, root, space.leftovers_dir)
+        except OSError:
+            log.warning("could not move leftovers out of %s", entry,
+                        exc_info=True)
+
+
 def _prune(root: Path) -> None:
     """Remove directories the filing emptied, deepest first.
 
@@ -343,8 +395,9 @@ def drain(space: workspace.Workspace) -> Result:
                 f"be written, so stars and play counts cannot follow it")
         result.filed.append(filed.path)
 
+    _clear_residue(space)
+    _prune(space.inbox_dir)
     if result.filed:
-        _prune(space.inbox_dir)
         log.info("filed %d file(s) for %s",
                  len(result.filed), space.username)
     return result

@@ -85,6 +85,14 @@ class Workspace:
         return self.staging / "inbox"
 
     @property
+    def leftovers_dir(self) -> Path:
+        """Where the inbox puts what filing left behind - covers, cue
+        sheets, logs - so the inbox is empty at rest without deleting
+        anybody's files. Beside the inbox, not in it, so nothing is filed
+        from here; clear it by hand."""
+        return self.staging / "leftovers"
+
+    @property
     def incomplete_dir(self) -> Path:
         """Where a download is built, before it is anything worth keeping.
 

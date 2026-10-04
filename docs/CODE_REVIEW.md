@@ -494,10 +494,16 @@ it less likely.
       **Fixed** as suggested; cancellation still propagates. Reproduced
       first with a download raising `OSError`.
 
-- [ ] **M17. Non-audio files are never removed from the inbox.**
+- [x] **M17. Non-audio files are never removed from the inbox.**
       `app/inbox.py:213-279`. Covers, `.cue`, `.nfo` stay for ever and their
       folders are never pruned — contradicting "empty at rest", and feeding
       H7. *Fix:* once a settled folder has no audio left, clear it.
+      **Fixed** by moving, not deleting, since an existing test (and
+      principle 3) said the inbox must not delete somebody's files: known
+      residue (images, cue, logs, playlists, checksums) in a settled folder
+      with no audio, or loose at the inbox root, is moved to the
+      workspace's `leftovers/`, then the folder is pruned. Unknown files
+      stay. Runs on every drain, not only after something was filed.
 
 - [ ] **M18. Files the poller cannot file are invisible.**
       `app/main.py:253`, `app/inbox.py:294-296`. The poller discards

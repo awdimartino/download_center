@@ -443,6 +443,7 @@ function does the filing. Each person has a workspace per library:
     inbox/                  drop music here; it does not stay
       .incomplete/          downloads are built here, hidden from the poller
       upload-<id>/          one folder per browser drop
+    leftovers/              covers, cue sheets and logs the filing left
 ```
 
 The workspace key uses the library's **id**, not its name, so renaming a
@@ -458,6 +459,12 @@ SMB copy safe, and it is also a safety net: a download the app died on, if
 it had reached the inbox, is filed on the next start. A file that fails to
 file is not retried until its size changes. Loose audio sitting at the top
 of the library root is picked up the same way.
+
+Once a folder in the inbox has settled with no audio left in it, its known
+residue (images, cue sheets, rip logs, playlists, checksums) is moved to
+`leftovers/` beside the inbox, keeping its path, and the folder is pruned.
+Nothing is deleted, and a file the inbox does not recognise stays where it
+is. `leftovers/` is yours to clear.
 
 ### The Drop page
 

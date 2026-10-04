@@ -137,16 +137,17 @@ def test_a_file_still_being_written_is_left_alone(space, monkeypatch):
     assert path.exists()
 
 
-def test_something_that_is_not_audio_is_not_touched(space):
+def test_something_that_is_not_audio_is_not_deleted(space):
     """Cover art and sleeve notes come with a dragged-in album. Deleting
-    somebody's files is not this application's business."""
+    somebody's files is not this application's business, so leftovers are
+    moved beside the inbox rather than removed (M17)."""
     (space.inbox_dir).mkdir(parents=True, exist_ok=True)
     art = space.inbox_dir / "cover.jpg"
     art.write_bytes(b"not audio")
 
     inbox.drain(space)
 
-    assert art.exists()
+    assert (space.leftovers_dir / "cover.jpg").read_bytes() == b"not audio"
 
 
 def test_a_file_that_cannot_be_filed_is_reported_not_swallowed(space,
@@ -644,3 +645,59 @@ def test_a_delivery_marks_its_album_as_receiving(space, monkeypatch):
     filed = inbox.deliver(space, source)
 
     assert inbox.receiving(filed.path.parent)
+
+
+# --- residue (CODE_REVIEW M17) -----------------------------------------------
+# Covers, cue sheets and logs stayed for ever and kept their folders, so the
+# inbox was never empty at rest - and a cover left at the top was carried
+# into every later download (H7).
+
+def _residue(path, data=b"x"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    old = time.time() - 3600
+    os.utime(path, (old, old))
+    os.utime(path.parent, (old, old))
+
+
+def test_an_album_drop_leaves_nothing_behind(space):
+    drop(space, into="an album", albumartist="Artist", album="Album",
+         title="Song", tracknumber="1")
+    for name in ("cover.jpg", "album.cue", "rip.log"):
+        _residue(space.inbox_dir / "an album" / name)
+
+    inbox.drain(space)
+
+    assert [p.name for p in space.inbox_dir.iterdir()] == [".incomplete"]
+
+
+def test_a_cover_at_the_top_is_set_aside(space):
+    _residue(space.inbox_dir / "cover.jpg")
+
+    inbox.drain(space)
+
+    assert not (space.inbox_dir / "cover.jpg").exists()
+    assert (space.leftovers_dir / "cover.jpg").exists()
+
+
+def test_a_file_the_inbox_does_not_recognise_is_kept(space):
+    _residue(space.inbox_dir / "letters" / "cover.jpg")
+    _residue(space.inbox_dir / "letters" / "thesis.docx")
+
+    inbox.drain(space)
+
+    assert (space.inbox_dir / "letters" / "thesis.docx").exists()
+    assert (space.inbox_dir / "letters" / "cover.jpg").exists()
+
+
+def test_residue_beside_audio_still_to_file_is_kept(space, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
+    folder = space.inbox_dir / "arriving"
+    _residue(folder / "cover.jpg")
+    (folder / "01.mp3").write_bytes(b"still copying")
+
+    inbox.drain(space)
+
+    assert (folder / "cover.jpg").exists()
