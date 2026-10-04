@@ -934,3 +934,40 @@ async def test_a_hidden_file_is_refused_rather_than_left_unfiled(space, monkeypa
                                    session=SimpleNamespace(identity=None))
     assert refused.value.status_code == 400
     assert "hidden" in refused.value.detail
+
+
+def test_the_poller_cannot_see_a_delivery_while_it_is_being_moved(space,
+                                                                  monkeypatch):
+    """At a quiet period of 0 nothing else keeps them apart, and the file
+    was only marked as the worker's once the move had finished (L18)."""
+    seen_mid_move = []
+    real = shutil.move
+
+    def move(src, dst):
+        result = real(src, dst)
+        seen_mid_move.extend(inbox.waiting(space))
+        return result
+
+    monkeypatch.setattr(inbox.shutil, "move", move)
+    source = built(space, albumartist="The Beatles", album="Abbey Road",
+                   title="Come Together", tracknumber="1")
+
+    inbox.deliver(space, source)
+
+    assert seen_mid_move == []
+
+
+def test_a_move_that_fails_partway_leaves_no_half_file(space, monkeypatch):
+    def half(src, dst):
+        Path(dst).write_bytes(b"half")
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(inbox.shutil, "move", half)
+    source = built(space, title="Song")
+    whole = source.read_bytes()
+
+    with pytest.raises(OSError):
+        inbox.deliver(space, source)
+
+    assert source.read_bytes() == whole
+    assert inbox.waiting(space) == []

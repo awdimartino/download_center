@@ -860,8 +860,12 @@ it less likely.
       is now dropped rather than becoming `unknown`); a file whose own name
       starts with a dot, macOS's `._` companions mostly, is refused with a
       400 and skipped by the Drop page. Reproduced first.
-- [ ] **L18.** `_delivering.add` happens after the move, leaving a window
+- [x] **L18.** `_delivering.add` happens after the move, leaving a window
       at `inbox_quiet_seconds = 0` (`inbox.py:134-136`).
+      **Fixed:** `deliver` chooses the inbox name and marks it as being
+      delivered before moving onto it. A move that fails partway now
+      removes its half-written copy rather than moving it back over the
+      intact original. Reproduced first.
 - [ ] **L19.** `audio_bitrate = 320` re-encodes YouTube's ~130–160 kbps Opus
       at twice the size for no gain. Consider 192, or keeping Opus/M4A.
 

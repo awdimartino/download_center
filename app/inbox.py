@@ -194,15 +194,22 @@ def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
     marked failed - and Retry then fetched and filed it a second time.
     """
     space.inbox_dir.mkdir(parents=True, exist_ok=True)
-    arrived = _move_in(source, space.inbox_dir / source.name)
+    # Claimed before the move, not after: in between, at a quiet period of
+    # 0, the poller could see the file and start filing it too.
+    arrived = filer.unused_name(space.inbox_dir / source.name)
     with _delivering_lock:
         _delivering.add(arrived)
     try:
+        shutil.move(str(source), str(arrived))
         filed = filer.file_track(space, arrived)
     except Exception:
         if arrived.exists():
             try:
-                shutil.move(str(arrived), str(source))
+                if source.exists():
+                    # The move itself failed partway; the original is whole.
+                    arrived.unlink()
+                else:
+                    shutil.move(str(arrived), str(source))
             except OSError:
                 log.exception("could not take %s back out of the inbox; the "
                               "poller will file it", arrived.name)
