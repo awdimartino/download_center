@@ -45,6 +45,10 @@ class LoginFailed(RuntimeError):
     """Navidrome rejected those credentials."""
 
 
+class SessionExpired(RuntimeError):
+    """Navidrome no longer accepts this person's token; they must sign in."""
+
+
 class Unavailable(RuntimeError):
     """Navidrome's database could not be opened - unreportable, not fatal."""
 
@@ -317,11 +321,33 @@ def set_rating(identity: Identity, track_id: str, rating: int) -> bool:
         return False
 
 
-def playlists(identity: Identity) -> list[dict[str, Any]]:
-    response = requests.get(f"{base_url()}/api/playlist", timeout=TIMEOUT,
-                            headers=identity.native_headers())
+def _native(identity: Identity, method: str, path: str,
+            **kwargs: Any) -> requests.Response:
+    """One call to Navidrome's native API, as that person.
+
+    Navidrome sends a refreshed token back on every authenticated response;
+    the one from sign-in used to be kept for the session's whole fortnight
+    and expired after Navidrome's session timeout (24 hours by default), so
+    Playlists answered "Navidrome refused that" from day two while
+    everything else worked. The fresh one is kept. A 401 means even that
+    has lapsed - only signing in again mints another - and is raised as
+    SessionExpired rather than as a refusal of whatever was asked.
+    """
+    response = requests.request(method, f"{base_url()}{path}",
+                                headers=identity.native_headers(),
+                                timeout=TIMEOUT, **kwargs)
+    fresh = response.headers.get("x-nd-authorization", "")
+    if fresh.lower().startswith("bearer "):
+        identity.token = fresh[len("bearer "):].strip()
+    if response.status_code == 401:
+        raise SessionExpired(
+            "Navidrome has ended this sign-in. Sign in again to carry on.")
     response.raise_for_status()
-    return response.json()
+    return response
+
+
+def playlists(identity: Identity) -> list[dict[str, Any]]:
+    return _native(identity, "GET", "/api/playlist").json()
 
 
 def save_playlist(identity: Identity, playlist: dict[str, Any],
@@ -332,24 +358,16 @@ def save_playlist(identity: Identity, playlist: dict[str, Any],
     counts, so who this is created as decides whether it matches anything
     at all.
     """
-    url = f"{base_url()}/api/playlist"
     if playlist_id:
-        response = requests.put(f"{url}/{playlist_id}", json=playlist,
-                                headers=identity.native_headers(),
-                                timeout=TIMEOUT)
+        response = _native(identity, "PUT", f"/api/playlist/{playlist_id}",
+                           json=playlist)
     else:
-        response = requests.post(url, json=playlist,
-                                 headers=identity.native_headers(),
-                                 timeout=TIMEOUT)
-    response.raise_for_status()
+        response = _native(identity, "POST", "/api/playlist", json=playlist)
     return response.json()
 
 
 def delete_playlist(identity: Identity, playlist_id: str) -> None:
-    response = requests.delete(f"{base_url()}/api/playlist/{playlist_id}",
-                               headers=identity.native_headers(),
-                               timeout=TIMEOUT)
-    response.raise_for_status()
+    _native(identity, "DELETE", f"/api/playlist/{playlist_id}")
 
 
 # --- calls nobody owns ----------------------------------------------------

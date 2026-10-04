@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, UTC
 from pathlib import Path
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import (Depends, FastAPI, File, Form, HTTPException, Request,
                      Response, UploadFile, WebSocket, WebSocketDisconnect)
@@ -1286,6 +1286,8 @@ async def list_playlists(
     """
     try:
         found = await asyncio.to_thread(smart_playlists.mine, session.identity)
+    except navidrome.SessionExpired as exc:
+        _end_session(session, exc)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=_navidrome_error(exc)) from exc
     return {
@@ -1311,7 +1313,12 @@ async def update_playlist(
     # Ownership is checked by asking Navidrome what this person has rather
     # than by trusting the id in the path: the API would update somebody
     # else's playlist just as willingly.
-    owned = await asyncio.to_thread(smart_playlists.mine, session.identity)
+    try:
+        owned = await asyncio.to_thread(smart_playlists.mine, session.identity)
+    except navidrome.SessionExpired as exc:
+        _end_session(session, exc)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=_navidrome_error(exc)) from exc
     if not any(p["id"] == playlist_id for p in owned):
         raise HTTPException(status_code=404,
                             detail="That is not one of your smart playlists.")
@@ -1328,6 +1335,8 @@ async def remove_playlist(
                                 playlist_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except navidrome.SessionExpired as exc:
+        _end_session(session, exc)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=_navidrome_error(exc)) from exc
     return {"deleted": playlist_id}
@@ -1341,8 +1350,18 @@ async def _save_playlist(request: PlaylistRequest, session: auth.Session,
             request.form, request.comment, request.public, playlist_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except navidrome.SessionExpired as exc:
+        _end_session(session, exc)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=_navidrome_error(exc)) from exc
+
+
+def _end_session(session: auth.Session, exc: Exception) -> NoReturn:
+    """Navidrome has ended this person's sign-in, so this one ends too:
+    keeping it would go on answering "Navidrome refused that" for a
+    fortnight. A 401, so the page treats it as signed out."""
+    auth.sign_out(session.id)
+    raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 def _navidrome_error(exc: Exception) -> str:

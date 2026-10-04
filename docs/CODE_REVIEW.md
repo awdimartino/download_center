@@ -600,7 +600,7 @@ it less likely.
       swapped in with `os.replace`. No new dependency. `load()` still fails
       loudly on a file broken by hand. Reproduced first.
 
-- [ ] **M27. Smart playlists stop working when Navidrome's token expires;
+- [x] **M27. Smart playlists stop working when Navidrome's token expires;
       the session lives on.** *Expiry interval unverified on the Pi.*
       `app/navidrome.py:74-75, 320-352`. The bearer token is captured at
       sign-in and never refreshed (the refreshed one in
@@ -609,6 +609,12 @@ it less likely.
       everything else works.
       *Fix:* take the refreshed token from each response; on a 401, end the
       session.
+      **Fixed** as suggested: `navidrome._native` keeps the token from each
+      response's `x-nd-authorization`, and a 401 raises `SessionExpired`;
+      the playlist routes then sign this session out and answer 401. A
+      session that has not touched Playlists for longer than Navidrome's
+      timeout still has to sign in again, which it is now told. Faked
+      `requests`; the timeout on the Pi is still unverified.
 
 - [ ] **M28. The disk-audit loop dies on its first unexpected error.**
       `app/main.py:314-336`. `_library_roots` catches only
