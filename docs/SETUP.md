@@ -274,10 +274,11 @@ MusicBrainz what an album is and retags it as the release you pick. It
 never files or moves anything.
 
 Nothing needs setting up. The first time a person uses it, a config is
-written to `/config/beets/<username>-<library id>/config.yaml`, beside that
-person's `library.db`. There is one per person and library because beets
-stores paths relative to its `directory`, and one index cannot describe two
-library roots. The file is **never overwritten**, so edit it freely — and
+written to `/config/beets/<username>-<library id>/config.yaml`, one per
+person and library, since its `directory` is that library's root. Applying a
+match uses a throwaway beets index for that one run, so the `library.db`
+older installs have beside the config is no longer read. The file is
+**never overwritten**, so edit it freely — and
 note that an older install keeps whatever template it was first given.
 Configs written before September 2026 say `move: yes`. Applying a match
 overrides `move`, `copy` and `write` whatever the file says, so that is
@@ -345,8 +346,9 @@ rebuilt from the files), your listening history (Navidrome keeps only a
 running total), and the record of everything quarantined. Copy it while the
 container is stopped, or with `sqlite3 state.db ".backup state.db.bak"`.
 
-`/config/beets/*/library.db` can be rebuilt from the files, slowly, with
-`python -m app.reindex`.
+`/config/beets/*/library.db` is no longer used by the app and need not be
+backed up. (`python -m app.reindex` still rebuilds it, for using beets by
+hand.)
 
 **Maintenance commands** run inside the container. Run them as the app's
 user so new files get the right owner — `docker exec` is root by default:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -134,7 +135,14 @@ def apply_choice(path: Path, chosen_id: str) -> dict[str, Any]:
     config.read()
     plugins.load_plugins()
 
-    lib = Library(config["library"].as_filename(),
+    # A throwaway index for this one apply. Nothing here reads beets' index,
+    # and the workspace's went stale after every apply: items were added at
+    # their pre-move paths and never updated, so a second match on a moved
+    # album could merge those stale entries (duplicate_action: merge) and
+    # map them instead of the real files. Not ":memory:" - beets backs a
+    # database up beside itself while migrating it.
+    scratch = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+    lib = Library(str(Path(scratch.name) / "library.db"),
                   config["directory"].as_filename())
     picked: list[str] = []
 
@@ -175,7 +183,11 @@ def apply_choice(path: Path, chosen_id: str) -> dict[str, Any]:
     # hoping it comes back in the top five.
     config["import"]["search_ids"] = [chosen_id]
 
-    ChosenSession(lib, None, [str(path)], None).run()
+    try:
+        ChosenSession(lib, None, [str(path)], None).run()
+    finally:
+        lib._close()
+        scratch.cleanup()
     return {"applied": bool(picked), "chosen": chosen_id}
 
 

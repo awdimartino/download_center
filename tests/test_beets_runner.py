@@ -283,6 +283,7 @@ from app import beets_match
 seen = {}
 def run(self):
     seen.update({k: config["import"][k].get() for k in ("move", "copy", "write")})
+    seen["index"] = str(self.lib.path)
 importer.ImportSession.run = run
 beets_match.apply_choice(Path(sys.argv[1]), "mb-1")
 print(json.dumps(seen))
@@ -310,7 +311,10 @@ def test_applying_a_match_never_moves_files_whatever_the_config_says(tmp_path):
         env={**os.environ, "BEETSDIR": str(beets_dir), "PYTHONPATH": str(root)})
     assert result.returncode == 0, result.stderr
     seen = json.loads(result.stdout.strip().splitlines()[-1])
+    index = seen.pop("index")
     assert seen == {"move": False, "copy": False, "write": True}
+    # A throwaway index, never the workspace's (CODE_REVIEW M15).
+    assert "library.db" in index and str(beets_dir) not in index
 
 
 # beets_match exits 0 and prints `"applied": false` when the chosen release

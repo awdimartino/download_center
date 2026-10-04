@@ -469,13 +469,17 @@ it less likely.
       into a folder are not locked; M10's `receiving` and H2's check cover
       those. Still unverified at runtime on the Pi.
 
-- [ ] **M15. beets' own index goes stale after every apply.** *Consequence
+- [x] **M15. beets' own index goes stale after every apply.** *Consequence
       unverified.* `app/beets_match.py:137-170`. Items are added at
       pre-move paths and never updated; a second match on a moved album may
       merge the stale entries (`duplicate_action: merge`) and map them
       instead of the real files.
       *Fix:* apply against a throwaway per-run library database; nothing
       reads beets' index.
+      **Fixed:** `apply_choice` builds its `Library` in a temporary
+      directory, closed and removed after the run (not `:memory:`; beets
+      backs a database up beside itself while migrating). The C1 probe test
+      now also checks the index is not the workspace's.
 
 ### Getting music in
 

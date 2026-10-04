@@ -84,7 +84,7 @@ Knowing which store owns a fact is most of understanding the code.
 |---|---|---|
 | `navidrome.db` | accounts, libraries, who sees which library, stars, ratings, running play counts, the scanned index | **read-only**; writes go through Navidrome's API |
 | `config/state.db` | album identity registry, listening history, review marks, duplicate decisions, the quarantine record | ours alone (`store.py`) |
-| `config/beets/<user>-<library>/` | one person's beets config and index | used only by *Find matches* |
+| `config/beets/<user>-<library>/` | one person's beets config | used only by *Find matches*; each apply uses a throwaway index |
 | the audio files | every tag, including both UUIDs | the truth |
 | process memory | sessions, the download queue, long operations | lost on restart, deliberately |
 
