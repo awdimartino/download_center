@@ -52,7 +52,7 @@ it less likely.
       `move: yes` config, and a test runs the same probe. The Pi's configs
       are no longer dangerous but still say `move: yes`.
 
-- [ ] **C2. The featured-artist regex deletes the end of real titles and
+- [x] **C2. The featured-artist regex deletes the end of real titles and
       artists, so some songs can never match and others match the wrong
       recording.** *Verified.* `app/matcher.py:48` (`_FEAT`). There is no
       word boundary before `feat|ft|featuring|with`, and the brackets are
@@ -65,6 +65,13 @@ it less likely.
       *Fix:* only strip a bracketed `(feat./ft./featuring/with …)` or a bare
       `\b(feat|ft|featuring)\b\.?\s.*`; never a bare "with". Add the examples
       above as tests.
+      **Fixed:** one `matcher.FEATURING`, now also used by `lastfm.normalise`
+      (an identical copy of the bug) and `duplicates.normalise` (a variant:
+      "Gift of Love" and "Gift Horse" both became `gi` and could be grouped
+      as copies). The right song now outscores the wrong one (0.99 vs 0.90)
+      instead of tying, but the wrong one alone would still clear the 0.70
+      floor: `token_set_ratio` gives a title that shares most of its words 0.77.
+      Imported Last.fm plays matched under the old regex were not re-checked.
 
 - [ ] **C3. Match candidates can be shown under the wrong album, and *Use
       this* then applies one album's release to another, fusing them.**

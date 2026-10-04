@@ -172,3 +172,42 @@ def test_duration_scoring_decays_to_zero_at_the_tolerance():
     assert matcher._duration_score(284, 284_000) == 1.0
     assert matcher._duration_score(284 + int(matcher.DURATION_TOLERANCE),
                                    284_000) == 0.0
+
+
+# --- the featured-artist clause, and only that ------------------------------
+# The clause used to be stripped from any "with " or "ft " onward, inside
+# words and without brackets (CODE_REVIEW C2). "With or Without You" became
+# "" and could never pass the title gate; "Dancing with Myself" became
+# "dancing" and tied with the wrong song.
+
+@pytest.mark.parametrize("title, expected", [
+    ("With or Without You", "with or without you"),
+    ("Dancing with Myself", "dancing with myself"),
+    ("Daft Punk", "daft punk"),
+    ("Gift of Love", "gift of love"),
+    ("Lift Me Up", "lift me up"),
+    ("Song (feat. Someone)", "song"),
+    ("Song [ft. Someone]", "song"),
+    ("Song (with Someone)", "song"),
+    ("Song feat. Someone", "song"),
+    ("Song ft Someone", "song"),
+    ("Song Featuring Someone", "song"),
+])
+def test_only_a_featured_artist_clause_is_removed(title, expected):
+    assert matcher.normalise(title) == expected
+
+
+def test_a_title_containing_with_prefers_the_right_song():
+    track = _track(title="Dancing with Myself", artist="Billy Idol", ms=200_000)
+    right, _ = matcher.score(_result("Dancing with Myself", ("Billy Idol",), 200), track)
+    wrong, _ = matcher.score(
+        _result("Dancing with the Stars Theme", ("Billy Idol",), 200), track)
+    assert right > wrong
+
+
+def test_the_same_clause_is_removed_everywhere_titles_are_compared():
+    from app import duplicates, lastfm
+
+    assert duplicates.normalise("Gift of Love") != duplicates.normalise("Gift Horse")
+    assert duplicates.normalise("Song (feat. X)") == duplicates.normalise("Song")
+    assert lastfm.normalise("With or Without You") == "with or without you"

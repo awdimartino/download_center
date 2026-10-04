@@ -44,6 +44,7 @@ from datetime import datetime
 from typing import Any
 
 from . import navidrome, playcounts, store
+from .matcher import FEATURING
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.lastfm")
@@ -63,8 +64,6 @@ SOURCE = "lastfm"
 
 _PUNCT = re.compile(r"[^\w\s]", re.UNICODE)
 _SPACE = re.compile(r"\s+")
-_FEAT = re.compile(r"\s*[\(\[]?\s*(feat|ft|featuring|with)\.?\s+[^\)\]]*[\)\]]?",
-                   re.I)
 _AMPERSAND = re.compile(r"\s*[&+]\s*")
 
 
@@ -81,7 +80,7 @@ def normalise(text: str) -> str:
     one band never match. This is one of the commonest differences between
     what a scrobbler sent and what the tag says.
     """
-    text = _FEAT.sub(" ", text or "")
+    text = FEATURING.sub(" ", text or "")
     text = _AMPERSAND.sub(" and ", text.lower())
     text = _PUNCT.sub(" ", text)
     return _SPACE.sub(" ", text).strip()

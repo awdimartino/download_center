@@ -32,6 +32,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import navidrome, store
+from .matcher import FEATURING
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.duplicates")
@@ -44,7 +45,6 @@ _EDITION = re.compile(
     r"album\s*version|single\s*version|explicit|clean|mono|stereo|"
     r"radio\s*edit|extended(?:\s*mix)?)"
     r"[^)\]]*[)\]]?\s*$", re.I)
-_FEATURING = re.compile(r"\s*[\(\[]?\s*(?:feat|ft)\.?\s+[^)\]]*[\)\]]?\s*$", re.I)
 
 # Two files of the same recording differ by less than this. Beyond it they are
 # a different edit, and which one you want is a matter of taste, not quality.
@@ -66,7 +66,7 @@ def normalise(title: str) -> str:
     # Repeated because a title can carry several qualifiers at once.
     for _ in range(3):
         text = _EDITION.sub("", text)
-        text = _FEATURING.sub("", text)
+        text = FEATURING.sub("", text)
     return re.sub(r"[^a-z0-9]+", "", text)
 
 

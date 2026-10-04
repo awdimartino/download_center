@@ -45,7 +45,15 @@ SCORE_FLOOR = 0.70
 TITLE_GATE = 0.60
 ARTIST_GATE = 0.50
 
-_FEAT = re.compile(r"\s*[\(\[]?\s*(feat|ft|featuring|with)\.?\s+[^\)\]]*[\)\]]?", re.I)
+# A featured-artist clause: a bracketed "(feat. X)", "[ft X]" or "(with X)",
+# or a bare "feat. X" / "ft X" / "featuring X" running to the end. Never a
+# bare "with", and never inside a word. Without the brackets and the word
+# boundary this used to eat "With or Without You" whole, cut "Dancing with
+# Myself" to "dancing" (which then matched "Dancing with the Stars Theme"),
+# and "Daft Punk" to "da". Shared with lastfm and duplicates.
+FEATURING = re.compile(
+    r"\s*(?:[\(\[]\s*(?:feat|ft|featuring|with)\b\.?\s[^\)\]]*[\)\]]"
+    r"|\b(?:feat|ft|featuring)\b\.?\s.*)", re.I)
 _PUNCT = re.compile(r"[^\w\s]")
 _SPACE = re.compile(r"\s+")
 
@@ -87,7 +95,7 @@ def client() -> YTMusic:
 
 def normalise(text: str) -> str:
     """Lowercase, drop featured-artist clauses and punctuation."""
-    text = _FEAT.sub(" ", text or "")
+    text = FEATURING.sub(" ", text or "")
     text = _PUNCT.sub(" ", text.lower())
     return _SPACE.sub(" ", text).strip()
 
