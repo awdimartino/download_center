@@ -920,3 +920,16 @@ def test_a_track_moving_out_of_an_album_leaves_its_cover_for_the_rest(space):
     filer.retag_track(space, filed[0].path, album="Elsewhere")
 
     assert (folder / "cover.jpg").exists()
+
+
+def test_an_album_with_an_untaggable_file_is_refused_before_any_write(space):
+    """A failure on file k left 0..k-1 retagged, unregistered and unmoved -
+    an album half renamed (CODE_REVIEW M13). Every file is opened first."""
+    filed = album_on_disk(space, "Artist", "Album", ["One", "Two"])
+    folder = filed[0].path.parent
+    (folder / "03 - Broken.mp3").write_bytes(b"not audio at all")
+
+    with pytest.raises(filer.NotEditable):
+        filer.retag_album(space, folder, albumartist="Artist", album="Renamed")
+
+    assert {EasyID3(one.path)["album"][0] for one in filed} == {"Album"}

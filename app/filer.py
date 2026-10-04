@@ -208,6 +208,28 @@ class NotEditable(Exception):
     """The file cannot carry the tags being written."""
 
 
+def check_writable(paths: list[Path]) -> None:
+    """Open every file as a tag writer would, before any is written.
+
+    A failure on file k of an album used to leave 0..k-1 retagged,
+    unregistered and unmoved - half an album renamed, with nothing to say
+    so. Opening them all first turns the common causes (a file that is not
+    really audio, one that cannot be written) into a refusal that changes
+    nothing. A disk filling mid-write can still interrupt; that is rarer.
+    """
+    from mutagen import File as MutagenFile
+
+    for path in paths:
+        try:
+            audio = MutagenFile(path, easy=True)
+        except Exception as exc:
+            raise NotEditable(f"{path.name}: {type(exc).__name__}: {exc}") from exc
+        if audio is None:
+            raise NotEditable(f"{path.name} is not a format this can tag")
+        if not os.access(path, os.W_OK):
+            raise NotEditable(f"{path.name} cannot be written")
+
+
 def write_tags(path: Path, **fields: Any) -> None:
     """Set the named tags, leaving everything else on the file alone.
 
@@ -330,6 +352,7 @@ def retag_album(space: workspace.Workspace, folder: Path,
     if not files:
         raise NotEditable("there is nothing in that folder to edit")
     require_one_album(folder)
+    check_writable(files)
 
     was = album_key_of(folder)
     for path in files:

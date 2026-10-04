@@ -1853,6 +1853,9 @@ async def library_match_apply(
         # there is nothing left to say which album this used to be.
         was = filer.album_key_of(path)
         ids = _before_edit(session.identity, body.library_id, body.folder)
+        # Before beets writes anything: a file it cannot tag would otherwise
+        # leave the album half retagged.
+        filer.check_writable(filer.audio_in(path))
         result = beets_runner.import_chosen(space, path, body.release_id)
         if not result.get("imported"):
             return result

@@ -446,11 +446,15 @@ it less likely.
       canonical folder and its old one left via `leave_folder`; renumbering
       writes disc 1/1 (new `disc_total` in `write_tags`). Reproduced first.
 
-- [ ] **M13. A retag that fails part-way leaves the album mixed.**
+- [x] **M13. A retag that fails part-way leaves the album mixed.**
       `app/filer.py:300-306`, `app/main.py:1831-1833`. A `NotEditable` on file
       *k* leaves 0..k−1 retagged, unregistered and unmoved; a failure in
       *Use this* happens after the album was already marked reviewed.
       *Fix:* open every file before writing any; mark reviewed last.
+      **Fixed:** `filer.check_writable` opens every file (and checks it is
+      writable) before `retag_album` or *Use this* writes any; reviewed is
+      marked last since H2. A disk filling mid-write can still interrupt.
+      Reproduced first.
 
 - [ ] **M14. Nothing stops two changes hitting one folder at once.**
       *Unverified at runtime.* Rename, combine, cover and match run in
