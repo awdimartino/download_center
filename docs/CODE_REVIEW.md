@@ -637,12 +637,16 @@ it less likely.
       moving to per-thread WAL connections is a large change for an effect
       nobody has seen, so it waits for evidence.
 
-- [ ] **M30. Resolving a duplicate silently loses other users' ratings and
+- [x] **M30. Resolving a duplicate silently loses other users' ratings and
       play counts, and your own play count.** `app/duplicates.py:144-151, 207-210`.
       Only other users' *stars* are checked; their ratings and plays go into
       quarantine with the removed copy, and the caller's play count is never
       migrated. *Fix:* treat any other user's rating or plays as
       unmovable; show your own play loss in the confirm.
+      **Fixed** as suggested: `held_by_others` (renamed from
+      `starred_by_others`) now names anyone with a star, rating or plays,
+      and protects the copy; each copy carries your own `plays`, and the
+      confirm states the count lost from Navidrome. Reproduced first.
 
 - [ ] **M31. Auto-resolve applies a different set than it previewed.**
       `app/main.py:1200-1219`, `app/duplicates.py:669-685`. `?apply=true`

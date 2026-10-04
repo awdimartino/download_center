@@ -28,7 +28,7 @@ def _copy(track_id="a", path="Artist/Album/01 Song.mp3", **fields):
         id=track_id, path=path, title="Song", album="Album", artist="Artist",
         suffix="mp3", bit_rate=320, duration=200.0, size=8_000_000, mbid="",
         track_artist="Artist", starred=False, rating=0, library_id=1,
-        library="Music", starred_by_others="",
+        library="Music", held_by_others="",
     )
     defaults.update(fields)
     return duplicates.Copy(**defaults)
@@ -278,7 +278,7 @@ def test_refuses_before_moving_anything_when_a_star_cannot_migrate(
         duplicates.resolve(
             _group([_copy("keep", "Artist/Album/01 Song.flac", suffix="flac"),
                     _copy("drop", "Artist/Album/01 Song.mp3",
-                          starred_by_others="kelly")]),
+                          held_by_others="kelly")]),
             "keep", identity)
 
     assert source.is_file(), "refusing must leave the file where it was"
@@ -347,7 +347,7 @@ def test_a_dismissed_group_stays_dismissed(tmp_path, navidrome_db, identity,
 def test_a_copy_someone_else_starred_outranks_a_better_file():
     """Quality decides, but only among copies whose annotations can move."""
     theirs = _copy("theirs", suffix="mp3", bit_rate=128,
-                   starred_by_others="kelly")
+                   held_by_others="kelly")
     better = _copy("better", suffix="flac", bit_rate=1000)
     ordered = sorted([better, theirs],
                      key=lambda c: duplicates._rank(c, None), reverse=True)
@@ -523,3 +523,47 @@ def test_a_resolved_copy_leaves_the_page_before_navidrome_notices(
         assert duplicates.find(connection, identity) == [], (
             "the resolved copy is still in Navidrome's index, but it is not "
             "in the library any more and must not be offered again")
+
+
+# --- other people's ratings and plays (CODE_REVIEW M30) ---------------------
+# Only another person's star protected a copy, so their rating and their
+# play count went into the quarantine with it, and the caller's own play
+# count was never mentioned.
+
+def _with_plays(db):
+    import sqlite3
+
+    connection = sqlite3.connect(db)
+    with connection:
+        connection.execute("ALTER TABLE annotation ADD COLUMN play_count INTEGER DEFAULT 0")
+        connection.executemany(
+            "INSERT INTO annotation (user_id, item_id, item_type, starred, rating,"
+            " play_count) VALUES (?, ?, 'media_file', 0, ?, ?)",
+            [("u-kelly", "rated", 4, 0), ("u-kelly", "played", 0, 7),
+             ("u-alex", "played", 0, 3)])
+    connection.close()
+
+
+def test_another_persons_rating_or_plays_protects_a_copy(navidrome_db, identity):
+    import sqlite3
+
+    for track in ("rated", "played", "plain"):
+        add_track(navidrome_db, track, library_id=1)
+    _with_plays(navidrome_db)
+
+    connection = sqlite3.connect(navidrome_db)
+    loaded = {c.id: c for c in duplicates._load(connection, identity)}
+    connection.close()
+
+    assert loaded["rated"].held_by_others == "kelly"
+    assert loaded["played"].held_by_others == "kelly"
+    assert loaded["plain"].held_by_others == ""
+    assert loaded["played"].plays == 3
+
+
+def test_a_copy_someone_else_rated_is_refused(tmp_path, state_db, identity):
+    keeper = _copy("keep")
+    rated = _copy("gone", path="Artist/Album/02 Song.mp3", held_by_others="kelly")
+
+    with pytest.raises(ValueError, match="rated or played by kelly"):
+        duplicates.resolve(_group([keeper, rated], keeper), "keep", identity)

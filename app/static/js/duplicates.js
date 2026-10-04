@@ -93,6 +93,14 @@ function renderGroup(group) {
         ...losers.map((c) => `    ${c.artist} — ${c.title}  (${describeCopy(c)})\n    ${c.path}`),
       ];
       if (mixed) lines.push("", "These copies are NOT titled the same.");
+      // Navidrome's play count cannot be moved to the kept copy, so say what
+      // goes with the removed ones. The companion's own history keeps them.
+      const lost = losers.reduce((sum, c) => sum + (c.plays || 0), 0);
+      if (lost) {
+        lines.push("", `Navidrome's count of your ${lost} play${lost === 1 ? "" : "s"} `
+          + "of the removed cop" + (losers.length === 1 ? "y" : "ies")
+          + " goes with it; Home's listening history keeps them.");
+      }
       if (!confirm(lines.join("\n"))) return;
       await postDupe("/api/duplicates/resolve",
         { key: group.key, keeper: chosen.value });

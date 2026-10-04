@@ -837,8 +837,8 @@ is on the same album, lengths agree within a second, and one copy is clearly
 better: lossless over lossy, or at least 10% more bitrate. Confident groups
 are listed first.
 
-**The copy kept** is pre-selected by: a copy another user has starred (that
-star cannot be moved), then lossless, bitrate, file size, and having a
+**The copy kept** is pre-selected by: a copy another user has starred, rated
+or played (that cannot be moved), then lossless, bitrate, file size, and having a
 MusicBrainz id.
 
 ### Resolving a group
@@ -847,7 +847,9 @@ MusicBrainz id.
 goes. Then:
 
 1. **Refused before anything moves** if a copy being removed carries someone
-   else's star — the app can only act as you.
+   else's star, rating or plays — the app can only act as you. The confirm
+   also says how many of your own plays Navidrome counts on the removed
+   copies; those cannot be moved, though Home's history keeps them.
 2. **Stars and ratings move first, as you**, through the Subsonic API: if a
    removed copy is starred and the kept one is not, the kept one is starred;
    the highest rating is carried over. If that fails, nothing is removed.

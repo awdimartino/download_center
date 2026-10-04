@@ -93,7 +93,14 @@ class Copy:
     rating: int
     library_id: int
     library: str
-    starred_by_others: str = ""
+    # Who else has a star, a rating or plays on this file. Only stars used
+    # to count, so another person's rating and play count went into the
+    # quarantine with the copy, unannounced.
+    held_by_others: str = ""
+    # This person's play count on this file in Navidrome. It cannot be moved
+    # through the API, so the confirm says what removing it costs. (The
+    # companion's own listening history is keyed by UUID and keeps it.)
+    plays: int = 0
 
     @property
     def lossless(self) -> bool:
@@ -107,7 +114,8 @@ class Copy:
             "size": self.size, "mbid": self.mbid, "starred": self.starred,
             "rating": self.rating, "lossless": self.lossless,
             "library": self.library,
-            "starred_by_others": self.starred_by_others,
+            "held_by_others": self.held_by_others,
+            "plays": self.plays,
         }
 
 
@@ -145,11 +153,12 @@ class Group:
 def _can_migrate(copy: Copy, identity: navidrome.Identity) -> bool:
     """Whether every annotation on this copy could be carried elsewhere.
 
-    Our own star can be re-created on another file through the API. Somebody
-    else's cannot: acting as them is not possible, so quarantining their copy
-    would take their star with it.
+    Our own star and rating can be re-created on another file through the
+    API. Somebody else's cannot: acting as them is not possible, so
+    quarantining a copy they starred, rated or played would take that with
+    it.
     """
-    return not copy.starred_by_others
+    return not copy.held_by_others
 
 
 def _rank(copy: Copy, identity: navidrome.Identity) -> tuple:
@@ -199,6 +208,11 @@ def _load(connection: sqlite3.Connection,
     # before naming them: this reads a database another application owns and
     # upgrades on its own schedule.
     live = navidrome.live_clause(connection, allowed)
+    # Probed: play_count is Navidrome's, and this reads a database it owns.
+    played = "play_count" in navidrome.columns_of(connection, "annotation")
+    others_hold = ("an.starred = 1 or an.rating > 0"
+                   + (" or an.play_count > 0" if played else ""))
+    my_plays = "coalesce(mine.play_count, 0)" if played else "0"
     rows = connection.execute(f"""
         select mf.id, mf.path, mf.title, mf.album, mf.artist, mf.album_artist,
                mf.suffix, mf.bit_rate, mf.duration, mf.size,
@@ -208,7 +222,8 @@ def _load(connection: sqlite3.Connection,
                (select group_concat(u.user_name)
                   from annotation an join user u on u.id = an.user_id
                  where an.item_id = mf.id and an.item_type = 'media_file'
-                   and an.starred = 1 and an.user_id != ?)
+                   and ({others_hold}) and an.user_id != ?),
+               {my_plays}
           from media_file mf
           left join library l on l.id = mf.library_id
           left join annotation mine
@@ -222,7 +237,7 @@ def _load(connection: sqlite3.Connection,
              mbid=r[10], track_artist=(r[4] or r[5] or ""),
              library_id=r[11] or 0, library=r[12] or "",
              starred=bool(r[13]), rating=r[14] or 0,
-             starred_by_others=r[15] or "")
+             held_by_others=r[15] or "", plays=r[16] or 0)
         for r in rows
     ]
 
@@ -520,7 +535,7 @@ def resolve(group: Group, keeper_id: str,
     # loser's star was already written to the keeper by the time a later one
     # turned out to be somebody else's - leaving a half-applied change that
     # repeated on every retry.
-    stranded = [f"{c.path}: starred by {c.starred_by_others}"
+    stranded = [f"{c.path}: starred, rated or played by {c.held_by_others}"
                 for c in losers if not _can_migrate(c, identity)]
     if stranded:
         raise ValueError(
