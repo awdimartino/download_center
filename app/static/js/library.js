@@ -1380,7 +1380,7 @@ function reviewButton(album, statusHolder) {
 
 function moreMenu(album) {
   const wrap = el("div", "lib-more");
-  const toggle = el("button", "ghost", "More ▾");
+  const toggle = el("button", "ghost dropdown", "More");
   toggle.type = "button";
   toggle.setAttribute("aria-haspopup", "true");
   toggle.setAttribute("aria-expanded", "false");

@@ -213,6 +213,66 @@ select {
   font-size: var(--t-field);
 }
 select { cursor: pointer; }
+
+/* --- dropdowns -----------------------------------------------------------
+   One look for everything that opens a list: the native selects and the
+   album panel's More menu. The same chevron on every trigger - the
+   browser's own arrow differs by browser and platform, and More used a
+   "▾" glyph that matched neither - and, where the browser lets a select's
+   list be styled (appearance: base-select, Chromium 135+), the same
+   floating panel as .lib-menu. Elsewhere the list stays the platform's own,
+   dark via color-scheme, which is the most that can be done there. */
+select {
+  appearance: none;
+  /* Room for the chevron: its 10px plus the gap a button's label keeps. */
+  padding-right: calc(var(--s-3) + var(--s-4));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23949ba8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--s-3) center;
+  background-size: 10px 6px;
+}
+.dropdown::after {
+  content: "";
+  width: 10px;
+  height: 6px;
+  background: var(--muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+
+@supports (appearance: base-select) {
+  select, ::picker(select) { appearance: base-select; }
+  /* A base-select lays out like a button whose label sits at the top. */
+  select { display: inline-flex; align-items: center; }
+  /* The chevron above stands in for the browser's. */
+  select::picker-icon { display: none; }
+  ::picker(select) {
+    margin-top: var(--s-1);
+    padding: var(--s-1);
+    border: 0;
+    border-radius: var(--r-md);
+    background: var(--panel-3);
+    box-shadow: var(--float-shadow);
+    color: var(--text);
+    transition: opacity .12s ease-out;
+  }
+  option {
+    min-height: 34px;
+    padding: 0 var(--s-3);
+    border-radius: var(--r-sm);
+    font-size: var(--t-sm);
+    /* The app's own normal, which is the More menu's; the browser's is 400. */
+    font-weight: var(--w-normal);
+  }
+  option::checkmark { display: none; }
+  option:hover, option:focus-visible {
+    outline: none;
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+  }
+  option:checked { color: var(--accent); }
+  @starting-style { ::picker(select):popover-open { opacity: 0; } }
+}
+
 input::placeholder { color: var(--faint); }
 input:not([type="radio"]):not([type="checkbox"]):hover,
 select:hover { border-color: color-mix(in srgb, var(--text) 14%, transparent); }
@@ -2118,7 +2178,12 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
   background: var(--panel-3);
   box-shadow: var(--float-shadow);
 }
-.lib-menu button { justify-content: flex-start; border-radius: var(--r-sm); background: transparent; }
+.lib-menu button {
+  justify-content: flex-start;
+  min-height: 34px;
+  border-radius: var(--r-sm);
+  background: transparent;
+}
 .lib-menu button:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
 
 .lib-panel { margin-bottom: var(--s-4); padding: 0 var(--s-3); border-radius: var(--r-md); background: var(--panel-2); }
@@ -3172,3 +3237,41 @@ main > #error { background: color-mix(in srgb, var(--bad) 16%, var(--panel-2)); 
 /* A field's help text, on the type scale rather than the browser's own
    "smaller" of an already small label (it came out at 10.4px). */
 #settings small { font-size: var(--t-xs); line-height: 1.45; color: var(--faint); }
+
+/* --- appearing ------------------------------------------------------------
+   Things that open fade in rather than snapping into place. Opacity only,
+   no movement, and quick enough to read as the page answering rather than
+   the page performing. Closing stays instant: a fade-out is only latency
+   between the click and seeing what is underneath. @starting-style is
+   what gives an element coming out of display:none ([hidden]) a frame to
+   fade from; a browser without it simply shows the element as before. */
+
+.menu,
+.lib-drawer,
+.lib-dialog,
+.lib-bar,
+.lib-menu,
+#warn,
+main > section[id^="view-"] {
+  transition: opacity .12s ease-out;
+}
+
+@starting-style {
+  .menu,
+  .lib-drawer,
+  .lib-dialog,
+  .lib-bar,
+  .lib-menu,
+  #warn,
+  main > section[id^="view-"] {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu, .lib-drawer, .lib-dialog, .lib-bar, .lib-menu, #warn,
+  main > section[id^="view-"] { transition: none; }
+  /* Alone: a browser that does not know ::picker drops the whole rule
+     it appears in, not just that selector. */
+  @supports (appearance: base-select) { ::picker(select) { transition: none; } }
+}
