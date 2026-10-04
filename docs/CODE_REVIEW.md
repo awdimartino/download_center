@@ -73,7 +73,7 @@ it less likely.
       floor: `token_set_ratio` gives a title that shares most of its words 0.77.
       Imported Last.fm plays matched under the old regex were not re-checked.
 
-- [ ] **C3. Match candidates can be shown under the wrong album, and *Use
+- [x] **C3. Match candidates can be shown under the wrong album, and *Use
       this* then applies one album's release to another, fusing them.**
       `app/static/js/library.js:961-996`, `app/main.py:1775`,
       `app/operations.py:113-115`. `askForCandidates` remembers the album
@@ -86,6 +86,14 @@ it less likely.
       adopt the other album's UUID and move into its folder.
       *Fix:* carry `library_id` and `folder` in the operation and its result;
       drop any result whose folder is not the one asked about. See also H3.
+      **Fixed:** operations carry a `target`; the candidate result names its
+      library and folder; the page drops answers for another album and says
+      so when a lookup is refused because another is in flight. The server
+      also remembers which releases were offered per (user, library, folder)
+      and refuses to apply any other (409), so no client race can fuse two
+      albums. Reproduced first: the old route applied album A's release to
+      album B. The refusal message still shows another person's operation to
+      the browser; that is H3.
 
 - [ ] **C4. `survey` walks the quarantine, and `unfuse --apply` /
       `backfill --apply` act on what it finds.** `app/survey.py:134`,

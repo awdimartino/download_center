@@ -1769,12 +1769,29 @@ async def library_match(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    target = {"library_id": body.library_id, "folder": body.folder}
+
     def run() -> dict[str, Any]:
-        return beets_runner.candidates(space, path)
+        result = beets_runner.candidates(space, path)
+        # Named in the answer, because the answer arrives over the websocket
+        # long after the request: the page drops a list that is not about
+        # the album it is showing, and applying checks the same record.
+        result.update(target)
+        _offered[(session.identity.username, body.library_id, str(path))] = {
+            c["id"] for c in result.get("candidates", []) if c.get("id")}
+        return result
 
     operation, started = operations.start(
-        "candidates", session.identity.username, run)
+        "candidates", session.identity.username, run, target=target)
     return {"started": started, "operation": operation.as_dict()}
+
+
+# Which releases each album was offered, by (user, library, album folder).
+# Applying refuses anything else. A lookup started while another was in
+# flight used to be handed that one's answer, drawn under the wrong album,
+# and *Use this* then retagged one album as another's release - fusing them.
+# In memory: after a restart, finding matches again is the cost.
+_offered: dict[tuple[str, int, str], set[str]] = {}
 
 
 class AlbumChoice(BaseModel):
@@ -1801,6 +1818,14 @@ async def library_match_apply(
         path = library.album_dir(session.identity, body.library_id, body.folder)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    offered = _offered.get(
+        (session.identity.username, body.library_id, str(path)), set())
+    if body.release_id not in offered:
+        raise HTTPException(
+            status_code=409,
+            detail=f"That release was not offered for {path.name}; "
+                   "find matches for it again.")
 
     if not inbox.settled(path):
         # A download of this album is still filing tracks into it.

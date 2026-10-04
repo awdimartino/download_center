@@ -958,9 +958,17 @@ function candidateRow(album, candidate) {
   return row;
 }
 
+// Whether an answer (or the operation in flight) is about this album. The
+// lookup is one at a time for the whole server, so the answer arriving can
+// be somebody else's - or an earlier album's from this tab.
+function sameAlbum(target, album) {
+  return Boolean(target && album)
+    && target.library_id === album.library_id && target.folder === album.folder;
+}
+
 function showCandidates(result) {
   const album = candidatesFor;
-  if (!album) return;
+  if (!album || !sameAlbum(result, album)) return;
   const head = el("div", "candidates-head");
   head.append(el("span", "candidates-title", `Matches for ${albumName(album)}`));
   const close = el("button", "ghost", "Close");
@@ -992,7 +1000,14 @@ async function askForCandidates(album, button) {
     "candidates", "/api/library/match",
     { library_id: album.library_id, folder: album.folder });
   button.disabled = false;
-  if (!payload || payload.detail) closeCandidates();
+  if (!payload || payload.detail) {
+    closeCandidates();
+  } else if (!payload.started && !sameAlbum(payload.operation.target, album)) {
+    closeCandidates();
+    setNote("library-op",
+      "MusicBrainz is already being asked about another album; "
+      + "try again when that finishes.", "warn");
+  }
 }
 
 async function useCandidate(album, candidate, button) {

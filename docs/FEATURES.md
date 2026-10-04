@@ -698,6 +698,12 @@ that release.
   re-pointed and the filer moves each file. One function decides where a
   track lives.
 - The album is marked reviewed ("matched").
+- Lookups run one at a time for the whole server. Asking about a second
+  album while one is in flight is refused with a message, an answer is shown
+  only under the album it was asked about, and **Use this** applies only a
+  release that was offered for that album, to the person it was offered to.
+  These offers are kept in memory, so after a restart you run *Find matches*
+  again.
 - Matching is one album at a time, by hand. This is also where Picard could
   replace beets later.
 

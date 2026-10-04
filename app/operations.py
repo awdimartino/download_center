@@ -48,6 +48,10 @@ class Operation:
     # Asked to stop. The work checks between units; nothing is interrupted
     # midway through a file.
     stop_requested: bool = False
+    # What it is working on, for work aimed at one thing - which album a
+    # candidate lookup is about. Without it a caller handed the operation in
+    # flight cannot tell whether that is its own request or somebody else's.
+    target: dict[str, Any] | None = None
     task: asyncio.Task | None = field(default=None, repr=False)
     loop: asyncio.AbstractEventLoop | None = field(default=None, repr=False)
 
@@ -69,6 +73,7 @@ class Operation:
             "error": self.error,
             "progress": self.progress,
             "stopping": self.stop_requested,
+            "target": self.target,
         }
 
 
@@ -102,7 +107,8 @@ async def _announce(operation: Operation) -> None:
 
 
 def start(name: str, owner: str | None,
-          work: Callable[[], dict[str, Any]]) -> tuple[Operation, bool]:
+          work: Callable[[], dict[str, Any]],
+          target: dict[str, Any] | None = None) -> tuple[Operation, bool]:
     """Run `work` in a thread, off the request. Returns (operation, started).
 
     `started` is False when one was already in flight, in which case the
@@ -122,6 +128,7 @@ def start(name: str, owner: str | None,
     operation.error = None
     operation.progress = None
     operation.stop_requested = False
+    operation.target = target
     operation.loop = asyncio.get_running_loop()
 
     async def run() -> None:
