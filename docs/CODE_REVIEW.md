@@ -997,9 +997,17 @@ it less likely.
 - [x] **L40.** Cover art is served `Cache-Control: public` though it is
       owner-checked (`main.py:1692`); use `private`.
       **Fixed** as suggested.
-- [ ] **L41.** Blocking filesystem and database work runs on the event loop
+- [x] **L41.** Blocking filesystem and database work runs on the event loop
       inside `async` routes and the auth middleware (`_library_roots`,
       `album_dir`, `audio_in`, `settled`, `auth.py:130-137`).
+      **Fixed:** the session middleware and the socket look the session up
+      in a thread; the audit loop reads the library list and each
+      staleness check in one; every library route runs its checks
+      (`for_session`, `album_dir`, `track_path`, `audio_in`, the one-album
+      tag read, `receiving`) in one before its work. `_browsing_library`
+      no longer builds a workspace to learn a library id. `settled` is no
+      longer called from a route. A test watches each helper for a call on
+      the loop's thread; all nine cases failed before.
 - [ ] **L42.** Arbitrary server-side fetches: direct links and thumbnails
       reach any URL a signed-in user supplies, including LAN addresses, with
       the first 200 characters of errors returned; `choosable()` is checked

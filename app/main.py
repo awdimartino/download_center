@@ -327,8 +327,8 @@ async def _audit_loop() -> None:
         # fail too (a locked database), and an exception escaping here ended
         # the task for the life of the process while Health's audit aged.
         try:
-            for root in _library_roots():
-                if diskaudit.stale(root):
+            for root in await asyncio.to_thread(_library_roots):
+                if await asyncio.to_thread(diskaudit.stale, root):
                     try:
                         await asyncio.to_thread(diskaudit.refresh, root)
                     except Exception:
@@ -482,7 +482,10 @@ def same_origin(headers: Any) -> bool:
 async def require_session(request: Request, call_next):
     # Looked up once and kept on the request, because the handler needs the
     # same session and resolving it twice means two database opens per call.
-    session = auth.get(request.cookies.get(auth.COOKIE))
+    # In a thread: every few minutes per session it re-reads the account
+    # from Navidrome's database, and that read sat on the event loop,
+    # holding every other request while it ran.
+    session = await asyncio.to_thread(auth.get, request.cookies.get(auth.COOKIE))
     request.state.session = session
     path = request.url.path
     if request.method in CHANGING and not same_origin(request.headers):
@@ -705,7 +708,8 @@ async def create_job(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        space = workspace.for_session(session.identity, request.library_id)
+        space = await asyncio.to_thread(
+            workspace.for_session, session.identity, request.library_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -777,8 +781,9 @@ async def delete_job(
         # The library need not be mounted: this only removes scratch files
         # under the staging root. Refusing would strand the job in memory
         # with its files on disk.
-        space = workspace.for_session(session.identity, job.get("library_id"),
-                                      require_library=False)
+        space = await asyncio.to_thread(functools.partial(
+            workspace.for_session, session.identity, job.get("library_id"),
+            require_library=False))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -859,7 +864,8 @@ async def retry_job(
     # Everything that can refuse comes before anything is reset, so a
     # refused retry leaves the job as it was, failures and all.
     try:
-        space = workspace.for_session(session.identity, job.get("library_id"))
+        space = await asyncio.to_thread(
+            workspace.for_session, session.identity, job.get("library_id"))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _check_room(session.identity.username)
@@ -920,7 +926,8 @@ async def upload_to_inbox(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, str]:
     try:
-        space = workspace.for_session(session.identity, library_id)
+        space = await asyncio.to_thread(
+            workspace.for_session, session.identity, library_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1004,7 +1011,8 @@ async def finish_upload(
     this only saves the browser watching a batch sit at "filing" for it.
     """
     try:
-        space = workspace.for_session(session.identity, library_id)
+        space = await asyncio.to_thread(
+            workspace.for_session, session.identity, library_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if batch:
@@ -1164,11 +1172,10 @@ def _browsing_library(session: auth.Session) -> int | None:
     None when the account has none, in which case nothing is marked held
     rather than everything being marked held against library zero.
     """
-    try:
-        return workspace.for_session(session.identity,
-                                    require_library=False).library_id
-    except ValueError:
-        return None
+    # The first library, as a workspace would choose - without building one,
+    # which reads its marker off disk on the event loop.
+    libraries = session.identity.libraries
+    return libraries[0]["id"] if libraries else None
 
 
 @app.get("/api/search")
@@ -1404,8 +1411,9 @@ async def auto_resolve_apply(
     identity = session.identity
     busy = [job for job in JOBS.values()
             if job.get("owner") == identity.username and job["id"] in RUNNING]
-    arriving = any(inbox.receiving(Path(lib["path"]))
-                   for lib in identity.libraries)
+    arriving = await asyncio.to_thread(
+        lambda: any(inbox.receiving(Path(lib["path"]))
+                    for lib in identity.libraries))
     if busy or arriving:
         raise HTTPException(
             status_code=409,
@@ -1703,7 +1711,7 @@ async def api_library_quarantine(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     folder = _library_folder(session.identity, body.library_id, body.folder)
-    _not_arriving(folder)
+    await asyncio.to_thread(_not_arriving, folder)
     copies = [_copy_from_track_row(t, body.library_id, body.album,
                                    t["artist"] or body.artist)
               for t in found["items"]]
@@ -1749,7 +1757,7 @@ async def api_track_quarantine(
                             detail="That track is not in this album.")
 
     folder = _library_folder(session.identity, body.library_id, body.folder)
-    _not_arriving(folder)
+    await asyncio.to_thread(_not_arriving, folder)
     copy = _copy_from_track_row(track, body.library_id, body.album,
                                 track["artist"] or body.artist)
     try:
@@ -1861,17 +1869,18 @@ async def library_album_edit(
     already taken, in which case these files join the record that is there.
     """
     _named(body.album_artist, body.album)
-    try:
-        space = workspace.for_session(session.identity, body.library_id)
-        folder = library.album_dir(
-            session.identity, body.library_id, body.folder)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if inbox.receiving(folder):
-        raise HTTPException(
-            status_code=409,
-            detail=f"{folder.name} is still arriving; try again shortly.")
+    def check() -> tuple[workspace.Workspace, Path]:
+        try:
+            space = workspace.for_session(session.identity, body.library_id)
+            folder = library.album_dir(
+                session.identity, body.library_id, body.folder)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _not_arriving(folder)
+        return space, folder
+
+    space, folder = await asyncio.to_thread(check)
 
     def run() -> dict[str, Any]:
         ids = _before_edit(session.identity, body.library_id, body.folder)
@@ -1905,16 +1914,16 @@ async def library_track_edit(
            (body.title, body.artist, body.track_no, body.disc_no,
             body.album_artist, body.album)):
         raise HTTPException(status_code=400, detail="Nothing to change.")
-    try:
-        space = workspace.for_session(session.identity, body.library_id)
-        path = library.track_path(session.identity, body.library_id, body.path)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    def check() -> tuple[workspace.Workspace, Path]:
+        try:
+            space = workspace.for_session(session.identity, body.library_id)
+            path = library.track_path(session.identity, body.library_id, body.path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _not_arriving(path)
+        return space, path
 
-    if inbox.receiving(path):
-        raise HTTPException(
-            status_code=409,
-            detail=f"{path.name} is still arriving; try again shortly.")
+    space, path = await asyncio.to_thread(check)
 
     def run() -> dict[str, Any]:
         ids = _before_edit(session.identity, body.library_id,
@@ -2041,12 +2050,16 @@ async def library_match(
     backlog, which is far longer than a request should be held open. The
     answer arrives over the websocket.
     """
-    try:
-        space = workspace.for_session(session.identity, body.library_id)
-        path = library.album_dir(session.identity, body.library_id, body.folder)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _one_album(path)
+    def check() -> tuple[workspace.Workspace, Path]:
+        try:
+            space = workspace.for_session(session.identity, body.library_id)
+            path = library.album_dir(session.identity, body.library_id, body.folder)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _one_album(path)
+        return space, path
+
+    space, path = await asyncio.to_thread(check)
 
     target = {"library_id": body.library_id, "folder": body.folder}
 
@@ -2092,29 +2105,29 @@ async def library_match_apply(
     keeps its Navidrome identity and album-level stars and play counts
     survive the retag.
     """
-    try:
-        space = workspace.for_session(session.identity, body.library_id)
-        path = library.album_dir(session.identity, body.library_id, body.folder)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    def check() -> tuple[workspace.Workspace, Path]:
+        try:
+            space = workspace.for_session(session.identity, body.library_id)
+            path = library.album_dir(session.identity, body.library_id, body.folder)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    offered = _offered.get(
-        (session.identity.username, body.library_id, str(path)), set())
-    if body.release_id not in offered:
-        raise HTTPException(
-            status_code=409,
-            detail=f"That release was not offered for {path.name}; "
-                   "find matches for it again.")
-    _one_album(path)
+        offered = _offered.get(
+            (session.identity.username, body.library_id, str(path)), set())
+        if body.release_id not in offered:
+            raise HTTPException(
+                status_code=409,
+                detail=f"That release was not offered for {path.name}; "
+                       "find matches for it again.")
+        _one_album(path)
+        # A download of this album still filing tracks into it: retagging
+        # mid-flight re-points the registry, and the tracks that land
+        # afterwards still carry the old tags, miss the key that has just
+        # moved, and found a second album beside the first.
+        _not_arriving(path)
+        return space, path
 
-    if inbox.receiving(path):
-        # A download of this album is still filing tracks into it.
-        # Retagging mid-flight re-points the registry, and the tracks that
-        # land afterwards still carry the old tags, miss the key that has
-        # just moved, and found a second album beside the first.
-        raise HTTPException(
-            status_code=409,
-            detail=f"{path.name} is still arriving; try again shortly.")
+    space, path = await asyncio.to_thread(check)
 
     def run() -> dict[str, Any]:
         # Read before beets touches anything: once the tags are rewritten
@@ -2184,7 +2197,8 @@ async def library_cover_candidates(
     MusicBrainz and can move the files. This is for when the picture is the
     only thing wrong, which is every YouTube download that arrived with bars.
     """
-    path, tracks = _cover_target(session, body.library_id, body.folder)
+    path, tracks = await asyncio.to_thread(
+        _cover_target, session, body.library_id, body.folder)
 
     def run() -> list[dict[str, Any]]:
         meta = filer.read_meta(tracks[0])
@@ -2203,12 +2217,13 @@ async def library_cover_apply(
     if body.url is not None and not covers.choosable(body.url):
         raise HTTPException(status_code=400,
                             detail="That cover is not one this offered.")
-    path, tracks = _cover_target(session, body.library_id, body.folder)
-    if inbox.receiving(path):
-        raise HTTPException(
-            status_code=409,
-            detail=f"{path.name} is still arriving; try again shortly.")
-    _one_album(path)
+    def check() -> tuple[Path, list[Path]]:
+        path, tracks = _cover_target(session, body.library_id, body.folder)
+        _not_arriving(path)
+        _one_album(path)
+        return path, tracks
+
+    path, tracks = await asyncio.to_thread(check)
 
     def run() -> dict[str, Any]:
         data = (covers.fetch(body.url) if body.url
@@ -2261,14 +2276,18 @@ async def library_combine(
     """
     _named(body.albumartist, body.album)
     identity = session.identity
-    try:
-        space = workspace.for_session(identity, body.library_id)
-        folders = {name: library.album_dir(identity, body.library_id, name)
-                   for name in dict.fromkeys(body.albums)}
-        files = {name: library.track_path(identity, body.library_id, name)
-                 for name in dict.fromkeys(body.tracks + body.order)}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def resolve() -> tuple[workspace.Workspace, dict[str, Path], dict[str, Path]]:
+        try:
+            return (workspace.for_session(identity, body.library_id),
+                    {name: library.album_dir(identity, body.library_id, name)
+                     for name in dict.fromkeys(body.albums)},
+                    {name: library.track_path(identity, body.library_id, name)
+                     for name in dict.fromkeys(body.tracks + body.order)})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    space, folders, files = await asyncio.to_thread(resolve)
 
     if body.keep is not None and body.keep not in folders:
         raise HTTPException(status_code=400,
@@ -2279,18 +2298,19 @@ async def library_combine(
     if body.cover_url is not None and not covers.choosable(body.cover_url):
         raise HTTPException(status_code=400,
                             detail="That cover is not one this offered.")
-    count = (sum(len(filer.audio_in(path)) for path in folders.values())
-             + len(body.tracks))
-    if count < 2:
-        raise HTTPException(status_code=400,
-                            detail="Choose at least two tracks to combine.")
-    for path in [*folders.values(), *(files[name] for name in body.tracks)]:
-        if inbox.receiving(path):
-            raise HTTPException(
-                status_code=409,
-                detail=f"{path.name} is still arriving; try again shortly.")
-    for path in folders.values():
-        _one_album(path)
+
+    def check() -> None:
+        count = (sum(len(filer.audio_in(path)) for path in folders.values())
+                 + len(body.tracks))
+        if count < 2:
+            raise HTTPException(status_code=400,
+                                detail="Choose at least two tracks to combine.")
+        for path in [*folders.values(), *(files[name] for name in body.tracks)]:
+            _not_arriving(path)
+        for path in folders.values():
+            _one_album(path)
+
+    await asyncio.to_thread(check)
 
     def run() -> dict[str, Any]:
         survivor = body.keep or next(iter(folders), None)
@@ -2374,8 +2394,9 @@ async def library_replaygain(
         if body.folder is not None:
             if body.library_id is None:
                 raise ValueError("Say which library the album is in.")
-            library.album_dir(identity, body.library_id, body.folder,
-                              any_depth=True)
+            await asyncio.to_thread(functools.partial(
+                library.album_dir, identity, body.library_id, body.folder,
+                any_depth=True))
             targets = [(body.library_id, body.folder)]
         else:
             targets = await asyncio.to_thread(library.without_gain, identity)
@@ -2531,7 +2552,7 @@ async def status(
 
 @app.websocket("/ws")
 async def websocket(ws: WebSocket) -> None:
-    session = auth.get(ws.cookies.get(auth.COOKIE))
+    session = await asyncio.to_thread(auth.get, ws.cookies.get(auth.COOKIE))
     # A socket is not bound by CORS: any page could open one with this
     # person's cookie and read their downloads as they move.
     if session is not None and not same_origin(ws.headers):
