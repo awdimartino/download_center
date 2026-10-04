@@ -569,3 +569,22 @@ def test_owner_checked_cover_art_is_not_cached_for_everyone():
     from app import main
 
     assert main.ART_CACHE.startswith("private,")
+
+
+# --- the download settings are checked (L44) -----------------------------------
+
+@pytest.mark.parametrize("value, kept", [("320", "320"), (192, "192"),
+                                         ("128k", "128"), ("0", "0")])
+def test_a_real_bitrate_is_accepted(value, kept):
+    assert config.Settings(audio_bitrate=value).audio_bitrate == kept
+
+
+@pytest.mark.parametrize("value", ["loud", "1000", "16", "", "-5"])
+def test_a_bitrate_ffmpeg_cannot_use_is_refused(value):
+    with pytest.raises(ValueError):
+        config.Settings(audio_bitrate=value)
+
+
+def test_the_pause_between_downloads_is_bounded():
+    with pytest.raises(ValueError):
+        config.Settings(rate_limit_sleep=2000)

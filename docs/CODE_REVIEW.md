@@ -1025,8 +1025,12 @@ it less likely.
       returns a connection whose `with` also closes it, and a connection
       that fails its first query is closed before raising. state.db's one
       long-lived connection is meant to stay open. Reproduced first.
-- [ ] **L44.** `audio_bitrate` is unvalidated text and `rate_limit_sleep`
+- [x] **L44.** `audio_bitrate` is unvalidated text and `rate_limit_sleep`
       unbounded (`config.py:48-51`).
+      **Fixed:** `audio_bitrate` must be 32-320 kbps or a VBR level 0-9
+      (a trailing `k` is accepted and dropped); `rate_limit_sleep` is
+      capped at 300 seconds. Settings refuses anything else with the
+      reason. Reproduced first.
 - [ ] **L45.** Focus rings are `box-shadow`, which vanish in forced-colours
       mode; there is no `forced-colors` rule (`style.css`).
 

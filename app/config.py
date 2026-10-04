@@ -7,7 +7,7 @@ import tomllib
 from typing import Any
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = Path(os.environ.get("DC_CONFIG_DIR", ROOT / "config"))
@@ -45,10 +45,23 @@ class Settings(BaseModel):
     output_dir: Path = ROOT / "untagged"
 
     concurrency: int = Field(default=3, ge=1, le=10)
+    # Handed to ffmpeg through yt-dlp: a constant bitrate in kbps, or a VBR
+    # level from 0 (best) to 9. Anything else used to be accepted here and
+    # fail every download at the encoding step.
     audio_bitrate: str = "320"
     max_attempts: int = Field(default=3, ge=1, le=10)
     # Seconds to pause between downloads, to stay under YouTube's radar.
-    rate_limit_sleep: float = Field(default=2.0, ge=0)
+    # Bounded: a typo of 2000 held a download slot for half an hour a track.
+    rate_limit_sleep: float = Field(default=2.0, ge=0, le=300)
+
+    @field_validator("audio_bitrate", mode="before")
+    @classmethod
+    def _bitrate(cls, value: Any) -> str:
+        text = str(value).strip().lower().removesuffix("k")
+        if text.isdigit() and (int(text) <= 9 or 32 <= int(text) <= 320):
+            return str(int(text))
+        raise ValueError("audio_bitrate must be a bitrate from 32 to 320 "
+                         "(kbps), or a VBR level from 0 to 9")
 
     # Whether the review page offers to match an album against MusicBrainz.
     # Beets no longer files anything: a download goes into the library on its
