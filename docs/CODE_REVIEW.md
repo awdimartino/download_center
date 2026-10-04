@@ -589,12 +589,16 @@ it less likely.
       `:44` now runs with nothing from the environment. A `config.toml`
       saved before this may already hold copied secrets.
 
-- [ ] **M26. A bad config write stops the container starting.**
+- [x] **M26. A bad config write stops the container starting.**
       `app/config.py:138, 177-196`. `_toml_value` escapes only `\` and `"`; a
       newline makes invalid TOML. The write is not atomic. `load()` runs at
       import, so either failure is a crash loop.
       *Fix:* write a temp file and `os.replace`; serialise with a real TOML
       writer.
+      **Fixed:** strings are escaped as TOML basic strings require (every
+      control character), and the text is parsed before a temp file is
+      swapped in with `os.replace`. No new dependency. `load()` still fails
+      loudly on a file broken by hand. Reproduced first.
 
 - [ ] **M27. Smart playlists stop working when Navidrome's token expires;
       the session lives on.** *Expiry interval unverified on the Pi.*

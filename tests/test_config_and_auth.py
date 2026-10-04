@@ -193,3 +193,26 @@ def test_a_live_session_has_its_last_seen_bumped():
 def test_no_cookie_is_not_a_session():
     assert auth.get(None) is None
     assert auth.get("") is None
+
+
+# --- a config that always loads (CODE_REVIEW M26) ---------------------------
+# Only backslash and quote were escaped, so a newline wrote invalid TOML; the
+# write was not atomic; and config loads at import, so either was a crash
+# loop.
+
+@pytest.mark.parametrize("value", ["line one\nline two", "tab\there",
+                                   "bell\x07", 'quote " and \ slash'])
+def test_any_text_round_trips(config_file, monkeypatch, value):
+    import tomllib
+
+    monkeypatch.setattr(config, "FROM_ENV", set())
+    config.save({"navidrome_user": value})
+
+    parsed = tomllib.loads(config_file.read_text(encoding="utf-8"))
+    assert parsed["navidrome_user"] == value
+
+
+def test_a_save_leaves_no_partial_file(config_file, monkeypatch):
+    monkeypatch.setattr(config, "FROM_ENV", set())
+    config.save({"concurrency": 2})
+    assert [p.name for p in config_file.parent.iterdir()] == ["config.toml"]

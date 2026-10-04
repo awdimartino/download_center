@@ -143,12 +143,31 @@ def env_var(key: str) -> str:
     return _ENV_OVERRIDES.get(key, "")
 
 
+# What a TOML basic string must escape. Only backslash and quote used to be,
+# so a newline pasted into a field wrote a file tomllib refuses - and config
+# is loaded at import, so the container then failed to start, again and again.
+_TOML_ESCAPES = {"\\": "\\\\", '"': '\\"', "\b": "\\b", "\t": "\\t",
+                 "\n": "\\n", "\f": "\\f", "\r": "\\r"}
+
+
+def _toml_string(text: str) -> str:
+    out = []
+    for char in text:
+        if char in _TOML_ESCAPES:
+            out.append(_TOML_ESCAPES[char])
+        elif ord(char) < 0x20 or ord(char) == 0x7F:
+            out.append(f"\\u{ord(char):04x}")
+        else:
+            out.append(char)
+    return '"' + "".join(out) + '"'
+
+
 def _toml_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return str(value)
-    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return _toml_string(str(value))
 
 
 def save(updates: dict[str, Any]) -> None:
@@ -195,7 +214,14 @@ def save(updates: dict[str, Any]) -> None:
         *(f"{key} = {_toml_value(value)}" for key, value in stored.items()),
         "",
     ]
-    CONFIG_FILE.write_text("\n".join(lines), encoding="utf-8")
+    text = "\n".join(lines)
+    # Checked before it can replace a working file, then swapped in whole:
+    # a write cut short (a full disk, a restart mid-save) used to leave a
+    # truncated config.toml, and the container would not start on it.
+    tomllib.loads(text)
+    partial = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp")
+    partial.write_text(text, encoding="utf-8")
+    os.replace(partial, CONFIG_FILE)
 
 
 def load() -> Settings:
