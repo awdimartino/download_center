@@ -56,11 +56,15 @@ class Track:
     track_no: int
     disc_no: int
     tagged: bool
+    # Without an album artist, the track artist decides the folder, so
+    # changing it moves the file. The page asks first when this is False.
+    has_albumartist: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return {"id": self.id, "path": self.path, "title": self.title,
                 "artist": self.artist, "track_no": self.track_no,
-                "disc_no": self.disc_no, "tagged": self.tagged}
+                "disc_no": self.disc_no, "tagged": self.tagged,
+                "has_albumartist": self.has_albumartist}
 
 
 @dataclass
@@ -643,7 +647,8 @@ def tracks(identity: navidrome.Identity, library_id: int,
                        coalesce({disc}, 0),
                        coalesce(mf.mbz_recording_id, ''),
                        coalesce(nullif(mf.album_artist, ''), mf.artist, ''),
-                       coalesce(mf.album, '')
+                       coalesce(mf.album, ''),
+                       coalesce(mf.album_artist, '')
                   from media_file mf
                  where {navidrome.live_clause(connection, [int(library_id)])}
                 """).fetchall()
@@ -653,7 +658,8 @@ def tracks(identity: navidrome.Identity, library_id: int,
     mine = [row for row in rows if folder_of(row[1]) == folder]
     found = [
         Track(id=row[0], path=row[1], title=row[2], artist=row[3],
-              track_no=row[4] or 0, disc_no=row[5] or 0, tagged=bool(row[6]))
+              track_no=row[4] or 0, disc_no=row[5] or 0, tagged=bool(row[6]),
+              has_albumartist=bool(row[9].strip()))
         for row in mine
     ]
     if not found:

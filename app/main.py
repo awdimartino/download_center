@@ -1677,6 +1677,8 @@ async def library_track_edit(
         navidrome.notify()
         return {"ran": True,
                 "path": str(filed.path.relative_to(space.library_path)),
+                # Left this album's folder, so the panel stops listing it.
+                "moved": filed.path.parent != path.parent,
                 "album_uuid": filed.album_uuid,
                 "identified": filed.identified}
 

@@ -78,3 +78,29 @@ def test_replaygain_skips_a_folder_holding_two_albums(space, identity, monkeypat
 
     assert measured == []
     assert result["skipped"] == ["Aiden Williams/Believe: holds more than one album"]
+
+
+@pytest.mark.asyncio
+async def test_a_track_edit_says_when_the_file_left_its_album(space, monkeypatch):
+    """The panel kept listing a track that had moved to another folder, and
+    a later combine using the old path failed (CODE_REVIEW M9)."""
+    from types import SimpleNamespace
+
+    first = album_on_disk(space, "Artist", "Record", ["One", "Two"])
+    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(main.library, "track_path",
+                        lambda identity, lid, path: space.library_path / path)
+    monkeypatch.setattr(main, "_before_edit", lambda *args: set())
+    monkeypatch.setattr(main.navidrome, "notify", lambda: True)
+    monkeypatch.setattr(main.inbox, "settled", lambda path: True)
+    session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
+    relative = str(first[0].path.relative_to(space.library_path))
+
+    renamed = await main.library_track_edit(
+        main.TrackEdit(library_id=1, path=relative, title="Uno"), session)
+    moved = await main.library_track_edit(
+        main.TrackEdit(library_id=1, path=str(first[1].path.relative_to(
+            space.library_path)), album="Elsewhere"), session)
+
+    assert renamed["moved"] is False
+    assert moved["moved"] is True

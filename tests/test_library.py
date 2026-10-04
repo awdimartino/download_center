@@ -793,3 +793,16 @@ def test_an_opened_album_says_its_own_artist_not_a_tracks(db, identity):
     opened = library.tracks(identity, 1, "Artist/Record")
 
     assert (opened["artist"], opened["album"]) == ("Artist", "Record")
+
+
+def test_a_track_says_whether_it_has_an_album_artist(db, identity):
+    """Without one the track artist decides the folder, so the page has to
+    ask before changing it (CODE_REVIEW M9)."""
+    add_track(db, "a", path="X/Y/1.mp3", album="Y", album_artist="",
+              artist="Someone")
+    add_track(db, "b", path="X/Y/2.mp3", album="Y", album_artist="X",
+              artist="Someone")
+
+    items = library.tracks(identity, 1, "X/Y")["items"]
+
+    assert {t["id"]: t["has_albumartist"] for t in items} == {"a": False, "b": True}

@@ -1675,8 +1675,10 @@ function trackRow(album, track, allPicked) {
   async function saveField(input, key, value, previous) {
     if (value === previous) return;
     // Setting the artist of a track with no album artist changes which
-    // album the file is on, so the server may move it. Say so first.
-    if (key === "artist" && !album.artist) {
+    // album the file is on, so the server may move it. Say so first. Asked
+    // of the track: the album's artist falls back to the track artist, so
+    // it was almost never empty and the file moved unannounced.
+    if (key === "artist" && track.has_albumartist === false) {
       if (!confirm(
         `Set this track's artist to "${value}"?\n\n`
         + "It has no album artist, so this also decides which folder it "
@@ -1690,7 +1692,16 @@ function trackRow(album, track, allPicked) {
       input, (data) => {
         track[key] = value;
         if (data.path) track.path = data.path;
-        setNote("library-op", "Saved.", "notice");
+        if (data.moved) {
+          // It is in another folder now; listing it here would offer edits
+          // against an album it has left.
+          drawerTracks = drawerTracks.filter((t) => t !== track);
+          album.tracks = drawerTracks.length;
+          renderTracks();
+          setNote("library-op", `Saved, and moved to ${data.path}.`, "notice");
+        } else {
+          setNote("library-op", "Saved.", "notice");
+        }
         refreshLibrary(album);
       });
   }

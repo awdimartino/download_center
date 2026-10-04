@@ -388,7 +388,7 @@ it less likely.
       waits until the tracks have arrived. Server half tested; the page half
       checked in a browser with the M5/M6 batch.
 
-- [ ] **M9. Changing a track's artist can move the file without the
+- [x] **M9. Changing a track's artist can move the file without the
       confirm, and the panel goes stale.** `app/static/js/library.js:1629`,
       `app/library.py:204`, `app/filer.py:327-334`. The confirm checks
       `!album.artist`, which falls back to the track artist and so is almost
@@ -396,6 +396,9 @@ it less likely.
       tag. The panel keeps showing it in this album; a later combine using
       the old path fails.
       *Fix:* return `has_albumartist` per track and `moved` from the edit.
+      **Fixed** as suggested: the confirm checks the track's
+      `has_albumartist`, and a track whose edit reports `moved` leaves the
+      panel with a note saying where it went.
 
 - [ ] **M10. Every edit locks the album for two minutes, with a wrong
       message.** `app/inbox.py:191-210` used at `app/main.py:1617, 1663, 1805, 1893, 1972`.
