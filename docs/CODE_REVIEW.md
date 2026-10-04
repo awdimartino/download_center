@@ -973,8 +973,10 @@ it less likely.
       **Fixed:** `app/cli.not_as_root` refuses, naming the `docker exec -u
       downloader` form; `DC_ALLOW_ROOT=1` overrides. Called first by
       backfill, lastfm, reindex, survey and unfuse.
-- [ ] **L37.** Updating a playlist when Navidrome is unreachable is a 500,
+- [x] **L37.** Updating a playlist when Navidrome is unreachable is a 500,
       not a 502 (`main.py:1270`).
+      **Fixed** already, by M27 (`98dedc3`), which wrapped the ownership
+      check; a test now holds it.
 - [ ] **L38.** CSRF rests on `SameSite=Lax` alone, which ignores ports — a
       page on another port of the same host (Navidrome, Calibre) could fire
       body-less POSTs: `/api/duplicates/auto?apply=true`,

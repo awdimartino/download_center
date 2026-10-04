@@ -263,3 +263,25 @@ def test_in_the_last_refuses_a_date(operator):
 def test_before_and_after_refuse_a_day_count(operator):
     with pytest.raises(ValueError, match="needs a date"):
         _date_rule(operator, "30")
+
+
+# --- Navidrome unreachable while updating (L37) ---------------------------------
+
+@pytest.mark.asyncio
+async def test_updating_a_playlist_with_navidrome_down_is_a_502(monkeypatch):
+    """The ownership check's own failure escaped as a 500."""
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app import main
+
+    def down(identity):
+        raise ConnectionRefusedError("Connection refused")
+
+    monkeypatch.setattr(main.smart_playlists, "mine", down)
+    with pytest.raises(HTTPException) as refused:
+        await main.update_playlist(
+            "p1", main.PlaylistRequest(name="x", form={}),
+            SimpleNamespace(identity=None, id="s"))
+    assert refused.value.status_code == 502
