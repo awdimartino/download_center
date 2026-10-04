@@ -191,7 +191,7 @@ it less likely.
       have been read as a baseline. Reproduced first (192 → 92). The
       one-list rewrite is still open as M1.
 
-- [ ] **H5. Home undercounts: the first play of every newly played track is
+- [x] **H5. Home undercounts: the first play of every newly played track is
       lost.** `app/overview.py:98-101`. Every track's first stored row is
       treated as a baseline and skipped. `take()` stores only counts above
       zero, so a track first played after collection began first appears at
@@ -200,6 +200,13 @@ it less likely.
       This hits exactly the music you are discovering.
       *Fix:* treat a row as a baseline only if it came from that user's very
       first reading; any later first row counts from 0.
+      **Fixed** with H4's rule rather than per user: a row is a baseline only
+      if it came from the reading when collection began (`play_collection`).
+      Per user would read a new account's first plays as its baseline, since
+      a user with no plays has no rows. Reproduced first; Home and Listening
+      now give the same totals (92 / 2 / 1) for the same history. Two hourly
+      and session tests had seeded a later first row as a baseline and were
+      moved to the first reading.
 
 - [x] **H6. Health raises a permanent false warning because the disk audit
       counts quarantined files.** `app/diskaudit.py:104`; effects at

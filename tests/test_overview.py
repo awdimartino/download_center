@@ -83,6 +83,22 @@ def test_the_first_reading_is_a_baseline_not_listening(state_db):
     assert overview._increments(ALEX) == []
 
 
+def test_a_track_first_played_after_collection_began_keeps_its_first_play(
+        state_db):
+    """Only the first reading is a baseline. Counts of zero are not stored,
+    so a track first played later first appears at 1 - and treating that
+    row as a baseline lost the first play of everything newly discovered
+    (CODE_REVIEW H5)."""
+    snapshot("2026-09-01", "t1", 500)
+    snapshot("2026-09-05", "t2", 1)
+    snapshot("2026-09-06", "t2", 2)
+    snapshot("2026-09-07", "t3", 1)
+
+    assert sorted(overview._increments(ALEX)) == [
+        ("2026-09-05", "t2", 1), ("2026-09-06", "t2", 1),
+        ("2026-09-07", "t3", 1)]
+
+
 def test_a_counter_that_fell_is_not_negative_listening(state_db):
     """A re-import or a reset lowers it. That is not minus four plays."""
     snapshot("2026-09-01", "t1", 10)
@@ -452,7 +468,7 @@ def test_plays_are_bucketed_by_the_hour_they_happened(state_db):
     snapshot("2026-09-25T09:05:00+00:00", "t1", 1)
     snapshot("2026-09-25T09:10:00+00:00", "t1", 2,
              played_at="2026-09-25 09:07:00+00:00")
-    snapshot("2026-09-25T21:05:00+00:00", "t2", 4)
+    snapshot("2026-09-25T09:05:00+00:00", "t2", 4)  # from the first reading
     snapshot("2026-09-25T21:10:00+00:00", "t2", 5,
              played_at="2026-09-25 21:08:00+00:00")
 
@@ -526,7 +542,7 @@ def test_the_longest_session_is_reported(state_db):
     snapshot("2026-09-25T09:10:00+00:00", "t1", 3,
              played_at="2026-09-25 09:03:00+00:00")
     # ...and a longer one at 21:00, twenty minutes end to end.
-    snapshot("2026-09-25T21:00:00+00:00", "t2", 1)
+    snapshot("2026-09-25T09:00:00+00:00", "t2", 1)  # from the first reading
     snapshot("2026-09-25T21:15:00+00:00", "t2", 2,
              played_at="2026-09-25 21:05:00+00:00")
     snapshot("2026-09-25T21:30:00+00:00", "t2", 3,

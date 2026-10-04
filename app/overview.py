@@ -91,14 +91,23 @@ def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
             "select played_at, track_uuid, plays from play_imported"
             " where user_id = ?", (user_id,)).fetchall()
 
+    first = playcounts.baseline_stamp()
     plays: list[tuple[str, str, int]] = []
     previous_track = None
     previous_count = 0
     for track_uuid, taken_on, count, play_date in rows:
         if track_uuid != previous_track:
-            # First reading of this track: a baseline, not listening.
-            previous_track, previous_count = track_uuid, count
-            continue
+            previous_track = track_uuid
+            if taken_on == first:
+                # The counter as it stood when collection began: a
+                # lifetime, not listening.
+                previous_count = count
+                continue
+            # First seen later: `take` stores only counts above zero, so
+            # this row is the track's first plays. Treating every first row
+            # as a baseline lost the first play of everything newly played
+            # - exactly the music being discovered.
+            previous_count = 0
         if count > previous_count:
             # A rise of more than one means the same track was played
             # twice inside one interval. Only the last of them has a

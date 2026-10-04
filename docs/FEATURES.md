@@ -266,7 +266,8 @@ Two derivations exist, and they are used in different places:
 
 - **Home's top half** (`overview.py`) walks each track's snapshot rows in
   order and counts each rise, dated by that reading's `play_date`. A
-  track's first stored row is treated as a baseline.
+  track's first row is a baseline only if it came from the first reading
+  (see below); otherwise it counts from zero.
 - **The statistics section** (`playcounts.plays_between`) takes the count at
   the end of the range minus the count at the start. A range that opens
   before collection began opens at the first reading's counts, not zero —
