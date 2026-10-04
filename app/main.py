@@ -433,6 +433,12 @@ def admin_session(request: Request) -> auth.Session:
 # that has to be remembered per route is one that will eventually be missed.
 OPEN_PATHS = {"/api/auth/login", "/api/auth/logout", "/api/auth/me"}
 
+# FastAPI's generated API description and its two viewers. Outside /api, so
+# the prefix rule never covered them, and they listed every route and its
+# parameters to anyone who could reach the port. Kept for a signed-in
+# person, who can already call all of it.
+DOC_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
+
 
 @app.get("/healthz")
 async def healthz() -> dict[str, bool]:
@@ -450,7 +456,8 @@ async def require_session(request: Request, call_next):
     session = auth.get(request.cookies.get(auth.COOKIE))
     request.state.session = session
     path = request.url.path
-    if path.startswith("/api/") and path not in OPEN_PATHS and session is None:
+    gated = (path.startswith("/api/") and path not in OPEN_PATHS) or path in DOC_PATHS
+    if gated and session is None:
         return JSONResponse({"detail": "Please sign in."}, status_code=401)
     return await call_next(request)
 

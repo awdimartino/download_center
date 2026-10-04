@@ -305,3 +305,39 @@ def test_the_playcount_status_needs_an_administrator():
                  and "GET" in r.methods)
     dependencies = {d.call for d in route.dependant.dependencies}
     assert main.admin_session in dependencies
+
+
+# --- the generated API docs need a session (L32) -------------------------------
+
+def _through_the_gate(path, cookie=None):
+    import asyncio
+
+    from starlette.requests import Request
+
+    from app import main
+
+    headers = [(b"cookie", f"dc_session={cookie}".encode())] if cookie else []
+    request = Request({"type": "http", "method": "GET", "path": path,
+                       "headers": headers, "query_string": b""})
+
+    async def call_next(request):
+        return "served"
+
+    return asyncio.run(main.require_session(request, call_next))
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_the_api_docs_are_not_open_to_anyone(path):
+    response = _through_the_gate(path)
+    assert getattr(response, "status_code", None) == 401
+
+
+def test_the_page_itself_is_still_open():
+    assert _through_the_gate("/") == "served"
+
+
+def test_a_signed_in_person_can_read_the_docs(monkeypatch):
+    from app import auth
+
+    monkeypatch.setattr(auth, "get", lambda sid: object() if sid == "s1" else None)
+    assert _through_the_gate("/docs", cookie="s1") == "served"

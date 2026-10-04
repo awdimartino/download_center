@@ -940,8 +940,10 @@ it less likely.
 
 ### Platform
 
-- [ ] **L32.** `/docs`, `/redoc` and `/openapi.json` are open without
+- [x] **L32.** `/docs`, `/redoc` and `/openapi.json` are open without
       sign-in (`main.py:354`).
+      **Fixed:** the session middleware gates them with the API; a
+      signed-in person can still read them. Reproduced first.
 - [ ] **L33.** The cookie's 14-day `max_age` is set once at sign-in while the
       server session slides; active users are signed out on day 14
       (`main.py:462-466`).

@@ -323,8 +323,8 @@ The `.owner` file in each workspace says whose it is; do not delete it.
 **HTTPS.** The app serves plain HTTP and sign-in posts a Navidrome password.
 On anything other than a trusted network, put it behind a reverse proxy
 with TLS. The session cookie is marked `secure` when the request arrives
-over HTTPS. FastAPI's `/docs` and `/openapi.json` are reachable without
-signing in; they describe the API but expose no data.
+over HTTPS. FastAPI's `/docs`, `/redoc` and `/openapi.json` need a
+signed-in session, like the API they describe.
 
 ---
 
