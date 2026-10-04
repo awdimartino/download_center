@@ -505,12 +505,15 @@ it less likely.
       workspace's `leftovers/`, then the folder is pruned. Unknown files
       stay. Runs on every drain, not only after something was filed.
 
-- [ ] **M18. Files the poller cannot file are invisible.**
+- [x] **M18. Files the poller cannot file are invisible.**
       `app/main.py:253`, `app/inbox.py:294-296`. The poller discards
       `drain_all`'s failures; a failed file is thereafter counted as
       "waiting". An upload the poller reached first shows "1 still settling"
       for ever, with the reason only in the log.
       *Fix:* report remembered failures as failures, with their message.
+      **Fixed** as suggested: `_unfilable` keeps the message beside the
+      size, and every drain reports it as a failure until the file changes.
+      The existing test had asserted the second drain reported nothing.
 
 - [ ] **M19. Upload-finish and the poller can file the same file at once.**
       `app/main.py:861`, `app/inbox.py:282-316`. Uploads are backdated, so

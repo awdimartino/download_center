@@ -104,8 +104,10 @@ class Result:
 # 5,760 attempts a day, each logging a full traceback, none of it visible to
 # anybody. Keyed on the size so that changing the file asks the question
 # again, which is the reasoning the deleted refusal table used: alter the
-# thing and it is a different question.
-_unfilable: dict[Path, int] = {}
+# thing and it is a different question. The message is kept with it: a file
+# that is not retried is still a failure, and reporting it as "waiting" for
+# ever - with the reason only in the log - was the next silence (M18).
+_unfilable: dict[Path, tuple[int, str]] = {}
 
 # Library roots already reported as missing, so a 15-second poll does not
 # repeat a static fact 5,760 times a day.
@@ -376,14 +378,16 @@ def drain(space: workspace.Workspace) -> Result:
         if not settled(path):
             result.waiting += 1
             continue
-        if _unfilable.get(path) == _size_of(path):
-            result.waiting += 1
+        remembered = _unfilable.get(path)
+        if remembered and remembered[0] == _size_of(path):
+            result.failures.append(remembered[1])
             continue
         try:
             filed = filer.file_track(space, path)
         except Exception as exc:
-            _unfilable[path] = _size_of(path)
-            result.failures.append(f"{path.name}: {type(exc).__name__}: {exc}")
+            message = f"{path.name}: {type(exc).__name__}: {exc}"
+            _unfilable[path] = (_size_of(path), message)
+            result.failures.append(message)
             log.exception("could not file %s for %s - leaving it alone until "
                           "it changes", path.name, space.username)
             continue

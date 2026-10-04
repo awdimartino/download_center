@@ -408,8 +408,10 @@ def test_a_file_that_cannot_be_filed_is_not_retried_every_poll(space,
 
     assert len(attempts) == 1
     assert len(first.failures) == 1
-    assert second.failures == []
-    assert second.waiting == 1
+    # Not retried, but still a failure with its reason - not "waiting"
+    # for ever (CODE_REVIEW M18).
+    assert second.failures == first.failures
+    assert second.waiting == 0
 
 
 def test_changing_the_file_asks_again(space, monkeypatch):
