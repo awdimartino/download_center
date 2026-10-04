@@ -76,3 +76,31 @@ def test_an_entry_that_cannot_be_read_in_full_keeps_what_the_list_said(
     assert len(items) == 2
     assert items[0]["album"] == "Record"
     assert items[1]["title"] == "Two"
+
+
+# --- cookies.txt (L2) ---------------------------------------------------------
+# The download used cookies.txt and resolving did not, so an age-gated video
+# failed at resolve though it would have downloaded.
+
+def test_resolving_reads_with_the_cookies_the_download_uses(monkeypatch, tmp_path):
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n")
+    monkeypatch.setattr(type(generic.settings), "cookies_file",
+                        property(lambda self: cookies))
+    seen = []
+
+    class Recording(FakeYDL):
+        def __init__(self, options):
+            seen.append(options)
+            super().__init__(options)
+
+    monkeypatch.setattr(generic.yt_dlp, "YoutubeDL", Recording)
+    generic.resolve(PLAYLIST)
+    assert len(seen) == 3  # the list, then each entry in full
+    assert all(o.get("cookiefile") == str(cookies) for o in seen)
+
+
+def test_no_cookies_file_means_no_cookie_option(monkeypatch):
+    monkeypatch.setattr(type(generic.settings), "cookies_file",
+                        property(lambda self: None))
+    assert "cookiefile" not in generic._options()

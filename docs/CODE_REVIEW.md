@@ -763,8 +763,11 @@ it less likely.
       (`spotify.expand_short`), and stores the canonical https link.
       Reproduced first. Not tried against a real short link: the redirect
       is assumed, with the page body as a fallback.
-- [ ] **L2.** Resolving a direct link ignores `cookies.txt` (`generic.py:131-139`),
+- [x] **L2.** Resolving a direct link ignores `cookies.txt` (`generic.py:131-139`),
       so an age-gated video fails at resolve though it would download.
+      **Fixed:** `generic._options` adds `cookiefile` for the playlist
+      read and each entry's full read, as the download does. Reproduced
+      first (no cookie option on either read).
 - [ ] **L3.** `.incomplete/<job>` folders left by a crash are never removed
       (`inbox.py:110-117`). *Fix:* clear `.incomplete/` at start-up.
 - [ ] **L4.** If filing fails after the move into the inbox, the item is

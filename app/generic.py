@@ -18,6 +18,8 @@ from typing import Any
 
 import yt_dlp
 
+from .config import settings
+
 log = logging.getLogger("navidrome_companion.generic")
 
 
@@ -132,6 +134,20 @@ def _to_item(info: dict[str, Any]) -> dict[str, Any] | None:
 ENTRY_WORKERS = 3
 
 
+def _options(**extra: Any) -> dict[str, Any]:
+    """yt-dlp's options for reading, never downloading.
+
+    With cookies.txt, as the download itself has: an age-gated or
+    members-only video failed here though it would have downloaded.
+    """
+    options: dict[str, Any] = {"quiet": True, "no_warnings": True,
+                               "skip_download": True, **extra}
+    cookies = settings.cookies_file
+    if cookies:
+        options["cookiefile"] = str(cookies)
+    return options
+
+
 def _in_full(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Each playlist entry's full metadata, in the playlist's order.
 
@@ -142,7 +158,7 @@ def _in_full(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cannot be read in full keeps what the list said rather than failing the
     job: the download step will report it if it is really gone.
     """
-    options = {"quiet": True, "no_warnings": True, "skip_download": True}
+    options = _options()
 
     def one(entry: dict[str, Any]) -> dict[str, Any]:
         link = entry.get("url") or entry.get("webpage_url")
@@ -161,15 +177,10 @@ def _in_full(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def resolve(url: str) -> tuple[str, list[dict[str, Any]]]:
     """Return (job title, items) for any yt-dlp supported URL."""
-    options = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        # The list is read flat, to learn what is in it quickly; each entry
-        # is then read in full by `_in_full`. Nothing fetches more metadata
-        # at download time - what is resolved here is what gets tagged.
-        "extract_flat": "in_playlist",
-    }
+    # The list is read flat, to learn what is in it quickly; each entry is
+    # then read in full by `_in_full`. Nothing fetches more metadata at
+    # download time - what is resolved here is what gets tagged.
+    options = _options(extract_flat="in_playlist")
 
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
