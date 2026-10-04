@@ -502,3 +502,63 @@ def test_a_socket_opened_by_another_page_is_closed(monkeypatch):
 
     asyncio.run(main.websocket(Socket()))
     assert events == ["accept", 4403]
+
+
+# --- what sign-in tells a stranger, and how often (L39) -------------------------
+
+def _sign_in(monkeypatch, outcome, address="10.0.0.9"):
+    import asyncio
+
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from app import auth, main
+
+    def attempt(username, password):
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(auth, "sign_in", attempt)
+    request = Request({"type": "http", "method": "POST", "path": "/api/auth/login",
+                       "headers": [], "query_string": b"", "client": (address, 5000),
+                       "scheme": "http"})
+    return asyncio.run(main.sign_in(request, main.LoginRequest(
+        username="alex", password="pw"), Response()))
+
+
+@pytest.fixture
+def no_failures(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "_sign_in_failures", {}, raising=False)
+
+
+def test_an_unreachable_navidrome_is_not_described_to_a_stranger(monkeypatch,
+                                                                 no_failures):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as refused:
+        _sign_in(monkeypatch, OSError("connect to 172.18.0.4:4533 refused"))
+
+    assert refused.value.status_code == 502
+    assert "172.18" not in refused.value.detail
+
+
+def test_repeated_failed_sign_ins_are_slowed_down(monkeypatch, no_failures):
+    from fastapi import HTTPException
+
+    from app import main, navidrome
+
+    for _ in range(main.SIGN_IN_FAILURES):
+        with pytest.raises(HTTPException) as refused:
+            _sign_in(monkeypatch, navidrome.LoginFailed("Incorrect username or password."))
+        assert refused.value.status_code == 401
+
+    with pytest.raises(HTTPException) as refused:
+        _sign_in(monkeypatch, navidrome.LoginFailed("Incorrect username or password."))
+    assert refused.value.status_code == 429
+
+    # Somebody else, from another address, is not held up.
+    with pytest.raises(HTTPException) as other:
+        _sign_in(monkeypatch, navidrome.LoginFailed("x"), address="10.0.0.10")
+    assert other.value.status_code == 401

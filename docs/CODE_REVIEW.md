@@ -988,8 +988,12 @@ it less likely.
       middleware answers 403 to a POST, PUT, PATCH or DELETE that fails it,
       and `/ws` closes with 4403. A request with neither header (curl, a
       script) passes, since it carries no cookie by accident.
-- [ ] **L39.** Sign-in returns raw exception text (internal hostnames) to
+- [x] **L39.** Sign-in returns raw exception text (internal hostnames) to
       unauthenticated callers and is not rate-limited (`main.py:454-457`).
+      **Fixed:** an unreachable or unconfigured Navidrome gets a fixed
+      message, the reason going to the log; ten failed sign-ins from one
+      address in ten minutes get a 429 until the window passes, and a
+      success clears the count. Reproduced first.
 - [ ] **L40.** Cover art is served `Cache-Control: public` though it is
       owner-checked (`main.py:1692`); use `private`.
 - [ ] **L41.** Blocking filesystem and database work runs on the event loop

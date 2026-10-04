@@ -510,22 +510,51 @@ def _send_cookie(response: Response, request: Request,
     session.cookie_sent_at = time.time()
 
 
+# Failed sign-ins allowed per address in a window. Navidrome has its own
+# limits, but this endpoint is open to anyone who can reach the port, and
+# each attempt is a request to Navidrome on this person's behalf.
+SIGN_IN_FAILURES = 10
+SIGN_IN_WINDOW = 10 * 60
+_sign_in_failures: dict[str, list[float]] = {}
+
+
+def _recent_failures(address: str) -> list[float]:
+    cutoff = time.time() - SIGN_IN_WINDOW
+    kept = [t for t in _sign_in_failures.get(address, []) if t > cutoff]
+    if kept:
+        _sign_in_failures[address] = kept
+    else:
+        _sign_in_failures.pop(address, None)
+    return kept
+
+
 @app.post("/api/auth/login")
 async def sign_in(request: Request, body: LoginRequest,
                   response: Response) -> dict[str, Any]:
+    address = request.client.host if request.client else "?"
+    if len(_recent_failures(address)) >= SIGN_IN_FAILURES:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed sign-ins. Wait a few minutes and try again.")
     try:
         session = await asyncio.to_thread(
             auth.sign_in, body.username, body.password)
     except navidrome.LoginFailed as exc:
+        _sign_in_failures.setdefault(address, []).append(time.time())
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except navidrome.NotConfigured as exc:
+        log.warning("sign-in refused: Navidrome is not configured: %s", exc)
         raise HTTPException(
             status_code=503,
-            detail=f"Navidrome is not configured: {exc}") from exc
+            detail="Navidrome is not configured. An administrator needs to "
+                   "set its address.") from exc
     except Exception as exc:
+        # The reason stays in the log. It names internal hosts and ports,
+        # and this answer goes to anyone, signed in or not.
+        log.warning("sign-in could not reach Navidrome: %s", exc)
         raise HTTPException(
-            status_code=502,
-            detail=f"Could not reach Navidrome: {exc}"[:200]) from exc
+            status_code=502, detail="Could not reach Navidrome.") from exc
+    _sign_in_failures.pop(address, None)
 
     _send_cookie(response, request, session)
     return session.as_dict()
