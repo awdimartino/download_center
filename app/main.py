@@ -459,7 +459,23 @@ async def require_session(request: Request, call_next):
     gated = (path.startswith("/api/") and path not in OPEN_PATHS) or path in DOC_PATHS
     if gated and session is None:
         return JSONResponse({"detail": "Please sign in."}, status_code=401)
-    return await call_next(request)
+    response = await call_next(request)
+    if session is not None and auth.cookie_due(session) and path != "/api/auth/logout":
+        _send_cookie(response, request, session)
+    return response
+
+
+def _send_cookie(response: Response, request: Request,
+                 session: auth.Session) -> None:
+    # Secure only when the request actually arrived over TLS. Setting it
+    # unconditionally would stop the cookie being stored at all on the plain
+    # HTTP this is normally served over on a LAN.
+    response.set_cookie(
+        auth.COOKIE, session.id, httponly=True, samesite="lax",
+        secure=request.url.scheme == "https",
+        max_age=auth.cookie_age(session),
+    )
+    session.cookie_sent_at = time.time()
 
 
 @app.post("/api/auth/login")
@@ -479,14 +495,7 @@ async def sign_in(request: Request, body: LoginRequest,
             status_code=502,
             detail=f"Could not reach Navidrome: {exc}"[:200]) from exc
 
-    # Secure only when the request actually arrived over TLS. Setting it
-    # unconditionally would stop the cookie being stored at all on the plain
-    # HTTP this is normally served over on a LAN.
-    response.set_cookie(
-        auth.COOKIE, session.id, httponly=True, samesite="lax",
-        secure=request.url.scheme == "https",
-        max_age=auth.LIFETIME_SECONDS,
-    )
+    _send_cookie(response, request, session)
     return session.as_dict()
 
 

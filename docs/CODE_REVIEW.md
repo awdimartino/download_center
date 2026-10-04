@@ -944,9 +944,12 @@ it less likely.
       sign-in (`main.py:354`).
       **Fixed:** the session middleware gates them with the API; a
       signed-in person can still read them. Reproduced first.
-- [ ] **L33.** The cookie's 14-day `max_age` is set once at sign-in while the
+- [x] **L33.** The cookie's 14-day `max_age` is set once at sign-in while the
       server session slides; active users are signed out on day 14
       (`main.py:462-466`).
+      **Fixed:** the session middleware re-sends the cookie once a day
+      while a session is used, with a max-age that never passes the 30-day
+      cap; sign-in shares the same `_send_cookie`. Reproduced first.
 - [ ] **L34.** `tools/` is not in the image, but `tools/fingerprint.py`'s
       usage says to run it there; it also writes the MusicBrainz recording
       id into the *AcoustID Id* frame (`fingerprint.py:193`), never

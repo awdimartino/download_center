@@ -123,7 +123,8 @@ the libraries your account may see.
   in Navidrome shows up without signing out.
 - **Lifetime** is 14 days, measured from when you were last seen, and never
   more than 30 days from sign-in; expired sessions are swept every five
-  minutes.
+  minutes. The cookie is sent again at most once a day while you use the
+  app, so the browser keeps it as long as the server keeps the session.
 - **Admin status and libraries** are re-read from Navidrome every five
   minutes, so a demotion or a revoked library reaches an open session, and
   an account deleted in Navidrome is signed out. The cookie (`dc_session`) is

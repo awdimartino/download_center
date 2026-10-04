@@ -50,6 +50,12 @@ PRIVILEGES_SECONDS = 300
 # However active, a session ends this long after sign-in.
 MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
+# How often a session in use has its cookie sent again. The server's
+# lifetime slides with every request, but the cookie's max-age was set once
+# at sign-in, so the browser dropped it on day 14 however active somebody
+# was. Once a day is enough to keep the two together.
+COOKIE_REFRESH_SECONDS = 24 * 60 * 60
+
 
 @dataclass
 class Session:
@@ -58,6 +64,7 @@ class Session:
     created_at: float
     last_seen: float
     libraries_checked_at: float = 0.0
+    cookie_sent_at: float = 0.0
 
     @property
     def expired(self) -> bool:
@@ -80,13 +87,25 @@ _lock = threading.Lock()
 def sign_in(username: str, password: str) -> Session:
     identity = navidrome.login(username, password)
     now = time.time()
-    session = Session(secrets.token_urlsafe(32), identity, now, now, now)
+    session = Session(secrets.token_urlsafe(32), identity, now, now, now,
+                      cookie_sent_at=now)
     with _lock:
         _sessions[session.id] = session
     log.info("%s signed in (%d librar%s)", identity.username,
              len(identity.libraries),
              "y" if len(identity.libraries) == 1 else "ies")
     return session
+
+
+def cookie_age(session: Session) -> int:
+    """The max-age to give the cookie now: the sliding lifetime, but never
+    past the hard cap counted from sign-in."""
+    left = session.created_at + MAX_AGE_SECONDS - time.time()
+    return max(0, int(min(LIFETIME_SECONDS, left)))
+
+
+def cookie_due(session: Session) -> bool:
+    return time.time() - session.cookie_sent_at >= COOKIE_REFRESH_SECONDS
 
 
 def sign_out(session_id: str) -> None:

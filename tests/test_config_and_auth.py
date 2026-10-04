@@ -339,5 +339,66 @@ def test_the_page_itself_is_still_open():
 def test_a_signed_in_person_can_read_the_docs(monkeypatch):
     from app import auth
 
-    monkeypatch.setattr(auth, "get", lambda sid: object() if sid == "s1" else None)
+    session = _session(days_since_sign_in=0, days_since_cookie=0)
+    monkeypatch.setattr(auth, "get", lambda sid: session if sid == "s1" else None)
     assert _through_the_gate("/docs", cookie="s1") == "served"
+
+
+# --- the cookie keeps up with the session (L33) ---------------------------------
+
+def _request_with(session, monkeypatch):
+    import asyncio
+
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+
+    from app import auth, main
+
+    monkeypatch.setattr(auth, "get", lambda sid: session if sid == session.id else None)
+    request = Request({"type": "http", "method": "GET", "path": "/api/library",
+                       "headers": [(b"cookie", f"dc_session={session.id}".encode())],
+                       "query_string": b"", "scheme": "http"})
+
+    async def call_next(request):
+        return JSONResponse({"ok": True})
+
+    return asyncio.run(main.require_session(request, call_next))
+
+
+def _session(days_since_sign_in, days_since_cookie):
+    import time
+
+    from app import auth, navidrome
+
+    now = time.time()
+    identity = navidrome.Identity(user_id="u", username="alex", is_admin=False,
+                                  token="t", subsonic_token="st",
+                                  subsonic_salt="ss", libraries=[])
+    return auth.Session("s1", identity, now - days_since_sign_in * 86400, now,
+                        now, cookie_sent_at=now - days_since_cookie * 86400)
+
+
+def test_an_active_session_has_its_cookie_renewed(monkeypatch):
+    """Sent once at sign-in with a 14-day max-age, the cookie was dropped on
+    day 14 while the server's session, sliding with use, was still good."""
+    from app import auth
+
+    session = _session(days_since_sign_in=10, days_since_cookie=10)
+    response = _request_with(session, monkeypatch)
+
+    cookie = response.headers.get("set-cookie", "")
+    assert "dc_session=s1" in cookie
+    assert f"Max-Age={auth.LIFETIME_SECONDS}" in cookie
+    assert not auth.cookie_due(session)
+
+
+def test_a_renewed_cookie_never_outlives_the_hard_cap(monkeypatch):
+    session = _session(days_since_sign_in=29.5, days_since_cookie=2)
+    cookie = _request_with(session, monkeypatch).headers.get("set-cookie", "")
+    age = int(cookie.split("Max-Age=")[1].split(";")[0])
+    assert 43000 < age <= 43200
+
+
+def test_a_cookie_sent_today_is_not_sent_again(monkeypatch):
+    session = _session(days_since_sign_in=3, days_since_cookie=0.1)
+    assert "set-cookie" not in _request_with(session, monkeypatch).headers
