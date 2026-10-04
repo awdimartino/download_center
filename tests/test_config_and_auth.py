@@ -216,3 +216,79 @@ def test_a_save_leaves_no_partial_file(config_file, monkeypatch):
     monkeypatch.setattr(config, "FROM_ENV", set())
     config.save({"concurrency": 2})
     assert [p.name for p in config_file.parent.iterdir()] == ["config.toml"]
+
+
+# --- privileges are re-read (CODE_REVIEW M33) -------------------------------
+# Admin status and libraries were fixed at sign-in, and the lifetime slid for
+# as long as the session was used: a demoted admin stayed admin and a revoked
+# library stayed editable.
+
+def _due(session):
+    session.libraries_checked_at = 0.0
+    auth._sessions[session.id] = session
+    return session
+
+
+def test_a_demotion_and_a_revoked_library_reach_the_session(monkeypatch):
+    now = time.time()
+    me = _identity()
+    me.is_admin = True
+    me.libraries = [{"id": 1, "name": "Music", "path": "/music"}]
+    _due(auth.Session("here", me, now, now))
+    monkeypatch.setattr(navidrome, "account", lambda identity: (False, []))
+
+    session = auth.get("here")
+
+    assert session.identity.is_admin is False
+    assert session.identity.libraries == []
+
+
+def test_an_account_deleted_in_navidrome_signs_out(monkeypatch):
+    now = time.time()
+    _due(auth.Session("here", _identity(), now, now))
+    monkeypatch.setattr(navidrome, "account", lambda identity: None)
+
+    assert auth.get("here") is None
+    assert "here" not in auth._sessions
+
+
+def test_an_unreadable_database_changes_nothing(monkeypatch):
+    now = time.time()
+    me = _identity()
+    me.is_admin = True
+    me.libraries = [{"id": 1, "name": "Music", "path": "/music"}]
+    _due(auth.Session("here", me, now, now))
+
+    def unreadable(identity):
+        raise navidrome.Unavailable("locked")
+
+    monkeypatch.setattr(navidrome, "account", unreadable)
+    session = auth.get("here")
+
+    assert session.identity.is_admin is True
+    assert session.identity.libraries
+
+
+def test_a_session_ends_a_month_after_sign_in_however_busy():
+    now = time.time()
+    auth._sessions["old"] = auth.Session(
+        "old", _identity(), now - auth.MAX_AGE_SECONDS - 1, now)
+    assert auth.get("old") is None
+
+
+def test_account_reads_the_admin_flag_and_libraries(navidrome_db, monkeypatch):
+    import sqlite3
+
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "navidrome_db", navidrome_db)
+    connection = sqlite3.connect(navidrome_db)
+    with connection:
+        connection.execute('ALTER TABLE "user" ADD COLUMN is_admin INTEGER DEFAULT 0')
+        connection.execute('UPDATE "user" SET is_admin = 1 WHERE id = \'u-kelly\'')
+    connection.close()
+
+    assert navidrome.account(_identity("kelly"))[0] is True
+    assert navidrome.account(_identity("alex")) == (
+        False, [{"id": 1, "name": "Music", "path": str(navidrome_db.parent / "music")}])
+    assert navidrome.account(_identity("nobody")) is None

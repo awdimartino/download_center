@@ -673,11 +673,16 @@ it less likely.
       gains `decided_by` in its key - rebuilt by a migration, with older
       rows kept for everyone. Each person sees only their own decisions.
 
-- [ ] **M33. Sessions never pick up privilege changes.** `app/auth.py:69-78, 130-137`.
+- [x] **M33. Sessions never pick up privilege changes.** `app/auth.py:69-78, 130-137`.
       Admin status and libraries are fixed at sign-in (libraries re-read only
       when empty), and the sliding lifetime never ends while used. A demoted
       admin stays admin; a revoked library stays editable.
       *Fix:* re-read both every few minutes; cap absolute lifetime.
+      **Fixed** as suggested: `navidrome.account` reads `is_admin` and the
+      libraries (raising, not answering "none", when the database is
+      unreadable); `auth.get` re-reads every 5 minutes (every minute with no
+      library), signs out an account that no longer exists, and keeps what
+      it had on a read failure. Sessions end 30 days after sign-in.
 
 - [ ] **M34. The set-aside list mislabels older entries.**
       `app/duplicates.py:596-658`. Only the newest 2,000 ledger rows are

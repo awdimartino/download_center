@@ -129,6 +129,27 @@ def open_db() -> sqlite3.Connection:
     return connection
 
 
+def account(identity: Identity) -> tuple[bool, list[dict[str, Any]]] | None:
+    """This person's admin flag and libraries as Navidrome has them now, or
+    None if the account no longer exists. Raises Unavailable rather than
+    answering "none" when the database cannot be read, so a blip is never
+    mistaken for a revoked library."""
+    connection = open_db()
+    with connection:
+        columns = columns_of(connection, "user")
+        if "is_admin" in columns:
+            row = connection.execute(
+                'select is_admin from "user" where id = ?',
+                (identity.user_id,)).fetchone()
+            if row is None:
+                return None
+            is_admin = bool(row[0])
+        else:
+            is_admin = identity.is_admin
+    current = Identity(**{**identity.__dict__, "is_admin": is_admin})
+    return is_admin, _libraries(current, open_db())
+
+
 def libraries_for(identity: Identity) -> list[dict[str, Any]]:
     """Which libraries this person may see, straight from Navidrome.
 
@@ -140,7 +161,11 @@ def libraries_for(identity: Identity) -> list[dict[str, Any]]:
     except Unavailable as exc:
         log.warning("cannot read libraries: %s", exc)
         return []
+    return _libraries(identity, connection)
 
+
+def _libraries(identity: Identity,
+               connection: sqlite3.Connection) -> list[dict[str, Any]]:
     with connection:
         tables = {r[0] for r in connection.execute(
             "select name from sqlite_master where type='table'")}

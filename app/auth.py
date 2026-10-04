@@ -41,6 +41,15 @@ LIFETIME_SECONDS = 14 * 24 * 60 * 60
 # genuinely assigned none does not open the database on every request.
 RECHECK_SECONDS = 60
 
+# How often every session re-reads its admin flag and libraries. Both used to
+# be fixed at sign-in, and the lifetime slides while used, so a demoted
+# admin stayed admin and a revoked library stayed editable for as long as
+# somebody kept the tab open.
+PRIVILEGES_SECONDS = 300
+
+# However active, a session ends this long after sign-in.
+MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+
 
 @dataclass
 class Session:
@@ -52,7 +61,9 @@ class Session:
 
     @property
     def expired(self) -> bool:
-        return time.time() - self.last_seen > LIFETIME_SECONDS
+        now = time.time()
+        return (now - self.last_seen > LIFETIME_SECONDS
+                or now - self.created_at > MAX_AGE_SECONDS)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -122,19 +133,27 @@ def get(session_id: str | None) -> Session | None:
             return None
         session.last_seen = time.time()
 
-    # Libraries are read at sign-in, and a database briefly unreadable then
-    # would otherwise leave this session with none for its whole fortnight,
-    # reporting that the account has no library at all. Rate-limited: an
-    # account really assigned none would otherwise open the database on every
-    # request, on the event loop, forever.
-    if (not session.identity.libraries
-            and time.time() - session.libraries_checked_at > RECHECK_SECONDS):
+    # Admin status and libraries are re-read from Navidrome every few
+    # minutes - every minute while there are no libraries, so a database
+    # blip at sign-in heals quickly. Rate-limited: this runs on the request
+    # path, on the event loop.
+    every = (RECHECK_SECONDS if not session.identity.libraries
+             else PRIVILEGES_SECONDS)
+    if time.time() - session.libraries_checked_at > every:
         session.libraries_checked_at = time.time()
         try:
-            session.identity.libraries = navidrome.libraries_for(session.identity)
+            current = navidrome.account(session.identity)
         except Exception as exc:
-            log.debug("could not refresh libraries for %s: %s",
+            # Unreadable is not "revoked": keep what the session had.
+            log.debug("could not re-read %s's account: %s",
                       session.identity.username, exc)
+        else:
+            if current is None:
+                log.info("%s no longer exists in Navidrome; signing out",
+                         session.identity.username)
+                sign_out(session.id)
+                return None
+            session.identity.is_admin, session.identity.libraries = current
     return session
 
 
