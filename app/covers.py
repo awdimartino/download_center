@@ -28,7 +28,7 @@ from typing import Any
 
 from PIL import Image, ImageStat
 
-from . import uuidtags
+from . import netguard, uuidtags
 
 log = logging.getLogger("navidrome_companion.covers")
 
@@ -51,20 +51,44 @@ JPEG = "image/jpeg"
 MAX_COVER_BYTES = 25 * 1024 * 1024
 
 
-def fetch(url: str) -> bytes | None:
+def _allowed(url: str, hosts: tuple[str, ...] | None) -> None:
+    """Raise unless url may be fetched: a public address, and one of `hosts`
+    when the caller names them."""
+    if urllib.parse.urlparse(url).scheme.lower() not in ALLOWED_SCHEMES:
+        raise netguard.Refused("not http or https")
+    if hosts is not None and urllib.parse.urlparse(url).hostname not in hosts:
+        raise netguard.Refused(f"{url} is not on an offered host")
+    netguard.check(url)
+
+
+class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
+    """Every hop checked, not only the first. A cover host that redirected
+    elsewhere - or a thumbnail URL that bounced to a LAN address - used to
+    be followed wherever it led."""
+
+    def __init__(self, hosts: tuple[str, ...] | None) -> None:
+        self.hosts = hosts
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _allowed(newurl, self.hosts)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch(url: str, hosts: tuple[str, ...] | None = None) -> bytes | None:
     """The image at url, or None - for anything that is not one too.
 
     Whatever came back used to be embedded: an HTML error page served with
     a 200 became the album's art, since `square` passes unreadable data
     through untouched.
+
+    Only from the public internet, and with `hosts`, only from those - at
+    every redirect, not just the address asked for.
     """
-    scheme = urllib.parse.urlparse(url).scheme.lower()
-    if scheme not in ALLOWED_SCHEMES:
-        log.debug("refusing to fetch cover over %r", scheme)
-        return None
     try:
+        _allowed(url, hosts)
+        opener = urllib.request.build_opener(_CheckedRedirects(hosts))
         request = urllib.request.Request(url, headers={"User-Agent": "navidrome-companion"})
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with opener.open(request, timeout=15) as response:
             data = response.read(MAX_COVER_BYTES + 1)
     except Exception as exc:
         log.debug("cover fetch failed for %s: %s", url, exc)

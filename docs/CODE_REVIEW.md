@@ -1008,10 +1008,17 @@ it less likely.
       no longer builds a workspace to learn a library id. `settled` is no
       longer called from a route. A test watches each helper for a call on
       the loop's thread; all nine cases failed before.
-- [ ] **L42.** Arbitrary server-side fetches: direct links and thumbnails
+- [x] **L42.** Arbitrary server-side fetches: direct links and thumbnails
       reach any URL a signed-in user supplies, including LAN addresses, with
       the first 200 characters of errors returned; `choosable()` is checked
       before redirects only.
+      **Fixed:** `app/netguard.check` refuses anything but http(s) to a
+      host whose every resolved address is public (`is_global`). Direct
+      links are checked when queued, covers before fetching and at every
+      redirect, and offered covers stay on their hosts at every hop too.
+      Not closed: yt-dlp follows a site's own redirects unchecked, and a
+      name that changes its answer between the check and the fetch (DNS
+      rebinding) can still get past.
 - [ ] **L43.** `with sqlite3.connect()` does not close connections (it only
       commits); use `contextlib.closing`.
 - [ ] **L44.** `audio_bitrate` is unvalidated text and `rate_limit_sleep`

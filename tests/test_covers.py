@@ -361,21 +361,62 @@ class _Response:
         return self.body if limit < 0 else self.body[:limit]
 
 
+def _serve(monkeypatch, body):
+    """Answer every fetch with body, with no network and no DNS."""
+    class Opener:
+        def open(self, request, timeout):
+            return _Response(body)
+
+    monkeypatch.setattr(covers.urllib.request, "build_opener", lambda *h: Opener())
+    monkeypatch.setattr(covers.netguard, "check", lambda url: None)
+
+
 def test_an_error_page_is_not_a_cover(monkeypatch):
-    monkeypatch.setattr(covers.urllib.request, "urlopen",
-                        lambda request, timeout: _Response(b"<html>Not found</html>"))
+    _serve(monkeypatch, b"<html>Not found</html>")
     assert covers.fetch("https://i.scdn.co/image/x") is None
 
 
 def test_an_oversized_download_is_not_a_cover(monkeypatch):
     monkeypatch.setattr(covers, "MAX_COVER_BYTES", 1000, raising=False)
-    monkeypatch.setattr(covers.urllib.request, "urlopen",
-                        lambda request, timeout: _Response(_pillarboxed()))
+    _serve(monkeypatch, _pillarboxed())
     assert covers.fetch("https://i.scdn.co/image/x") is None
 
 
 def test_a_real_image_is_a_cover(monkeypatch):
     body = _pillarboxed()
-    monkeypatch.setattr(covers.urllib.request, "urlopen",
-                        lambda request, timeout: _Response(body))
+    _serve(monkeypatch, body)
     assert covers.fetch("https://i.scdn.co/image/x") == body
+
+
+# --- never this network's own machines (L42) -----------------------------------
+
+def test_a_cover_on_a_private_address_is_not_fetched(monkeypatch):
+    opened = []
+    monkeypatch.setattr(covers.urllib.request, "build_opener",
+                        lambda *h: opened.append(1))
+    assert covers.fetch("http://192.168.1.1/admin.jpg") is None
+    assert opened == []
+
+
+def test_a_redirect_is_checked_at_every_hop():
+    import urllib.request
+
+    from app import netguard
+
+    handler = covers._CheckedRedirects(covers.CHOOSABLE_HOSTS)
+    request = urllib.request.Request("https://i.scdn.co/image/x")
+    with pytest.raises(netguard.Refused):
+        handler.redirect_request(request, None, 302, "Found", {},
+                                 "http://127.0.0.1:4533/rest/ping")
+    with pytest.raises(netguard.Refused):
+        handler.redirect_request(request, None, 302, "Found", {},
+                                 "https://elsewhere.example/x.jpg")
+
+
+def test_an_offered_host_is_held_to_its_list(monkeypatch):
+    monkeypatch.setattr(covers.netguard, "check", lambda url: None)
+    opened = []
+    monkeypatch.setattr(covers.urllib.request, "build_opener",
+                        lambda *h: opened.append(1))
+    assert covers.fetch("https://example.com/x.jpg", covers.CHOOSABLE_HOSTS) is None
+    assert opened == []

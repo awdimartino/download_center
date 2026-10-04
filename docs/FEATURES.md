@@ -359,7 +359,8 @@ a discography is rarely what you meant. Playlists skip podcast episodes and
 local files. Jobs over 500 tracks are refused; queue them in parts.
 
 **Anything yt-dlp understands** — YouTube, YouTube Music, SoundCloud,
-Bandcamp and hundreds more — including playlists. These skip matching,
+Bandcamp and hundreds more — including playlists, from the public internet
+only: a link to an address on a private network is refused. These skip matching,
 because the URL already names the audio. Tags come from what the site
 publishes: YouTube Music, Bandcamp and `- Topic` channels expose real
 track, artist and album fields; a plain upload offers only a video title,

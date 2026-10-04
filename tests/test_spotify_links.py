@@ -76,7 +76,10 @@ def test_a_short_link_that_leads_nowhere_says_so(monkeypatch):
         spotify.expand_short("https://spotify.link/AbC")
 
 
-def test_other_sites_still_go_to_yt_dlp():
+def test_other_sites_still_go_to_yt_dlp(monkeypatch):
+    from app import netguard
+
+    monkeypatch.setattr(netguard, "check", lambda url: None)
     assert not spotify.is_spotify("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     main.validate("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 

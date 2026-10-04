@@ -26,7 +26,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from . import auth, beets_runner, combine, covers, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
-from . import filer, inbox, library, overview, registry, replaygain, spotify
+from . import filer, inbox, library, netguard, overview, registry, replaygain, spotify
 from . import folderlock, uuidtags
 from . import worker, workspace
 from . import config
@@ -606,7 +606,14 @@ def _resolve(url: str) -> tuple[str, str, list[dict[str, Any]]]:
 def validate(url: str) -> None:
     """Reject obviously unusable input before a job row is created."""
     if generic.looks_like_url(url) and not spotify.is_spotify(url):
-        return  # yt-dlp decides; there are too many sites to pre-check
+        # yt-dlp decides what it can read - there are too many sites to
+        # pre-check - but not where it may go: never this network's own
+        # machines. yt-dlp follows a site's redirects itself, unchecked.
+        try:
+            netguard.check(url)
+        except netguard.Refused as exc:
+            raise generic.ResolveError(str(exc)) from exc
+        return
     if spotify.is_short(url):
         return  # only following it says what it is; resolving does that
     spotify.parse_link(url)
@@ -703,7 +710,8 @@ async def create_job(
     url = spotify.canonical(url) or url
     # Validate before creating the job, so a typo does not litter the list.
     try:
-        validate(url)
+        # In a thread: checking a direct link resolves its host name.
+        await asyncio.to_thread(validate, url)
     except (spotify.ResolveError, generic.ResolveError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2226,7 +2234,7 @@ async def library_cover_apply(
     path, tracks = await asyncio.to_thread(check)
 
     def run() -> dict[str, Any]:
-        data = (covers.fetch(body.url) if body.url
+        data = (covers.fetch(body.url, covers.CHOOSABLE_HOSTS) if body.url
                 else covers.current(path, tracks))
         if not data:
             raise HTTPException(
@@ -2320,7 +2328,7 @@ async def library_combine(
         # survive the combine.
         cover = None
         if body.cover_url:
-            cover = covers.fetch(body.cover_url)
+            cover = covers.fetch(body.cover_url, covers.CHOOSABLE_HOSTS)
         elif body.cover_folder:
             path = folders[body.cover_folder]
             cover = covers.current(path, filer.audio_in(path))
