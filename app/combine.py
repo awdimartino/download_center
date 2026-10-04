@@ -75,10 +75,20 @@ def combine(space: workspace.Workspace, *,
         meta = filer.read_meta(files[0]) if files else None
         if meta and meta.names_album and (meta.albumartist, meta.album) == (albumartist, album):
             # Already called that: renaming it to itself would only rewrite
-            # every file for nothing.
-            moved.update((path, path) for path in files)
+            # every file for nothing. It is still re-filed, though - its
+            # folder may not be the canonical one the others are joining,
+            # and skipping it left one album UUID across two folders.
             for path in files:
+                try:
+                    filed = filer.file_track(space, path)
+                except (filer.NotEditable, OSError) as exc:
+                    failed.append(f"{path.name}: {exc}")
+                    continue
+                moved[path] = filed.path
+                album_uuid = album_uuid or filed.album_uuid
                 step(path.name)
+            filer.leave_folder(folder, {p.parent for p in moved.values()},
+                               space.library_path)
             continue
         try:
             filed = filer.retag_album(space, folder,
@@ -107,8 +117,11 @@ def combine(space: workspace.Workspace, *,
         numbered = [moved[path] for path in order if path in moved]
         for number, path in enumerate(numbered, start=1):
             try:
+                # One sequence is one disc. Keeping the old disc numbers made
+                # a two-disc album plus a single into disc 2 from track 11.
                 filed = filer.retag_track(space, path, track_no=number,
-                                          track_total=len(numbered))
+                                          track_total=len(numbered),
+                                          disc_no=1, disc_total=1)
             except filer.NotEditable as exc:
                 failed.append(f"{path.name}: {exc}")
                 continue

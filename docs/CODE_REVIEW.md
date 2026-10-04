@@ -435,13 +435,16 @@ it less likely.
       a folder holding cover.jpg must be kept; it now uses a rip log, since
       a cover with an identical copy has in effect moved. Reproduced first.
 
-- [ ] **M12. Combine: an album already called the target name stays in a
+- [x] **M12. Combine: an album already called the target name stays in a
       non-canonical folder; renumbering ignores discs.** `app/combine.py:76-82, 106-118`.
       Joiners go to the canonical folder, giving two folders for one UUID. A
       two-disc album plus a single becomes disc 2 starting at track 11, with
       every total 21.
       *Fix:* re-file the kept album when its folder differs; set `disc_no=1`
       or renumber per disc.
+      **Fixed:** the already-named album is re-filed (`file_track`) into the
+      canonical folder and its old one left via `leave_folder`; renumbering
+      writes disc 1/1 (new `disc_total` in `write_tags`). Reproduced first.
 
 - [ ] **M13. A retag that fails part-way leaves the album mixed.**
       `app/filer.py:300-306`, `app/main.py:1831-1833`. A `NotEditable` on file

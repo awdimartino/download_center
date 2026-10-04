@@ -245,3 +245,46 @@ def test_singles_and_eps_do_not_vote(monkeypatch, kind):
     monkeypatch.setattr(spotify, "search",
                         lambda q, k, limit: [_hit("Its Own Single", kind)])
     assert combine.guess_album("A", ["One"]) is None
+
+
+# --- CODE_REVIEW M12 ---------------------------------------------------------
+
+def test_an_album_already_called_that_joins_the_rest_in_one_folder(space):
+    """It was skipped as already named, so it stayed where it was while
+    everything joining it went to the canonical folder: one UUID, two
+    folders."""
+    kept = album_on_disk(space, "Artist", "Record", ["One"])
+    odd = space.library_path / "Artist" / "Record (old rip)"
+    kept[0].path.parent.rename(odd)
+    joiner = _single(space, "Artist", "Two")
+
+    combine.combine(space, albumartist="Artist", album="Record",
+                    albums=[odd, joiner.path.parent], tracks=[],
+                    keep=odd)
+
+    target = space.library_path / "Artist" / "Record"
+    assert sorted(p.name for p in filer.audio_in(target)) == [
+        "01 - One.mp3", "Two.mp3"]
+    assert not odd.exists()
+
+
+def test_renumbering_makes_one_disc(space):
+    """A two-disc album plus a single became disc 2 starting at track 11,
+    every total 21."""
+    discs = []
+    for disc, title in ((1, "A"), (2, "B")):
+        discs.append(filer.file_track(space, track(
+            tmp_of(space), name=f"d{disc}.mp3", albumartist="Artist",
+            artist="Artist", album="Double", title=title, tracknumber="1",
+            discnumber=f"{disc}/2")))
+    single = _single(space, "Artist", "C")
+    folder = discs[0].path.parent
+    order = [discs[0].path, discs[1].path, single.path]
+
+    combine.combine(space, albumartist="Artist", album="Double",
+                    albums=[folder, single.path.parent], tracks=[],
+                    keep=folder, order=order)
+
+    files = filer.audio_in(folder)
+    assert sorted(p.name for p in files) == ["01 - A.mp3", "02 - B.mp3", "03 - C.mp3"]
+    assert {EasyID3(p)["discnumber"][0] for p in files} == {"1/1"}
