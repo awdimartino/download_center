@@ -237,9 +237,11 @@ sent back to the browser; a blank secret field means "leave it as it is".
 
 Settings live in `/config/config.toml`. Each key can also be set with an
 environment variable, `DC_` plus the key in capitals, and **the environment
-wins** — over the file and over anything saved from the panel, from the
-next restart on. (Saving the panel writes the live values of the panel's
-keys into `config.toml`, including secrets that came from the environment.)
+wins** over the file. A key set by the environment is shown locked in the
+panel, since an edit there would revert at the next restart, and its value
+is never written to `config.toml`. (Before October 2026 saving the panel did
+copy environment secrets into the file; check yours if you set
+`DC_NAVIDROME_PASSWORD` or `DC_SPOTIFY_CLIENT_SECRET`.)
 
 | Key | Default | In the panel | Meaning |
 |---|---|---|---|

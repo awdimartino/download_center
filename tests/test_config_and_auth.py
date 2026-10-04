@@ -41,11 +41,50 @@ def test_saving_preserves_keys_it_does_not_manage(config_file, monkeypatch):
     assert "concurrency = 5" in written
 
 
-def test_saving_writes_every_editable_key(config_file):
+def test_saving_writes_every_editable_key(config_file, monkeypatch):
+    monkeypatch.setattr(config, "FROM_ENV", set())
     config.save({"concurrency": 4})
     written = config_file.read_text(encoding="utf-8")
     for key in config.EDITABLE:
         assert f"{key} = " in written
+
+
+# --- keys set by the environment (CODE_REVIEW M25) --------------------------
+# Saving the panel wrote every editable key's live value, so a password set
+# as DC_NAVIDROME_PASSWORD landed in config.toml in plain text.
+
+def test_a_secret_from_the_environment_is_never_written(config_file, monkeypatch):
+    monkeypatch.setattr(config, "FROM_ENV", {"navidrome_password"})
+    monkeypatch.setattr(config.settings, "navidrome_password", "from-env")
+    config.save({"concurrency": 4})
+    written = config_file.read_text(encoding="utf-8")
+    assert "from-env" not in written
+    assert "navidrome_password" not in written
+
+
+def test_a_file_value_for_an_environment_key_is_kept(config_file, monkeypatch):
+    config_file.write_text('navidrome_password = "from-file"\n', encoding="utf-8")
+    monkeypatch.setattr(config, "FROM_ENV", {"navidrome_password"})
+    monkeypatch.setattr(config.settings, "navidrome_password", "from-env")
+    config.save({"concurrency": 4})
+    assert 'navidrome_password = "from-file"' in config_file.read_text(encoding="utf-8")
+
+
+def test_a_key_set_by_the_environment_cannot_be_changed_here(config_file,
+                                                              monkeypatch):
+    monkeypatch.setattr(config, "FROM_ENV", {"navidrome_url"})
+    with pytest.raises(ValueError, match="DC_NAVIDROME_URL"):
+        config.save({"navidrome_url": "http://elsewhere"})
+
+
+def test_load_remembers_which_keys_came_from_the_environment(tmp_path,
+                                                             monkeypatch):
+    monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "none.toml")
+    monkeypatch.setenv("DC_NAVIDROME_USER", "svc")
+    monkeypatch.setattr(config, "FROM_ENV", set())
+    loaded = config.load()
+    assert loaded.navidrome_user == "svc"
+    assert "navidrome_user" in config.FROM_ENV
 
 
 def test_saving_round_trips_through_the_parser(config_file):

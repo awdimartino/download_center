@@ -574,7 +574,7 @@ it less likely.
 
 ### Platform
 
-- [ ] **M25. Saving Settings copies environment secrets into
+- [x] **M25. Saving Settings copies environment secrets into
       `config.toml`.** `app/config.py:166-168`. `save()` writes every
       editable key's live value, so a password or secret supplied by `DC_*`
       lands in plain text in the config volume on any save. An admin's edit
@@ -582,6 +582,12 @@ it less likely.
       (`tests/test_config_and_auth.py:44`) asserts the current behaviour.
       *Fix:* remember which keys came from the environment; never persist
       them; show them as locked in the panel.
+      **Fixed** as suggested: `config.FROM_ENV` records them at load; `save`
+      refuses them and never writes their live values (a value already in
+      the file is kept); `/api/settings` returns `locked` with each
+      variable's name and the panel disables those fields. The test at
+      `:44` now runs with nothing from the environment. A `config.toml`
+      saved before this may already hold copied secrets.
 
 - [ ] **M26. A bad config write stops the container starting.**
       `app/config.py:138, 177-196`. `_toml_value` escapes only `\` and `"`; a

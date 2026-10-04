@@ -130,6 +130,19 @@ EDITABLE = (
 )
 
 
+# Keys whose value came from an environment variable at start-up. They are
+# never written to config.toml - saving the panel used to copy a password
+# set as DC_NAVIDROME_PASSWORD into the file in plain text - and they cannot
+# be changed from the panel, since the environment wins again on restart and
+# the edit would silently revert.
+FROM_ENV: set[str] = set()
+
+
+def env_var(key: str) -> str:
+    """The environment variable that sets `key`."""
+    return _ENV_OVERRIDES.get(key, "")
+
+
 def _toml_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -151,6 +164,11 @@ def save(updates: dict[str, Any]) -> None:
     then silently revert to its default on the next restart with nothing to
     say why.
     """
+    locked = sorted(key for key in updates if key in FROM_ENV)
+    if locked:
+        raise ValueError(
+            f"{locked[0]} is set by {env_var(locked[0])} in the container's "
+            "environment; change it there.")
     for key, value in updates.items():
         if key in EDITABLE:
             setattr(settings, key, value)
@@ -163,9 +181,12 @@ def save(updates: dict[str, Any]) -> None:
             # A file we cannot parse is one we should not silently discard.
             raise
 
+    # A key set by the environment keeps whatever the file already said,
+    # if anything; its live value is never copied in.
     stored = {key: value for key, value in existing.items()
-              if key not in EDITABLE}
-    stored.update({key: getattr(settings, key) for key in EDITABLE})
+              if key not in EDITABLE or key in FROM_ENV}
+    stored.update({key: getattr(settings, key) for key in EDITABLE
+                   if key not in FROM_ENV})
 
     lines = [
         "# Written by Navidrome Companion. Environment variables still take",
@@ -182,10 +203,12 @@ def load() -> Settings:
     if CONFIG_FILE.exists():
         raw = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
 
-    for key, env_var in _ENV_OVERRIDES.items():
-        value = os.environ.get(env_var)
+    FROM_ENV.clear()
+    for key, name in _ENV_OVERRIDES.items():
+        value = os.environ.get(name)
         if value:
             raw[key] = value
+            FROM_ENV.add(key)
 
     settings = Settings(**raw)
     for directory in (CONFIG_DIR, settings.output_dir):

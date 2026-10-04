@@ -991,7 +991,9 @@ Fields: Navidrome URL, service account and password; Spotify client id and
 secret; simultaneous downloads, bitrate, attempts per track, pause between
 downloads; AcoustID key. Every key, including the ones only settable in the
 file or environment, is listed in [SETUP.md](SETUP.md#every-setting).
-Environment variables win over both at the next restart.
+A key set by an environment variable wins over the file, is shown locked
+in the panel with the variable's name, and is never written to
+`config.toml`.
 
 ---
 

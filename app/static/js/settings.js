@@ -28,8 +28,13 @@ export async function loadSettings() {
   // form to someone who will be refused on save is worse than not offering
   // it at all.
   const mayEdit = values.editable !== false;
+  // Set by an environment variable: it wins on every restart, so an edit
+  // here would silently revert. Shown, locked, with where to change it.
+  const locked = values.locked || {};
   Array.from(settingsForm.elements).forEach((field) => {
-    field.disabled = !mayEdit;
+    const env = locked[field.name];
+    field.disabled = !mayEdit || Boolean(env);
+    field.title = env ? `Set by ${env} in the container's environment` : "";
   });
   settingsNote.textContent = mayEdit
     ? "" : "Only a Navidrome administrator can change these.";

@@ -945,6 +945,9 @@ async def get_settings(
 
     values = {key: getattr(settings, key) for key in config.EDITABLE}
     values["editable"] = True
+    # Set by the container's environment: shown, but not editable here.
+    values["locked"] = {key: config.env_var(key) for key in config.EDITABLE
+                        if key in config.FROM_ENV}
     for key in SECRETS:
         values[key] = ""
         values[f"{key}_set"] = bool(getattr(settings, key))
@@ -963,6 +966,12 @@ async def put_settings(
             changes.pop(key, None)
     if not changes:
         return await get_settings(session)
+    locked = sorted(key for key in changes if key in config.FROM_ENV)
+    if locked:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{locked[0]} is set by {config.env_var(locked[0])} in the "
+                   "container's environment; change it there.")
 
     try:
         # Validate against the model before touching the live settings.
