@@ -804,3 +804,38 @@ def test_other_files_in_the_folder_are_left_behind(space):
 
     assert not (filed.path.parent / "rip.log").exists()
     assert not (filed.path.parent / "album.cue").exists()
+
+
+# --- a retag only some of the files took ------------------------------------
+# after_retag used to read the first file and stamp the settled UUID on every
+# file in the folder. A file beets left unmatched kept its old tags and got
+# the new album's identity - two names, one album UUID (CODE_REVIEW H2).
+
+def test_a_retag_only_some_files_took_is_refused_untouched(space):
+    filed = album_on_disk(space, "Old Artist", "Old Album", ["One", "Two", "Three"])
+    folder = filed[0].path.parent
+    was = filer.album_key_of(folder)
+    for one in filed[:2]:
+        retag(one.path, albumartist="New Artist", album="New Album")
+
+    with pytest.raises(filer.NotEditable, match="no longer agree"):
+        filer.after_retag(space, filer.audio_in(folder), was)
+
+    assert {uuidtags.read(one.path)[1] for one in filed} == {filed[0].album_uuid}
+    assert registry.known(space.library_id, was) == filed[0].album_uuid
+    assert registry.known(
+        space.library_id, registry.album_key("New Artist", "New Album")) is None
+
+
+def test_a_file_with_no_album_is_not_given_the_albums_identity(space, tmp_path):
+    filed = album_on_disk(space, "Artist", "Record", ["One"])
+    folder = filed[0].path.parent
+    stray = folder / "stray.mp3"
+    shutil.copy(track(tmp_path, name="stray-src.mp3", title="Stray"), stray)
+    was = filer.album_key_of(folder)
+    retag(filed[0].path, album="Record (Remastered)")
+
+    settled = filer.after_retag(space, filer.audio_in(folder), was)
+
+    assert settled == filed[0].album_uuid
+    assert uuidtags.read(stray)[1] != settled

@@ -373,14 +373,32 @@ def after_retag(space: workspace.Workspace, paths: list[Path],
     if not live:
         return ""
 
-    meta = read_meta(live[0])
-    if not meta.names_album:
+    # Every file is asked, not the first. Beets can leave a file it did not
+    # match untouched, and a download can land mid-operation: stamping the
+    # settled UUID on those gave a file still tagged as the old album the new
+    # album's identity - two names, two folders, one album UUID.
+    named: dict[str, list[Path]] = {}
+    labels: dict[str, str] = {}
+    for path in live:
+        meta = read_meta(path)
+        if not meta.names_album:
+            # No album tag: its own record, not part of this one.
+            continue
+        key = registry.album_key(meta.albumartist, meta.album)
+        named.setdefault(key, []).append(path)
+        labels.setdefault(key, f"{meta.albumartist} - {meta.album}")
+    if not named:
         # A retag that did not give these files an album is not a retag this
         # can follow - there is no record for them to be part of.
         log.info("retag left %s with no album tag; identity unchanged",
                  live[0].parent.name)
         return ""
-    new_key = registry.album_key(meta.albumartist, meta.album)
+    if len(named) > 1:
+        raise NotEditable(
+            f"the files in {live[0].parent.name} no longer agree which album "
+            f"they are on ({'; '.join(sorted(labels.values()))}), so the "
+            "album's identity was left as it was and nothing was moved")
+    (new_key, live), = named.items()
 
     # An album filed before the registry existed has a UUID on disk and no
     # row. Adopting it first is what makes the repoint a move rather than a

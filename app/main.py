@@ -1844,7 +1844,6 @@ async def library_match_apply(
         result = beets_runner.import_chosen(space, path, body.release_id)
         if not result.get("imported"):
             return result
-        _reviewed(session.identity, body.library_id, ids, "matched")
 
         # Beets retagged in place, so the files are still where they were
         # and there is no need to ask its database where they went. Settle
@@ -1853,9 +1852,13 @@ async def library_match_apply(
         # changes the artist or album puts them under the new name in the
         # layout everything else uses.
         retagged = filer.audio_in(path)
+        # Raises if beets left the files disagreeing about their album; the
+        # operation then fails with that message and nothing moves.
         result["album_uuid"] = filer.after_retag(space, retagged, was)
         result["filed"] = [str(filer.file_track(space, one).path)
                            for one in retagged]
+        # Last, so an album whose retag did not go through stays in review.
+        _reviewed(session.identity, body.library_id, ids, "matched")
         navidrome.notify()
         return result
 

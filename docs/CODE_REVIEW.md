@@ -134,7 +134,7 @@ it less likely.
       unreadable answer is a failure. The route already marked reviewed only
       on `imported`. Reproduced first with the subprocess faked.
 
-- [ ] **H2. Applying a match stamps the new album UUID onto files beets did
+- [x] **H2. Applying a match stamps the new album UUID onto files beets did
       not retag.** `app/filer.py:361-406`, `app/main.py:1830-1833`.
       `after_retag` takes the new key from the first file only and writes the
       settled UUID onto every file in the folder. An extra file beets left
@@ -144,6 +144,13 @@ it less likely.
       the "shared album UUID" bug class again.
       *Fix:* after applying, group files by their actual key; re-point only
       the group that changed; refuse if the keys disagree.
+      **Fixed:** `after_retag` reads every file's key and raises
+      `NotEditable` if they disagree, before touching the registry or any
+      UUID; a file with no album tag is left out of the album. *Use this*
+      then fails with that message and moves nothing, and now marks the
+      album reviewed last (part of M13). Files beets did retag stay in the
+      old folder with new tags and the old UUID, for a person to sort out.
+      Reproduced first.
 
 - [ ] **H3. Long operations are global by name: one person's result goes to
       another, and every person's results are readable by all.**
