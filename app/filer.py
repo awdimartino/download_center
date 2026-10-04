@@ -25,6 +25,7 @@ page moves anything, and the UUID means nothing is lost when it does.
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import logging
 import os
@@ -605,16 +606,40 @@ def unused_name(target: Path) -> Path:
     the one case the numbering exists to prevent - a real collision - ended
     in the caller overwriting the file it was protecting.
     """
-    if not target.exists():
-        return target
-    stem, suffix = target.stem, target.suffix
-    for n in range(2, 100):
-        candidate = target.with_name(f"{stem} ({n}){suffix}")
+    for candidate in _variants(target):
         if not candidate.exists():
             return candidate
-    raise FileExistsError(
+    raise _all_taken(target)
+
+
+def _variants(target: Path):
+    yield target
+    stem, suffix = target.stem, target.suffix
+    for n in range(2, 100):
+        yield target.with_name(f"{stem} ({n}){suffix}")
+
+
+def _all_taken(target: Path) -> FileExistsError:
+    return FileExistsError(
         f"{target} and 98 numbered variants all exist; refusing to "
         f"overwrite. Clear some out of {target.parent}.")
+
+
+def claim(target: Path) -> Path:
+    """Like `unused_name`, but the name is reserved by creating it empty.
+
+    Choosing a free name and then moving onto it left a gap: two jobs
+    filing the same track could both choose it, and the second move
+    replaced the first file. Creating the file with O_EXCL is one step that
+    only one of them can win; the move then replaces its own placeholder.
+    """
+    for candidate in _variants(target):
+        try:
+            os.close(os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        except FileExistsError:
+            continue
+        return candidate
+    raise _all_taken(target)
 
 
 def _move_into_place(source: Path, target: Path) -> Path:
@@ -626,13 +651,20 @@ def _move_into_place(source: Path, target: Path) -> Path:
     land on the copy-and-delete fallback.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
-    target = unused_name(target)
+    target = claim(target)
     try:
-        os.replace(source, target)
-    except OSError as exc:
-        if exc.errno != errno.EXDEV:
-            raise
-        shutil.move(str(source), str(target))
+        try:
+            os.replace(source, target)
+        except OSError as exc:
+            if exc.errno != errno.EXDEV:
+                raise
+            shutil.move(str(source), str(target))
+    except BaseException:
+        # Only the placeholder: a move that failed has not written over it.
+        with contextlib.suppress(OSError):
+            if target.stat().st_size == 0 and source.exists():
+                target.unlink()
+        raise
     return target
 
 

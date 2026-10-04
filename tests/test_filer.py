@@ -933,3 +933,56 @@ def test_an_album_with_an_untaggable_file_is_refused_before_any_write(space):
         filer.retag_album(space, folder, albumartist="Artist", album="Renamed")
 
     assert {EasyID3(one.path)["album"][0] for one in filed} == {"Album"}
+
+
+# --- two jobs filing the same track at once (L14) ------------------------------
+
+def test_two_moves_onto_one_name_at_once_keep_both_files(tmp_path, monkeypatch):
+    """Both used to choose the same free name and the second move replaced
+    the first file. The move is slowed so both have chosen before either
+    lands."""
+    import os
+    import threading
+    import time
+
+    real = os.replace
+
+    def slow(src, dst):
+        time.sleep(0.1)
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", slow)
+    target = tmp_path / "lib" / "01 - Song.mp3"
+    sources = []
+    for n in (1, 2):
+        source = tmp_path / f"job{n}.mp3"
+        source.write_bytes(f"copy {n}".encode())
+        sources.append(source)
+
+    threads = [threading.Thread(target=filer._move_into_place, args=(s, target))
+               for s in sources]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    landed = sorted(p.read_bytes() for p in target.parent.iterdir())
+    assert landed == [b"copy 1", b"copy 2"]
+
+
+def test_a_failed_move_leaves_no_placeholder(tmp_path, monkeypatch):
+    import os
+
+    def broken(src, dst):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(os, "replace", broken)
+    source = tmp_path / "job.mp3"
+    source.write_bytes(b"audio")
+    target = tmp_path / "lib" / "01 - Song.mp3"
+
+    with pytest.raises(PermissionError):
+        filer._move_into_place(source, target)
+
+    assert source.exists()
+    assert list(target.parent.iterdir()) == []

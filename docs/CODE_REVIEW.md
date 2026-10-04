@@ -832,9 +832,15 @@ it less likely.
       *needs a look* with Retry, and its ✕ then clears it. A retried job
       is put in `RUNNING` when its task is created, so it can be cancelled
       at once. Checked in headless Chromium with a stubbed socket.
-- [ ] **L14.** Two jobs filing the same track can both choose the same free
+- [x] **L14.** Two jobs filing the same track can both choose the same free
       name; the second move overwrites the first (`filer.py:527-535`).
       *Race window unverified.*
+      **Fixed:** `filer.claim` reserves the name with an `O_EXCL` create
+      and the move replaces that placeholder (removed again if the move
+      fails). Reproduced first with two threads and a slowed move: one
+      file lost before, both kept after. The inbox hop keeps
+      `unused_name`, since its names are unique item ids and a placeholder
+      there could be picked up by the poller.
 - [ ] **L15.** An oversized playlist is fully resolved (≈200 requests for
       10,000 tracks) before the 500-track limit refuses it
       (`main.py:537`, `spotify.py:185-193`).
