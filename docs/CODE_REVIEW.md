@@ -792,8 +792,10 @@ it less likely.
       before the save leaves the file as it was; a tagging failure now
       fails the item ("Could not tag the download") and the file is
       cleared with the job's scratch space. Reproduced first.
-- [ ] **L7.** Drops and uploads never ask Navidrome to scan (`main.py:253, 861`);
+- [x] **L7.** Drops and uploads never ask Navidrome to scan (`main.py:253, 861`);
       only downloads do.
+      **Fixed:** the inbox loop and `finish_upload` call `navidrome.notify`
+      when they filed something. Reproduced first.
 - [ ] **L8.** Retry ignores the five-active-jobs limit (`main.py:744-768`); the
       limit check itself races across concurrent requests (`main.py:604-619`);
       retry resets items before it can fail (`main.py:757-763`).

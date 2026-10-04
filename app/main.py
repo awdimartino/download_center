@@ -256,7 +256,11 @@ async def _inbox_loop() -> None:
     """
     while True:
         try:
-            await asyncio.to_thread(inbox.drain_all)
+            results = await asyncio.to_thread(inbox.drain_all)
+            # A download asks Navidrome to scan when it finishes; a drop
+            # used to wait for Navidrome's own schedule instead.
+            if any(result.changed for result in results.values()):
+                await asyncio.to_thread(navidrome.notify)
         except Exception:
             log.exception("draining the inbox failed")
         await asyncio.sleep(inbox.POLL_SECONDS)
@@ -907,6 +911,8 @@ async def finish_upload(
         # together, rather than after the quiet period.
         await asyncio.to_thread(inbox.release, space, filer.sanitize(batch))
     result = await asyncio.to_thread(inbox.drain, space)
+    if result.changed:
+        await asyncio.to_thread(navidrome.notify)
     return {
         "filed": [str(path.relative_to(space.library_path))
                   for path in result.filed],

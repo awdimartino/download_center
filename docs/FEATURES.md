@@ -468,7 +468,12 @@ and files each audio file that has sat **unchanged for
 SMB copy safe, and it is also a safety net: a download the app died on, if
 it had reached the inbox, is filed on the next start. A file that fails to
 file is not retried until its size changes. Loose audio sitting at the top
-of the library root is picked up the same way.
+of the library root is picked up the same way. When a pass files anything,
+Navidrome is asked to scan, as it is when a download or a Drop finishes.
+
+On start-up, anything left in `.incomplete/` is deleted: the queue is in
+memory, so nothing would ever finish or discard a download a crash
+interrupted.
 
 Once a folder in the inbox has settled with no audio left in it, its known
 residue (images, cue sheets, rip logs, playlists, checksums) is moved to
