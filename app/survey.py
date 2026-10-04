@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import filer, registry, uuidtags, walk, workspace
+from . import cli, filer, registry, uuidtags, walk, workspace
 
 log = logging.getLogger("navidrome_companion.survey")
 
@@ -253,6 +253,7 @@ def report(survey: Survey) -> str:
 
 
 def main() -> int:
+    cli.not_as_root("survey")
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", nargs="?", type=Path,

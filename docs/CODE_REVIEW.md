@@ -968,8 +968,11 @@ it less likely.
       when emptied, which clears them (the server already accepted that).
       A blank secret, number or bitrate is still left out. Checked in
       headless Chromium.
-- [ ] **L36.** CLI tools run as root under `docker exec`, leaving root-owned
+- [x] **L36.** CLI tools run as root under `docker exec`, leaving root-owned
       files in `/config`. *Fix:* warn or refuse when `geteuid() == 0`.
+      **Fixed:** `app/cli.not_as_root` refuses, naming the `docker exec -u
+      downloader` form; `DC_ALLOW_ROOT=1` overrides. Called first by
+      backfill, lastfm, reindex, survey and unfuse.
 - [ ] **L37.** Updating a playlist when Navidrome is unreachable is a 500,
       not a 502 (`main.py:1270`).
 - [ ] **L38.** CSRF rests on `SameSite=Lax` alone, which ignores ports — a

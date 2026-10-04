@@ -32,7 +32,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import workspace
+from . import cli, workspace
 from .beets_runner import ensure_config
 
 # Moving and copying are both disabled: the files are already where they
@@ -95,6 +95,7 @@ def reindex(space: workspace.Workspace, root: Path, apply: bool) -> int:
 
 
 def main() -> int:
+    cli.not_as_root("reindex")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("user", help="whose library to index")
     parser.add_argument("--library", type=int, default=None,

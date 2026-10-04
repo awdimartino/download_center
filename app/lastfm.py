@@ -43,7 +43,7 @@ import urllib.request
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from . import navidrome, playcounts, store
+from . import cli, navidrome, playcounts, store
 from .matcher import FEATURING
 from .config import settings
 
@@ -569,6 +569,7 @@ def _report_times(args: argparse.Namespace, user_id: str,
 
 
 def main() -> int:
+    cli.not_as_root("lastfm")
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("user", help="the Navidrome account to import for")

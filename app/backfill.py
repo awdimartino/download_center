@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import registry, store, survey as survey_module, workspace
+from . import cli, registry, store, survey as survey_module, workspace
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.backfill")
@@ -181,6 +181,7 @@ def report(result: Result) -> str:
 
 
 def main() -> int:
+    cli.not_as_root("backfill")
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true",

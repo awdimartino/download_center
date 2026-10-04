@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import registry, survey as survey_module, uuidtags
+from . import cli, registry, survey as survey_module, uuidtags
 
 log = logging.getLogger("navidrome_companion.unfuse")
 
@@ -477,6 +477,7 @@ def plan_path(base: Path, library_id: int) -> Path:
 
 
 def main() -> int:
+    cli.not_as_root("unfuse")
     import argparse
     import sys
 

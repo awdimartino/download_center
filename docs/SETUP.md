@@ -354,7 +354,8 @@ backed up. (`python -m app.reindex` still rebuilds it, for using beets by
 hand.)
 
 **Maintenance commands** run inside the container. Run them as the app's
-user so new files get the right owner — `docker exec` is root by default:
+user so new files get the right owner — `docker exec` is root by default,
+and each command refuses to run as root unless `DC_ALLOW_ROOT=1` is set:
 
 ```bash
 docker exec -u downloader navidrome-companion python -m app.survey
