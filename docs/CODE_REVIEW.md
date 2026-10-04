@@ -631,6 +631,11 @@ it less likely.
       can run `take()` together and double-count the run log.
       *Fix:* per-thread connections in WAL mode, or a read context manager
       that takes the lock; a mutex for `take()`.
+      **Partly fixed, left open:** `take()` now holds a mutex, so a forced
+      reading and the timer run one after the other (reproduced first: two
+      overlapping readings). Readers still share the connection unlocked;
+      moving to per-thread WAL connections is a large change for an effect
+      nobody has seen, so it waits for evidence.
 
 - [ ] **M30. Resolving a duplicate silently loses other users' ratings and
       play counts, and your own play count.** `app/duplicates.py:144-151, 207-210`.

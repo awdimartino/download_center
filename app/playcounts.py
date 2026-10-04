@@ -245,7 +245,22 @@ def _last_known() -> dict[tuple[str, str], int]:
 
 # --- taking one -------------------------------------------------------------
 
+# One reading at a time. A forced reading (POST /api/playcounts/snapshot)
+# and the five-minute timer could otherwise run together: both compared the
+# counters against the same previous reading, wrote the same changes twice,
+# and the run log counted them twice.
+_take_lock = threading.Lock()
+
+
 def take(when: str | None = None) -> dict[str, Any]:
+    """Record every play count that has changed since the last reading.
+
+    Serialised by `_take_lock`; see `_take` for what a reading does."""
+    with _take_lock:
+        return _take(when)
+
+
+def _take(when: str | None = None) -> dict[str, Any]:
     """Record every play count that has changed since the last reading.
 
     Taken every few minutes rather than nightly. Navidrome stores, beside

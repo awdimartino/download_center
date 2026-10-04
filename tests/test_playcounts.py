@@ -764,3 +764,41 @@ def test_two_files_with_one_uuid_read_as_the_higher_count(wired, order):
     connection.close()
 
     assert current[("uuid-a", ALEX)]["play_count"] == 5
+
+
+# A forced reading and the timer could run take() together: both compared
+# against the same previous reading, and the run log counted the changes
+# twice (CODE_REVIEW M29).
+
+def test_two_readings_at_once_are_taken_one_after_the_other(wired, monkeypatch):
+    import threading
+    import time as clock
+
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 3)
+    real = playcounts._current
+    active, most = [0], [0]
+    guard = threading.Lock()
+
+    def slow(connection):
+        with guard:
+            active[0] += 1
+            most[0] = max(most[0], active[0])
+        clock.sleep(0.3)
+        try:
+            return real(connection)
+        finally:
+            with guard:
+                active[0] -= 1
+
+    monkeypatch.setattr(playcounts, "_current", slow)
+    threads = [threading.Thread(target=playcounts.take) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    changed = store.connection().execute(
+        "SELECT SUM(changed) FROM play_snapshot_run").fetchone()[0]
+    assert most[0] == 1, "two readings ran at once"
+    assert changed == 1
