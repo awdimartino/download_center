@@ -54,8 +54,10 @@ has been done and written up; fixing what it found comes next.
 - [x] **Session 11 — code review** of everything. Done 2026-10-04; findings
       in [CODE_REVIEW.md](CODE_REVIEW.md), ordered by severity, **not yet
       fixed**. Work through it top-down before new features.
-- [ ] **Fix the review's critical and high findings.** One session per
-      group of related findings; tick them off in CODE_REVIEW.md.
+- [x] **Fix the review's critical and high findings.** Done 2026-10-04,
+      one commit per finding (H6 fell out of C4's fix); each is ticked in
+      CODE_REVIEW.md with what changed and what is left.
+- [ ] **Fix the review's medium findings**, top-down.
 
 ### Next
 
