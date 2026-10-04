@@ -932,7 +932,11 @@ it less likely.
 - [x] **L30.** A forced snapshot does not warm Home's cache (`main.py:2176-2182`).
       **Fixed:** `POST /api/playcounts/snapshot` warms Home for the people
       it found new plays for, as the timed reading does. Reproduced first.
-- [ ] **L31.** An empty monthly chart labels its peak "1" (`charts.js:32, 138`).
+- [x] **L31.** An empty monthly chart labels its peak "1" (`charts.js:32, 138`).
+      **Fixed:** the label and the chart's accessible name use the real
+      peak; with no plays there is no peak label and the name says "with
+      no plays yet". Checked in headless Chromium (old: "1"; new: none,
+      and "7" for a series peaking at 7).
 
 ### Platform
 

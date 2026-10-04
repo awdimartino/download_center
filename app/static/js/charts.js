@@ -29,7 +29,10 @@ export function monthlyChart(months) {
   const wrap = el("div", "chart-wrap");
   if (!months.length) return wrap;
 
-  const most = Math.max(1, ...months.map((m) => m.plays));
+  // The real peak for the labels, and at least 1 to scale by: an empty
+  // series was labelled as peaking at 1.
+  const peak = Math.max(0, ...months.map((m) => m.plays));
+  const most = Math.max(1, peak);
   const inner = PLOT.w - PLOT.side * 2;
   const floor = PLOT.h - PLOT.bottom;
   const step = months.length > 1 ? inner / (months.length - 1) : 0;
@@ -39,8 +42,8 @@ export function monthlyChart(months) {
   const chart = svg("svg", {
     viewBox: "0 0 " + PLOT.w + " " + PLOT.h,
     class: "chart", preserveAspectRatio: "none", role: "img",
-    "aria-label": "Plays by month over " + months.length
-      + " months, peaking at " + most,
+    "aria-label": "Plays by month over " + months.length + " months, "
+      + (peak ? "peaking at " + peak : "with no plays yet"),
   });
 
   // Hairline and recessive. Three lines, so the eye has something to
@@ -67,10 +70,10 @@ export function monthlyChart(months) {
   // Placed over the chart rather than inside it: the plot is stretched to
   // the panel width, and a circle drawn in that coordinate space comes out
   // an ellipse at every width but one.
-  const peak = months.findIndex((m) => m.plays === most);
+  const peakAt = months.findIndex((m) => m.plays === most);
   const dot = el("span", "chart-peak");
-  dot.hidden = !(months[peak] && months[peak].plays > 0);
-  dot.style.left = (x(peak) / PLOT.w) * 100 + "%";
+  dot.hidden = !(months[peakAt] && months[peakAt].plays > 0);
+  dot.style.left = (x(peakAt) / PLOT.w) * 100 + "%";
   dot.style.top = (y(most) / PLOT.h) * 100 + "%";
 
   const crosshair = svg("line", {
@@ -134,8 +137,8 @@ export function monthlyChart(months) {
   // - the wrapper is taller by the height of the axis strip, and a dot
   // placed against that lands below the line it is meant to sit on.
   const plot = el("div", "chart-plot");
-  plot.append(chart, dot,
-              el("span", "chart-peak-label", most.toLocaleString()), tip);
+  plot.append(chart, dot, tip);
+  if (peak) plot.append(el("span", "chart-peak-label", peak.toLocaleString()));
   wrap.append(plot, axis);
   return wrap;
 }

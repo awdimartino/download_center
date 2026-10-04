@@ -477,3 +477,10 @@ def test_the_year_tile_opens_its_own_calendar_year():
     """It counted the calendar year and opened the last 365 days (L29)."""
     assert "selectDates(`${shown}-01-01`, `${shown}-12-31`)" in JS_FILES["home.js"]
     assert "selectRange(365)" not in JS_FILES["home.js"]
+
+
+def test_an_empty_monthly_chart_does_not_claim_a_peak_of_one():
+    """The scale's floor of 1 was also the label (L31)."""
+    charts = JS_FILES["charts.js"]
+    assert 'if (peak) plot.append(el("span", "chart-peak-label"' in charts
+    assert '"chart-peak-label", most' not in charts
