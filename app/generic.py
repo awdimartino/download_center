@@ -11,6 +11,7 @@ video title and a channel name. Tags are written from what is available.
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import re
 from typing import Any
@@ -126,15 +127,47 @@ def _to_item(info: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+# Entries read in full at once. A few, not many: this is one request per
+# track to the same site, and a burst is how a rate limit starts.
+ENTRY_WORKERS = 3
+
+
+def _in_full(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each playlist entry's full metadata, in the playlist's order.
+
+    A flat entry carries a title and little else - no track, artist or
+    album - so a YouTube Music album was tagged as N one-track albums, often
+    under Unknown Artist. The tags are written from these items before the
+    download, so this is the last chance to know better. An entry that
+    cannot be read in full keeps what the list said rather than failing the
+    job: the download step will report it if it is really gone.
+    """
+    options = {"quiet": True, "no_warnings": True, "skip_download": True}
+
+    def one(entry: dict[str, Any]) -> dict[str, Any]:
+        link = entry.get("url") or entry.get("webpage_url")
+        if not link:
+            return entry
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                return ydl.extract_info(link, download=False) or entry
+        except Exception as exc:
+            log.info("kept the playlist's own details for %s: %s", link, exc)
+            return entry
+
+    with concurrent.futures.ThreadPoolExecutor(ENTRY_WORKERS) as pool:
+        return list(pool.map(one, entries))
+
+
 def resolve(url: str) -> tuple[str, list[dict[str, Any]]]:
     """Return (job title, items) for any yt-dlp supported URL."""
     options = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
-        # Playlist entries are read shallowly; full metadata is fetched at
-        # download time anyway, and resolving a 200 item playlist eagerly
-        # would take minutes.
+        # The list is read flat, to learn what is in it quickly; each entry
+        # is then read in full by `_in_full`. Nothing fetches more metadata
+        # at download time - what is resolved here is what gets tagged.
         "extract_flat": "in_playlist",
     }
 
@@ -152,7 +185,7 @@ def resolve(url: str) -> tuple[str, list[dict[str, Any]]]:
         raise ResolveError("Nothing found at that URL.")
 
     if info.get("_type") == "playlist":
-        entries = [e for e in (info.get("entries") or []) if e]
+        entries = _in_full([e for e in (info.get("entries") or []) if e])
         items = [item for item in (_to_item(e) for e in entries) if item]
         title = info.get("title") or "Playlist"
     else:

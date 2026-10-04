@@ -542,13 +542,18 @@ it less likely.
       `inbox.release` backdates that drop's files, then drains; drop.js
       passes it. Reproduced first: the poller filed a track mid-drop.
 
-- [ ] **M22. Playlists from YouTube and other direct links are tagged from
+- [x] **M22. Playlists from YouTube and other direct links are tagged from
       thin metadata.** `app/generic.py:114, 135-138`. Flat playlist entries
       carry no album or artist, and the comment's "full metadata is fetched
       at download time" is not true. A YouTube Music album link becomes N
       one-track albums, often under "Unknown Artist".
       *Fix:* extract each entry's full info before tagging, or use the
       playlist title as the album for album-type playlists.
+      **Fixed** the first way: `generic._in_full` reads each playlist entry
+      in full (three at a time) before tagging, keeping an entry's flat
+      details if that fails. Costs one request per track while the job shows
+      "resolving". Tested against a fake yt-dlp only; not tried on a real
+      YouTube Music album, since nothing here reaches YouTube.
 
 - [ ] **M23. Version markers match inside words.** *Verified.*
       `app/matcher.py:95-97`. "Olive" contains *live*, "Demons" *demo*,
