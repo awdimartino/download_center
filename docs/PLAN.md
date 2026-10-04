@@ -60,10 +60,22 @@ has been done and written up; fixing what it found comes next.
 - [x] **Fix the review's medium findings.** Done 2026-10-04, one commit
       each. M29 is only partly done (a lock on `take()`; readers still
       share state.db's connection) and stays open in CODE_REVIEW.md.
+- [x] **Fix the review's low findings.** Done 2026-10-04, one commit
+      each, except L19 (the default bitrate), which is a choice about the
+      library's audio and waits for a decision. L37 had already been fixed
+      by M27 and only gained a test.
 - [ ] **Deploy and check on the Pi**: the state.db migrations
       (`play_collection`, `duplicate_dismissed.decided_by`), the new caches'
-      cost, and Health's stamped-but-not-scanned row clearing (H6).
-- [ ] **The review's low findings**, then readability.
+      cost, and Health's stamped-but-not-scanned row clearing (H6). From the
+      lows: the page still works through the real browser and LAN address
+      with the new same-origin check (L38) - downloads, the socket, a save
+      in Settings; a direct YouTube link still queues (L42 resolves its
+      host); `config/.cover-survey.json` appears after a survey and the
+      Cover flags survive a restart (L21); `tools/` is in the image (L34);
+      the session cookie is re-sent after a day (L33).
+- [ ] **Decide L19**: keep 320 kbps MP3, drop to 192, or keep YouTube's
+      Opus/M4A as it arrives (the tagger and filer assume MP3 today).
+- [ ] **The review's readability items.**
 
 ### Next
 
