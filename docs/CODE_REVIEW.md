@@ -563,11 +563,14 @@ it less likely.
       **Fixed** as suggested. Reproduced first; whole words only, so a
       plural such as "Remixes" no longer counts either.
 
-- [ ] **M24. Session expiry is never detected over the WebSocket.**
+- [x] **M24. Session expiry is never detected over the WebSocket.**
       `app/main.py:2198-2201`, `app/static/js/ws.js:87`. `close(4401)` before
       `accept()` becomes an HTTP 403, and the browser sees 1006. After a
       restart the page shows "offline" and reconnects every 15 s instead of
       asking you to sign in. *Fix:* accept, then close with 4401.
+      **Fixed** as suggested. Checked in headless Chromium against a
+      fixture server restarted under a signed-in page: the old code stayed
+      "offline", the fix shows sign-in.
 
 ### Platform
 

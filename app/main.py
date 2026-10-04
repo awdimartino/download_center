@@ -2311,6 +2311,10 @@ async def status(
 async def websocket(ws: WebSocket) -> None:
     session = auth.get(ws.cookies.get(auth.COOKIE))
     if session is None:
+        # Accepted first: a close before accepting becomes an HTTP 403, the
+        # browser only ever sees 1006, and the page went on reconnecting as
+        # "offline" instead of asking for a sign-in.
+        await ws.accept()
         await ws.close(code=4401)
         return
     await broker.register(ws, session.identity.username)
