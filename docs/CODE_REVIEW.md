@@ -616,11 +616,13 @@ it less likely.
       timeout still has to sign in again, which it is now told. Faked
       `requests`; the timeout on the Pi is still unverified.
 
-- [ ] **M28. The disk-audit loop dies on its first unexpected error.**
+- [x] **M28. The disk-audit loop dies on its first unexpected error.**
       `app/main.py:314-336`. `_library_roots` catches only
       `navidrome.Unavailable`; a `sqlite3.Error` ends the task for the life
       of the process, and Health's audit ages for ever.
       *Fix:* wrap the loop body as the other two loops do.
+      **Fixed** as suggested. Reproduced first with `_library_roots`
+      raising `sqlite3.OperationalError` once.
 
 - [ ] **M29. `state.db`'s shared connection is read without the lock.**
       *Effect unverified.* `app/store.py:177`; unlocked reads across

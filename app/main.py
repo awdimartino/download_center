@@ -314,12 +314,18 @@ async def _audit_loop() -> None:
     never wrong, because nothing here writes anything.
     """
     while True:
-        for root in _library_roots():
-            if diskaudit.stale(root):
-                try:
-                    await asyncio.to_thread(diskaudit.refresh, root)
-                except Exception:
-                    log.exception("disk audit failed for %s", root)
+        # The whole pass, not only each audit: reading the library list can
+        # fail too (a locked database), and an exception escaping here ended
+        # the task for the life of the process while Health's audit aged.
+        try:
+            for root in _library_roots():
+                if diskaudit.stale(root):
+                    try:
+                        await asyncio.to_thread(diskaudit.refresh, root)
+                    except Exception:
+                        log.exception("disk audit failed for %s", root)
+        except Exception:
+            log.exception("disk audit pass failed")
         await asyncio.sleep(600)
 
 
