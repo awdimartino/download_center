@@ -188,6 +188,10 @@ def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
     for the whole quiet period - by which time this has long since filed it.
     And if the application dies in between, that same quiet period is what
     hands the file to the poller on the next start instead of losing it.
+
+    If filing fails, the file goes back where it was built. Left in the
+    inbox, the poller filed it a couple of minutes after the item had been
+    marked failed - and Retry then fetched and filed it a second time.
     """
     space.inbox_dir.mkdir(parents=True, exist_ok=True)
     arrived = _move_in(source, space.inbox_dir / source.name)
@@ -195,6 +199,15 @@ def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
         _delivering.add(arrived)
     try:
         filed = filer.file_track(space, arrived)
+    except Exception:
+        if arrived.exists():
+            try:
+                shutil.move(str(arrived), str(source))
+            except OSError:
+                log.exception("could not take %s back out of the inbox; the "
+                              "poller will file it", arrived.name)
+        raise
+    else:
         _arrived(filed.path.parent)
         return filed
     finally:

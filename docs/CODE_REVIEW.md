@@ -773,9 +773,13 @@ it less likely.
       **Fixed** as suggested: `inbox.clear_scratch`, run once from the
       lifespan, empties every workspace's `.incomplete/`. Delivered files
       are in the inbox proper and untouched.
-- [ ] **L4.** If filing fails after the move into the inbox, the item is
+- [x] **L4.** If filing fails after the move into the inbox, the item is
       marked failed but the poller files it two minutes later; Retry then
       makes a second copy (`worker.py:181-186`).
+      **Fixed:** `inbox.deliver` moves the file back to scratch space when
+      filing raises, so the job's discard clears it and Retry fetches it
+      once. If even that move fails it stays for the poller, logged.
+      Reproduced first.
 - [ ] **L5.** The worker ignores `Filed.identified` (`worker.py:188`): a track
       filed without UUIDs shows Done.
 - [ ] **L6.** A tag write failure leaves the file tagless (tags were deleted

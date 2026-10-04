@@ -866,3 +866,24 @@ def test_clearing_scratch_leaves_the_inbox_alone(space):
 
     assert inbox.clear_scratch() == 0
     assert dropped.exists()
+
+
+def test_a_download_that_cannot_be_filed_is_not_left_for_the_poller(space,
+                                                                     monkeypatch):
+    """The worker marks it failed and Retry fetches it again. Left in the
+    inbox, the poller filed it as well - two copies (L4)."""
+    from app import filer
+
+    source = built(space, albumartist="Artist", album="Album", title="Song",
+                   tracknumber="1")
+    real = filer.file_track
+    monkeypatch.setattr(filer, "file_track",
+                        lambda space, path: (_ for _ in ()).throw(OSError("disk full")))
+
+    with pytest.raises(OSError):
+        inbox.deliver(space, source)
+
+    assert source.exists()
+    assert inbox.waiting(space) == []
+    monkeypatch.setattr(filer, "file_track", real)
+    assert inbox.drain(space).filed == []
