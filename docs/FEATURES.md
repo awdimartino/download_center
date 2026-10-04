@@ -686,7 +686,8 @@ An edit rewrites only the tags you changed, keeping every other tag, the
 art and both UUIDs. The file is then re-filed to the path its tags now
 describe; moving to another album gives it that album's UUID (joining it if
 it exists) while its own track UUID stays, so its stars and plays follow.
-Emptied folders are removed up to the library root. Navidrome is asked to
+Emptied folders are removed up to the library root; a cover left behind
+counts as empty once an identical copy has travelled with the tracks. Navidrome is asked to
 scan, and the panel keeps what you typed rather than re-reading, since
 Navidrome has not rescanned yet.
 

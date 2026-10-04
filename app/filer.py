@@ -280,6 +280,36 @@ def _prune_upwards(folder: Path, stop_at: Path) -> None:
         here = here.parent
 
 
+def leave_folder(folder: Path, went_to: set[Path], stop_at: Path) -> None:
+    """Tidy a folder the tracks have just left, then prune it if empty.
+
+    A cover is *copied* along with the first track that moves (see
+    `_carry_cover`), and beets' fetchart adds one too, so a folder whose
+    every track has moved still held its cover.jpg, was never empty, and
+    was never pruned: each rename, match or combine left
+    OldArtist/OldAlbum/cover.jpg behind. Once no audio is left, a cover is
+    removed only if an identical copy now sits where the tracks went - so
+    nothing is lost. Anything else (a cue sheet, a rip log) keeps the
+    folder, which is the right way to be wrong about somebody's files.
+    """
+    try:
+        if not folder.is_dir() or audio_in(folder):
+            return
+        for name in COVER_NAMES:
+            for suffix in COVER_SUFFIXES:
+                cover = folder / f"{name}{suffix}"
+                if not cover.is_file():
+                    continue
+                data = cover.read_bytes()
+                if any((there / cover.name).is_file()
+                       and (there / cover.name).read_bytes() == data
+                       for there in went_to if there != folder):
+                    cover.unlink()
+    except OSError:
+        log.debug("could not tidy %s", folder, exc_info=True)
+    _prune_upwards(folder, stop_at)
+
+
 def retag_album(space: workspace.Workspace, folder: Path,
                 **fields: Any) -> list[Filed]:
     """Change what a whole folder says it is, and move it to match.
@@ -303,7 +333,8 @@ def retag_album(space: workspace.Workspace, folder: Path,
 
     after_retag(space, files, was)
     filed = [file_track(space, path) for path in files]
-    _prune_upwards(folder, space.library_path)
+    leave_folder(folder, {one.path.parent for one in filed},
+                  space.library_path)
     return filed
 
 
@@ -332,7 +363,7 @@ def retag_track(space: workspace.Workspace, path: Path,
     was = path.parent
     filed = file_track(space, path, adopt_album=not moving)
     if filed.path.parent != was:
-        _prune_upwards(was, space.library_path)
+        leave_folder(was, {filed.path.parent}, space.library_path)
     return filed
 
 

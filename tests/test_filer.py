@@ -579,9 +579,11 @@ def test_the_emptied_folder_is_removed(space):
 
 
 def test_a_folder_that_still_holds_something_is_kept(space):
+    """A cover with an identical copy where the tracks went has moved with
+    them (M11). Anything else is somebody else's file."""
     filed = album_on_disk(space, "Unknown Artist", "Unknown Album", ["One"])
     was = filed[0].path.parent
-    (was / "cover.jpg").write_bytes(b"art")
+    (was / "notes.txt").write_text("rip log", encoding="utf-8")
 
     filer.retag_album(space, was, albumartist="Real", album="Record")
 
@@ -879,3 +881,42 @@ def test_a_cover_in_a_folder_dropped_into_the_inbox_is_carried(space, tmp_path):
     filed = filer.file_track(space, arrived)
 
     assert (filed.path.parent / "cover.jpg").read_bytes() == b"its own"
+
+
+# A cover is copied along with the tracks, so a folder every track had left
+# still held cover.jpg and was never pruned (CODE_REVIEW M11).
+
+def test_a_renamed_albums_old_folder_is_removed_cover_and_all(space):
+    filed = album_on_disk(space, "Old Artist", "Old Album", ["One"])
+    old = filed[0].path.parent
+    (old / "cover.jpg").write_bytes(b"art")
+
+    moved = filer.retag_album(space, old, albumartist="New Artist",
+                              album="New Album")
+
+    assert not old.exists()
+    assert not old.parent.exists()
+    assert (moved[0].path.parent / "cover.jpg").read_bytes() == b"art"
+
+
+def test_a_cover_that_did_not_travel_keeps_the_folder(space):
+    filed = album_on_disk(space, "Old Artist", "Old Album", ["One"])
+    old = filed[0].path.parent
+    (old / "cover.jpg").write_bytes(b"old art")
+    target = space.library_path / "New Artist" / "New Album"
+    target.mkdir(parents=True)
+    (target / "cover.jpg").write_bytes(b"different art")
+
+    filer.retag_album(space, old, albumartist="New Artist", album="New Album")
+
+    assert (old / "cover.jpg").read_bytes() == b"old art"
+
+
+def test_a_track_moving_out_of_an_album_leaves_its_cover_for_the_rest(space):
+    filed = album_on_disk(space, "Artist", "Album", ["One", "Two"])
+    folder = filed[0].path.parent
+    (folder / "cover.jpg").write_bytes(b"art")
+
+    filer.retag_track(space, filed[0].path, album="Elsewhere")
+
+    assert (folder / "cover.jpg").exists()

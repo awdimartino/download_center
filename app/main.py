@@ -1867,8 +1867,10 @@ async def library_match_apply(
         # Raises if beets left the files disagreeing about their album; the
         # operation then fails with that message and nothing moves.
         result["album_uuid"] = filer.after_retag(space, retagged, was)
-        result["filed"] = [str(filer.file_track(space, one).path)
-                           for one in retagged]
+        filed = [filer.file_track(space, one).path for one in retagged]
+        result["filed"] = [str(one) for one in filed]
+        filer.leave_folder(path, {one.parent for one in filed},
+                           space.library_path)
         # Last, so an album whose retag did not go through stays in review.
         _reviewed(session.identity, body.library_id, ids, "matched")
         navidrome.notify()

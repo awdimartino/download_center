@@ -421,13 +421,19 @@ it less likely.
       library folder by hand, not through the inbox, is not noticed.
       Found in the browser checks: a fresh album could not be edited.
 
-- [ ] **M11. Retags leave the old folder behind.** `app/main.py:1814-1835`,
+- [x] **M11. Retags leave the old folder behind.** `app/main.py:1814-1835`,
       `app/filer.py:264-280, 414-445`. *Use this* never prunes; elsewhere
       `_carry_cover` *copies* `cover.jpg` (and beets' fetchart adds one), so
       the old folder is never empty and is never pruned. Every rename, match
       or combine leaves `OldArtist/OldAlbum/cover.jpg`.
       *Fix:* once no audio remains, remove carried covers and prune; call it
       from *Use this* too.
+      **Fixed:** `filer.leave_folder`, used by album and track retags (so
+      combine) and by *Use this*: once no audio is left, a cover is removed
+      only if a byte-identical copy now sits where the tracks went, then the
+      folder is pruned. Any other file keeps the folder. An older test said
+      a folder holding cover.jpg must be kept; it now uses a rip log, since
+      a cover with an identical copy has in effect moved. Reproduced first.
 
 - [ ] **M12. Combine: an album already called the target name stays in a
       non-canonical folder; renumbering ignores discs.** `app/combine.py:76-82, 106-118`.
