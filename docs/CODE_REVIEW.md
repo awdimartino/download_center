@@ -119,7 +119,7 @@ it less likely.
 
 ## High
 
-- [ ] **H1. A MusicBrainz match reports success, and marks the album
+- [x] **H1. A MusicBrainz match reports success, and marks the album
       reviewed, even when beets applied nothing.** `app/beets_match.py:152-171`,
       `app/beets_runner.py:269-289`, `app/main.py:1819-1822`. When the
       chosen release is not among beets' candidates, `apply_choice` prints
@@ -129,6 +129,10 @@ it less likely.
       branch can never fire.
       *Fix:* parse the last JSON line, as `candidates()` already does, and
       only mark reviewed when `applied` is true.
+      **Fixed:** `import_chosen` reads beets_match's answer (shared
+      `_answer` with `candidates`); `applied: false` is `skipped: 1`, an
+      unreadable answer is a failure. The route already marked reviewed only
+      on `imported`. Reproduced first with the subprocess faked.
 
 - [ ] **H2. Applying a match stamps the new album UUID onto files beets did
       not retag.** `app/filer.py:361-406`, `app/main.py:1830-1833`.

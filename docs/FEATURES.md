@@ -697,7 +697,8 @@ that release.
   fetches and embeds art) and nothing else. Then the album UUID is
   re-pointed and the filer moves each file. One function decides where a
   track lives.
-- The album is marked reviewed ("matched").
+- The album is marked reviewed ("matched") only if beets actually applied
+  the release; if it did not, the panel says the album is unchanged.
 - Lookups run one at a time for the whole server. Asking about a second
   album while one is in flight is refused with a message, an answer is shown
   only under the album it was asked about, and **Use this** applies only a

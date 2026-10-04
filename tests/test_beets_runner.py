@@ -235,7 +235,8 @@ def _real_space(tmp_path, monkeypatch):
 
 def test_a_retag_is_judged_by_what_beets_returned(monkeypatch, tmp_path):
     monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
-    _fake_subprocess(monkeypatch, stdout="", returncode=0)
+    _fake_subprocess(monkeypatch, returncode=0,
+                     stdout='plugin chatter\n{"applied": true, "chosen": "mb-1"}\n')
 
     result = beets_runner.import_chosen(_space(tmp_path), tmp_path / "a", "mb-1")
 
@@ -310,3 +311,29 @@ def test_applying_a_match_never_moves_files_whatever_the_config_says(tmp_path):
     assert result.returncode == 0, result.stderr
     seen = json.loads(result.stdout.strip().splitlines()[-1])
     assert seen == {"move": False, "copy": False, "write": True}
+
+
+# beets_match exits 0 and prints `"applied": false` when the chosen release
+# was not among beets' candidates. That used to be reported as a retag, and
+# the album left the review queue for good (CODE_REVIEW H1).
+
+def test_a_release_beets_did_not_apply_is_not_a_retag(monkeypatch, tmp_path):
+    monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
+    _fake_subprocess(monkeypatch, returncode=0,
+                     stdout='{"applied": false, "chosen": "mb-1"}\n')
+
+    result = beets_runner.import_chosen(_space(tmp_path), tmp_path / "a", "mb-1")
+
+    assert result["imported"] == 0
+    assert result["skipped"] == 1
+    assert not result["failed"]
+
+
+def test_an_unreadable_apply_answer_is_a_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(beets_runner.settings, "beets_enabled", True)
+    _fake_subprocess(monkeypatch, stdout="", returncode=0)
+
+    result = beets_runner.import_chosen(_space(tmp_path), tmp_path / "a", "mb-1")
+
+    assert result["imported"] == 0
+    assert result["failed"]

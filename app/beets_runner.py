@@ -192,6 +192,26 @@ def ensure_config(space: workspace.Workspace) -> Path:
 MATCH_TIMEOUT = 180
 
 
+def _answer(stdout: str | None) -> dict[str, Any] | None:
+    """The JSON line `app.beets_match` printed, or None.
+
+    Scanned backwards for the answer rather than assuming it is the last
+    line. Beets talks on the way past - plugins announce missing API keys,
+    and a database migration prints a backup path per table - and it does
+    some of it *after* the command has run. Anchoring on either end of the
+    output is a silent failure waiting for the next beets release.
+    """
+    for line in reversed((stdout or "").splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 def candidates(space: workspace.Workspace, path: Path) -> dict[str, Any]:
     """What beets would match this path against, in its own order."""
     if not settings.beets_enabled:
@@ -215,21 +235,7 @@ def candidates(space: workspace.Workspace, path: Path) -> dict[str, Any]:
     except FileNotFoundError:
         return {"error": "beets is not available here", "candidates": []}
 
-    # Scanned backwards for the answer rather than assuming it is the last
-    # line. Beets talks on the way past - plugins announce missing API keys,
-    # and a database migration prints a backup path per table - and it does
-    # some of it *after* the command has run. Anchoring on either end of the
-    # output is a silent failure waiting for the next beets release.
-    answer = None
-    for line in reversed((result.stdout or "").splitlines()):
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            answer = json.loads(line)
-            break
-        except json.JSONDecodeError:
-            continue
+    answer = _answer(result.stdout)
     if answer is None:
         log.warning("could not read the match output for %s: %s",
                     path.name, (result.stdout or result.stderr)[-300:])
@@ -273,13 +279,26 @@ def import_chosen(space: workspace.Workspace, path: Path,
         return {"ran": True, "imported": 0, "skipped": 0,
                 "failed": [f"{path.name}: {detail}"]}
 
-    # The subprocess's own exit code, not a count of what beets indexed.
+    # What beets_match says it applied, not a count of what beets indexed.
     # Counting rows answered "did an import file something new", which a
     # retag never does: beets already has these files, so the count never
     # grew, every retag reported "the album is unchanged", and the album
-    # UUID was never re-pointed - leaving the registry describing an album
-    # that no longer exists under that name.
-    #
+    # UUID was never re-pointed. Nor is a clean exit enough: when the chosen
+    # release is not among beets' candidates, beets_match skips, prints
+    # `"applied": false` and exits 0 - which used to be reported as a retag
+    # and took the album out of the review queue for good.
+    answer = _answer(result.stdout)
+    if answer is None:
+        log.warning("could not read the apply output for %s: %s",
+                    path.name, output[-300:])
+        return {"ran": True, "imported": 0, "skipped": 0,
+                "failed": [f"{path.name}: beets did not answer in a form "
+                           "this could read"]}
+    if not answer.get("applied"):
+        log.info("beets did not apply %s to %s", release_id, path.name)
+        return {"ran": True, "imported": 0, "skipped": 1, "failed": [],
+                "chosen": release_id}
+
     # Identity is not written here either. The caller re-points the album
     # UUID through the registry - see `filer.after_retag` - because which
     # album these files are on is a question the registry answers and beets
