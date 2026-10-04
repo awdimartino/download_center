@@ -36,7 +36,7 @@ holds a four-core machine to one core (11.92 cpu-seconds unbounded against
 3.05 bounded over the same three seconds):
 
     docker run --rm --cpus=1.0 -v ...:/music -v ...:/config \\
-        --entrypoint python ghcr.io/awdimartino/download_center:latest \\
+        --entrypoint python ghcr.io/awdimartino/navidrome-companion:latest \\
         -m tools.fingerprint /music --api-key KEY
 """
 
@@ -136,7 +136,7 @@ def lookup(api_key: str, duration: int, fp: str) -> dict | None:
             data={"client": api_key, "duration": duration, "fingerprint": fp,
                   "meta": "recordings", "format": "json"},
             timeout=LOOKUP_TIMEOUT,
-            headers={"User-Agent": "download-center-fingerprint"},
+            headers={"User-Agent": "navidrome-companion-fingerprint"},
         )
     except requests.RequestException as exc:
         print(f"  ! lookup failed: {str(exc)[:80]}", flush=True)

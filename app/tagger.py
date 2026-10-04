@@ -19,7 +19,7 @@ from mutagen.id3._util import ID3NoHeaderError
 
 from . import covers
 
-log = logging.getLogger("download_center.tagger")
+log = logging.getLogger("navidrome_companion.tagger")
 
 
 def tag(path: Path, item: dict[str, Any], embed_cover: bool = True) -> None:

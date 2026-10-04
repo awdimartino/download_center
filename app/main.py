@@ -35,7 +35,7 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-7s %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("download_center")
+log = logging.getLogger("navidrome_companion")
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -351,7 +351,7 @@ def _library_roots() -> list[Path]:
 _warned_missing: set[str] = set()
 
 
-app = FastAPI(title="Download Center", lifespan=lifespan)
+app = FastAPI(title="Navidrome Companion", lifespan=lifespan)
 
 
 class TextGZip:

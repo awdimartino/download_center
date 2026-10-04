@@ -23,7 +23,7 @@ from . import downloader, inbox, matcher, navidrome, tagger
 from . import workspace
 from .config import settings
 
-log = logging.getLogger("download_center.worker")
+log = logging.getLogger("navidrome_companion.worker")
 
 # Delay before each retry. A transient 429 or dropped connection clears
 # quickly; anything still failing after half a minute is not going to fix

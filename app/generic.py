@@ -17,7 +17,7 @@ from typing import Any
 
 import yt_dlp
 
-log = logging.getLogger("download_center.generic")
+log = logging.getLogger("navidrome_companion.generic")
 
 
 class ResolveError(Exception):

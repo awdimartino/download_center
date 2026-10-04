@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Awaitable, Callable
 
-log = logging.getLogger("download_center.operations")
+log = logging.getLogger("navidrome_companion.operations")
 
 IDLE, RUNNING, DONE, FAILED = "idle", "running", "done", "failed"
 

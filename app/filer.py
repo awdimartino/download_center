@@ -37,7 +37,7 @@ from typing import Any
 
 from . import registry, uuidtags, workspace
 
-log = logging.getLogger("download_center.filer")
+log = logging.getLogger("navidrome_companion.filer")
 
 # Characters Windows forbids in a filename, plus control characters.
 # The backslash is escaped: inside a character class `\|` escapes the pipe

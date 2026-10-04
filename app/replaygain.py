@@ -30,7 +30,7 @@ from typing import Any
 
 from . import inbox, library, navidrome, operations
 
-log = logging.getLogger("download_center.replaygain")
+log = logging.getLogger("navidrome_companion.replaygain")
 
 # The operation's name, for starting it, reporting on it and stopping it.
 NAME = "replaygain"

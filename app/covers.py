@@ -24,7 +24,7 @@ from typing import Any
 
 from PIL import Image, ImageStat
 
-log = logging.getLogger("download_center.covers")
+log = logging.getLogger("navidrome_companion.covers")
 
 
 # urllib honours file:// and ftp:// as happily as http. The URL comes from
@@ -46,7 +46,7 @@ def fetch(url: str) -> bytes | None:
         log.debug("refusing to fetch cover over %r", scheme)
         return None
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "download-center"})
+        request = urllib.request.Request(url, headers={"User-Agent": "navidrome-companion"})
         with urllib.request.urlopen(request, timeout=15) as response:
             return response.read()
     except Exception as exc:

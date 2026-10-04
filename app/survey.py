@@ -48,7 +48,7 @@ from typing import Any
 
 from . import filer, registry, uuidtags, workspace
 
-log = logging.getLogger("download_center.survey")
+log = logging.getLogger("navidrome_companion.survey")
 
 # How many examples to carry per category. Enough to go and look at one;
 # not so many that the report is the problem.

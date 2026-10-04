@@ -48,7 +48,7 @@ from typing import Any
 from . import registry, store, survey as survey_module, workspace
 from .config import settings
 
-log = logging.getLogger("download_center.backfill")
+log = logging.getLogger("navidrome_companion.backfill")
 
 
 @dataclass

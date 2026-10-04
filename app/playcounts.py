@@ -48,7 +48,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from . import memo, navidrome, store
 from .config import settings
 
-log = logging.getLogger("download_center.playcounts")
+log = logging.getLogger("navidrome_companion.playcounts")
 
 # The tag Navidrome derives a track's persistent id from. Stored parsed in
 # media_file.tags, so it can be read in the same query.

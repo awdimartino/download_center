@@ -40,7 +40,7 @@ from typing import Any
 
 from . import navidrome
 
-log = logging.getLogger("download_center.playlists")
+log = logging.getLogger("navidrome_companion.playlists")
 
 
 @dataclass(frozen=True)

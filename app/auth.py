@@ -28,7 +28,7 @@ from typing import Any
 
 from . import navidrome
 
-log = logging.getLogger("download_center.auth")
+log = logging.getLogger("navidrome_companion.auth")
 
 COOKIE = "dc_session"
 # Long enough not to interrupt an afternoon, short enough that a forgotten

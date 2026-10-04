@@ -1,8 +1,9 @@
-# Download Center — what it is and where it is going
+# Navidrome Companion — what it is and where it is going
 
 Working document. The repository copy is the source of truth; if something
 here disagrees with the code, the code is what shipped and this is what we
-meant. Updated as work lands.
+meant. How things work today is in [FEATURES.md](FEATURES.md); known
+defects are in [CODE_REVIEW.md](CODE_REVIEW.md).
 
 Last updated: 2026-10-04.
 
@@ -21,8 +22,7 @@ do it worse — that is why the playlist editor covers rules and not track
 ordering.
 
 **Library maintenance.** The work otherwise done over SSH: dedupe, tag
-audit, ingest, and — not yet built — editing metadata by hand, pulling a
-release from MusicBrainz on request, indexing and removing tracks.
+audit, ingest, metadata editing, MusicBrainz matching, covers, ReplayGain.
 
 Everything is reachable on a phone. That is a requirement, not a nicety:
 the maintenance jobs are exactly the ones you want to trigger from the
@@ -37,9 +37,8 @@ sofa.
 2. **Everything is per-user.** Which library a download lands in, whose
    stars a duplicate carries, whose playlists these are. Derived from
    Navidrome's own account records, never configured here.
-3. **Nothing is deleted.** Files are moved to a quarantine directory. This
-   already holds for duplicates and must hold for track deletion when it
-   arrives.
+3. **Nothing is deleted.** Files are moved to a quarantine directory, with a
+   record of where they came from.
 4. **Original code.** No lifting from SpotTube or similar.
 5. **Identity is the UUID.** `navidrome_uuid` on the file survives re-tags,
    moves and a rebuilt database. Anything that needs to refer to a track
@@ -47,429 +46,48 @@ sofa.
 
 ---
 
-## In flight — 2026-09-27 feedback round
+## Now
 
-The playlist editor shipped and is deployed. Next is the 2026-09-27
-feedback round, batched into sessions below. Functionality and bugs come
-first; looks and MusicBrainz seeding come last. One session per `/clear`.
-Tick items as they land.
+The 2026-09-27 feedback round is finished apart from the code review, which
+has been done and written up; fixing what it found comes next.
 
-### Functionality and bugs
+- [x] **Session 11 — code review** of everything. Done 2026-10-04; findings
+      in [CODE_REVIEW.md](CODE_REVIEW.md), ordered by severity, **not yet
+      fixed**. Work through it top-down before new features.
+- [ ] **Fix the review's critical and high findings.** One session per
+      group of related findings; tick them off in CODE_REVIEW.md.
 
-- [x] **Session 1 — bugs and quick wins.** Done 2026-09-28.
-  - [x] Smart playlists count every library's tracks, not the signed-in
-        user's (Kelly: `play count > -1` gives ~7,000 tracks). Every save
-        now writes `library_id` scoping to the libraries the owner can
-        see; existing unscoped playlists say so on their card until saved.
-  - [x] Library: "Show more" fires again after a track edit and loses your
-        place. Edits re-read the rows on screen and keep the album put.
-  - [x] Library: MusicBrainz search status in a sticky bar, not at the top
-        of the page.
-  - [x] Library: an "untouched / needs review" filter. Unmatched and not
-        yet matched, edited or marked reviewed here (`album_reviewed`).
-  - [x] Library: a ReplayGain button (per album and "all missing"), with a
-        count of untagged tracks. rsgain, progress and Stop in the sticky
-        bar.
-- [x] **Session 2 — file drop page.** Done 2026-09-28. A "Drop" tab: drag
-      files or a whole folder in, or pick them, and each upload lands in
-      `POST /api/inbox/upload`, which writes it into a per-drop folder inside
-      the person's inbox and backdates its mtime so the quiet period does not
-      make it wait - an HTTP upload is not an SMB copy that might still be
-      arriving, the request already knows it is finished. `POST
-      /api/inbox/upload/finish` then drains the inbox immediately rather than
-      waiting for the 15s poll. The per-drop folder (`inbox.upload_root`) is
-      what lets a dragged album's cover art be carried onto its tracks
-      without two different albums uploaded around the same time being able
-      to hand each other's cover to the wrong one.
-- [x] **Session 3 — merge Queue and Browse.** Done 2026-09-28. One nav
-      item ("Browse"), one input and one submit button. `looksLikeUrl()`
-      (the same `^https?://` test `generic.looks_like_url` uses server-side)
-      decides: a URL posts to `/api/jobs` as before, anything else runs the
-      existing Spotify search. The jobs list, its empty state, the crumb and
-      the results grid now all live in `#view-browse`; switching the kind
-      filter re-searches only when the field does not hold a URL.
-- [x] **Session 4 — merge Home and Listening.** Done 2026-09-28. The
-      Listening nav item is gone; its range buttons, coverage stats and
-      ranked track list now live at the bottom of Home, under the existing
-      dashboard. The hero fact and the "In `<year>`" tile scroll straight
-      to that list ("In `<year>`" also switches it to the Year range); "This
-      month" scrolls to the monthly chart, which already carries that
-      number's breakdown; "Your library" opens the Library view. All four
-      were candidates to drop rather than link — each found a genuine
-      target instead.
-- [x] **Session 5 — more stats.** Done 2026-09-28. Top albums, top genres
-      (from the track's first genre tag - Navidrome's genre tables are
-      untouched, left for Session 8), hourly distribution and longest
-      session (a gap of 30+ minutes starts a new one; sessions are found
-      over the whole history first, then filtered to the ones that started
-      in range, so a range boundary can't split one and shorten both
-      halves) join the existing "Every track" list under one `/api/playcounts/top`
-      response. The range switch - now Today / Month / Year / All time - was
-      already shared by every chart in the Listening section, since they all
-      render from that one fetch; the monthly trend and top-artist bars
-      above it stay on their own fixed windows (24 months, 12 months), which
-      the switch was never meant to shorten.
-- [x] **Session 6 — library editing without dropdowns.** Done 2026-09-28.
-      A track's number, title and artist are inputs directly in its row and
-      save on blur when changed - no "Edit" button and no separate panel
-      to open first. Disc number and moving a track to another album are
-      rarer, so they moved behind a "More" toggle rather than the row
-      itself. The album editor gained a debounced search across every
-      album in the library (`GET /api/library`, the same endpoint the
-      panel's own search box uses); picking a result fills the artist and
-      album fields with a name known to exist, which is what makes
-      retagging into it a deliberate merge rather than a hopeful retype.
-      No dropdowns existed in the editors before this session either - the
-      framing was about the edit flow, not literal `<select>` elements.
-- [x] **Session 7 — a page per track / album UUID.** Done 2026-09-28. A
-      "Lookup" tab: paste the id Navidrome already uses as the UUID (`mf.id`
-      for a track, the shared `album_id` for an album - not the raw
-      `navidrome_uuid` tag, which nothing else in the app queries directly
-      either) and `GET /api/lookup` opens it, track first since a track id
-      and an album id are typed the same way. Quarantining a track or every
-      track in an album reuses `duplicates.py`'s own directory and ledger -
-      `duplicates.record_quarantine`'s `keeper` is now optional, since a
-      manual removal has no other copy to migrate a star onto, and the
-      collision-avoiding move itself was pulled out of `resolve()` into
-      `_set_aside()` so the two paths a file can take into quarantine can't
-      drift apart. Unlike the original per-group duplicate button (Code
-      quality, item 1), this one confirms before moving anything, from the
-      start.
-      **Later removed** (still 2026-09-28): the Lookup tab and `GET
-      /api/lookup` are gone. Quarantine moved to where the album already is
-      - a "Quarantine" button per album row (`POST /api/library/quarantine`)
-      and "Quarantine this track" behind a track's "More" (`POST
-      /api/library/track/quarantine`) - so pasting an id in a separate tab is
-      no longer the only door in. Both endpoints get their `library_id`/path
-      from `library.tracks`, the same validated read the row itself came
-      from, never from the request body; `_copy_from_lookup` is now
-      `_copy_from_track_row` for the same reason. The underlying
-      `quarantine_one`/`quarantine_many`/`_set_aside` plumbing is unchanged.
-- [x] **Session 8 — genre tally.** Done 2026-09-28. A "Genres" toggle in
-      the Library panel's header, next to Rescan, opens `GET
-      /api/library/genres` (`library.genre_tally`): every genre string a
-      track carries, exactly as tagged and counted across the whole
-      library - deliberately not merged or casefolded, since the point is
-      to surface spelling and case variants ("Electronic" next to
-      "electronic") for a later merge step, not hide them. Reads the same
-      first-genre-tag JSON path Session 5's `top_genres` already reads, but
-      library-scoped rather than play-scoped. Untagged tracks are counted
-      separately rather than folded into the list. Renders with the same
-      `barRows` helper the Listening section's artist/album/genre bars
-      already use. Fetched fresh on every open - one grouped aggregate
-      query, cheap enough not to need the Duplicates panel's cache-on-first-
-      open treatment. Merge and rename moved to the `### Last` section
-      below, at the user's steer - a tally was worth landing on its own.
-- [x] **Library redesign and combine.** Done 2026-10-03, from the mockup in
-      `design/library-redesign/library.html`. Albums / Artists / Needs
-      attention tabs, a cover grid with sort and Albums/Singles chips, songs
-      in search results, the album editor moved into a side panel, and a
-      select mode whose main action is **Combine into album** (several
-      albums and loose tracks into one, with order and cover chosen first;
-      Spotify suggests the album name). YouTube covers are now squared on
-      download (`covers.square`), with **Fetch cover** in the panel and
-      **Square all** in Needs attention for what arrived before. See
-      ARCHITECTURE.md, "Library". Not built from the mockup: an undo after
-      a combine - a combine confirms in its own dialog instead.
-- [ ] **Session 9 — rename and setup docs.** Rename to Navidrome Companion
-      (image, compose, README; needs a Pi redeploy), then a from-scratch
-      setup guide: container, mounts, Navidrome PID config, beets config,
-      Pi deploy.
+### Next
 
-### Last
-
-- [ ] **Session 10 — split `app.js` into ES modules** (no bundler).
-      Optional; worth it only if the aesthetic work below goes ahead.
-- [ ] **Session 11 — code review** of everything above.
-- [ ] **Sessions 12–14 — aesthetics.** Use desktop width (grid / multiple
-      columns), an HTML and CSS polish pass, a top-tracks cover collage on
-      Home. Open-ended: set a scope per session.
-- [ ] **Sessions 15+ — MusicBrainz seeding from Spotify data.** A "seed a
-      release" button that opens MusicBrainz's add-release form pre-filled,
-      using its existing seeding format. Only if the genre and ReplayGain
-      cleanup shows enough releases need it.
-- [ ] **Sessions 16+ — genre merge and rename.** Split out of Session 8,
-      which shipped the tally alone. Reuse the album editor's merge-search
-      pattern (Session 6): a debounced search across the genre tally,
-      picking a target folds the source genre's tracks into it. Needs a
-      write path first - `genre` is not in `filer._EASY`, so `write_tags`
-      silently drops it today; every track carrying the source genre has to
-      be retagged and rescanned, which is a bigger write than the album
-      editor's one-folder retag.
-- [ ] **Later, not vital — folders holding more than one album.** Found
-      2026-09-28: 57 of Alex's folders carry more than one album UUID
-      (e.g. `Aiden Williams/Believe` holds *Believe*, *Breakup* and
-      *Continuum EP*; several `Artist/Unknown Album` folders hold two).
-      Kelly's library was not checked. The Library treats a folder as one
-      album, so **Save album** and **Find matches → Use this** on such a row
-      retag every file in it as one record, merging them; ReplayGain gives
-      them one album gain. Likely cause, unverified: `unfuse.py` split
-      fused albums by tag without moving files. Plan: (1) a guard - flag
-      those rows and refuse folder-wide rename/match on them; (2) a
-      throwaway script re-filing those tracks by their own tags, with the
-      move list reviewed before it runs. UUIDs do not change, so stars and
-      plays are unaffected. Until then, avoid renaming or matching a row
-      whose tracks show different albums.
-
-See also [ARCHITECTURE.md](ARCHITECTURE.md) for how the code works and
-[HANDOFF.md](HANDOFF.md) for picking this up in a new conversation.
-
----
-
-## Next
-
-### 1. Play-count tracking — SHIPPED 2026-09-06
-
-**Why it can't wait.** Navidrome's `annotation` table stores a *cumulative*
-`play_count` and only the *most recent* `play_date`. There are 6,623 plays
-recorded since 2025-11-27 and no way to ask what was played in March. Every
-day without snapshots is a day of history that cannot be recovered later.
-This is the only item on the list with a clock on it.
-
-**Design**
-
-- A nightly job reads Navidrome's database (read-only) and writes to this
-  app's own `state.db`.
-- Rows are keyed by **track UUID and user**, not `media_file.id`.
-- **Only changed rows are stored.** A full capture is ~2,477 rows; most
-  nights only a few dozen tracks are played. Changed-only keeps a year in
-  the tens of thousands rather than ~900k.
-- Daily plays are the difference between consecutive snapshots.
-- **Negative deltas are an anomaly, not a number.** A re-import or a counter
-  reset can lower a count; that gets recorded as such rather than emitted as
-  minus-four plays.
-- The first night is a baseline. Real data starts on the second.
-
-**Built.** `app/playcounts.py`, a `_snapshot_loop` in main.py, and
-`play_snapshot` / `play_anomaly` in state.db. The loop asks "has today been
-done" every 30 minutes rather than firing at a clock time: a container
-restarting at 3am would simply miss the day, and a missed day cannot be
-recovered. `GET /api/playcounts` reports whether it is working;
-`POST /api/playcounts/snapshot` takes one now (admin only - it reads every
-account's listening).
-
-Verified against a copy of the live database before shipping: 2,429
-(track, user) pairs carrying 6,568 plays, alex 3,479 and kelly 3,089.
-
-**50 annotation rows cannot be tracked, and a full scan does not help.**
-The first guess was "stamped on disk but not yet in the index"; a full scan
-was run and changed nothing, because the files are simply *gone* - deleted
-during the migration. 49 of them sit in directories Navidrome has marked
-`folder.missing = 1` while leaving `media_file.missing = 0`, which is the
-documented gotcha, and the snapshot query was not joining `folder`. Fixed:
-snapshots now count only genuinely live tracks.
-
-Their 51 plays are real history of tracks that no longer exist. Nothing
-recovers those files; the rows could be purged in Navidrome if the clutter
-matters. The remaining one is a `.wav` whose 6 plays are permanently
-untrackable, because the format cannot carry the tag.
-
-**Last.fm's place.** It has genuine per-scrobble timestamps going back
-further than any snapshot could, so it is the better source for *history*.
-But it matches by artist and title rather than UUID, and it is connected for
-one account. Kelly has 3,089 plays. Snapshots cover both users uniformly and
-depend on nothing external. Use Last.fm to backfill, snapshots as the
-ongoing truth.
-
-### 2. Last.fm backfill — done, and the tooling removed
-
-Snapshots start history from tonight. Last.fm already holds the part that
-came before, with genuine per-scrobble timestamps, and importing it once
-gives the stats something to say on day one instead of in a month.
-
-**Why the matching should work.** Last.fm stores the artist and track name
-the scrobbler sent — it does not resolve them to a MusicBrainz entity. Those
-strings came from the tags on these files. So both sides of the match are
-our own metadata, which is a far easier problem than matching against a
-third party's catalogue.
-
-**Design**
-
-- Run once, by hand, per user. Not a background job.
-- Fetch the full scrobble history from Last.fm's API, then match each
-  scrobble to a track UUID by normalised artist and title, with duration as
-  a tie-breaker where several tracks match.
-- **Report before writing.** Matched, ambiguous and unmatched counts, with
-  a sample of each. A backfill that quietly matched 60% would poison every
-  statistic built on it afterwards.
-- Store scrobbles with their real timestamps, in the same table shape as
-  snapshot-derived plays but flagged as imported — so a later question can
-  ask about either source, and the join between them is visible rather than
-  assumed.
-- Idempotent: running it twice must not double anyone's history.
-
-Only alex's account is connected to Last.fm. Kelly's 3,089 plays have no
-history to import, which is the argument for snapshots carrying the ongoing
-record for both.
-
-**Run 2026-09-06, then re-run after a hand check.** 49,524 scrobbles back
-to 2022-09-18.
-
-| | first pass | after hand-checking |
-|---|---|---|
-| matched | 33,615 | **37,801** |
-| ambiguous | 2,585 | 3,402 |
-| unmatched | 13,321 | 8,318 |
-
-35,370 day/track rows across 1,294 days. The first pass matched on exact
-normalised artist and title, which missed four thousand plays for reasons
-that all turned out to be spelling rather than substance:
-
-- **Collaboration credits.** Last.fm scrobbles the primary artist; the tag
-  carries the whole credit. "Moe Shop" against "Moe Shop w/ TORIENA".
-- **Accents and curly punctuation.** "Étoiles" against "étoiles",
-  "Mind's Eye" against "Mind’s Eye".
-- **CJK spacing.** "愛して 愛して 愛して" against "愛して愛して愛して".
-- **Bilingual titles.** A tag holding the native and English names together:
-  "驟雨の狭間 rainshower" against a scrobble of "Rainshower".
-- **Romanised artist names**, which needed a hand-curated list rather than a
-  rule: Camellia/かめりあ, Hakushi Hasegawa/長谷川白紙, Kikuo/きくお and thirty
-  more. Eight plausible-looking pairs were deliberately rejected because
-  they are different artists sharing a title - 坂本龍一/salvia palth,
-  Masayoshi Soken/植松伸夫 (two Final Fantasy composers), Yurie Kokubu against
-  a vaporwave producer who samples her.
-
-The 8,318 still unmatched are music that is genuinely not in the library.
-The 3,402 ambiguous are duplicates: resolving the 199 duplicate groups would
-convert most of them.
-
-A warning for anyone repeating this: the first audit scored candidates with
-`token_set_ratio`, which returns 100 when one title's tokens are a subset of
-the other's - so a library track called "o" matched "Last Train At 25
-O’clock" perfectly. It flatters the numbers and hides real misses in the
-low band at the same time. Compare on a compacted form and require the
-artist to agree.
-
-**Final numbers**, after resolving the ambiguous cases: **41,203 plays**
-across 38,559 day/track rows and 1,298 days. The 3,402 that matched several
-*files* of one recording are not ambiguous about what was played, only about
-which copy - so each went to the copy `duplicates.py` would keep (lossless,
-then bitrate, then size). If those 199 duplicate groups are ever resolved,
-the losers are quarantined and the keeper survives, so the history already
-points at the file that will still be there.
-
-8,318 scrobbles remain unmatched. They are music that is genuinely not in
-the library, checked by hand.
-
-**`app/lastfm.py` and its tests are gone**, along with the `lastfm_api_key`
-and `lastfm_secret` settings and the credentials on the Pi. This was a
-one-time import; keeping a fetcher, a matcher and a shared secret around for
-something that will not run again is cost with no reader. What stays is the
-data: `play_imported`, and `plays_between` reading it beside the snapshots.
-
-Undo: `DELETE FROM play_imported WHERE source = 'lastfm'`.
-
-### 3. Health tab — cut down, 2026-09-06
-
-Decided: **keep only what can be acted on.** There are 21 checks in six
-sections today, several asking the same question twice — once of Navidrome's
-database and once of the disk — and a whole tier that exists because of a
-migration that is finished.
-
-| Check | Proposed | Why |
-|---|---|---|
-| Tracks with no ReplayGain | **keep** | 56% covered; there is a job to run |
-| Files Navidrome can no longer find | **keep** | Real, and stars hang off them |
-| Stars and ratings pointing nowhere | **keep** | Real and fixable |
-| Unreadable files | **keep** | 30 broken `.m4a` waiting |
-| Tracks with no MusicBrainz id | **keep** | Feeds the MusicBrainz tooling below |
-| Free space | **keep** | A fact, but one you act on |
-| Tracks with no UUID (database) | **merge** | Same question as the disk check |
-| Files with no UUID (disk) | **merge** | The disk is the authority; keep one row |
-| Duplicate UUIDs (database) | **merge** | Same question asked twice |
-| UUIDs on more than one file (disk) | **merge** | Keep one row |
-| Directories with two album UUIDs | **demote** | Migration artifact; can recur, rarely |
-| Album UUIDs spread across directories | **demote** | As above |
-| Tracks with no album | **cut** | Low value, never acted on |
-| Tracks numbered zero | **cut** | Low value, never acted on |
-| Albums / singles awaiting attention | **cut** | The Staging tab is this, in detail |
-| Oldest staged item | **cut** | As above |
-| Audio files (count) | **cut** | A fact, not a health check |
-| Last scan | **cut** | Status, not health |
-| Uptime | **cut** | Status, not health |
-| Audit (pending) | **keep as control** | It is a button, not a metric |
-
-**Done.** Nine primary rows instead of seventeen, with three behind a
-*show everything* toggle. It ended up close to the table above, with two
-departures worth recording:
-
-- **"Duplicate recordings to review" was added**, not just kept. It was not
-  on the list, but the menu's attention dot could not know about duplicates
-  until you opened that tab - which is exactly when you no longer need
-  telling. `duplicates.find()` measured 0.22s against this library, cheap
-  enough to run in the panel rather than approximate in SQL. An
-  approximation would have disagreed with the Duplicates tab, which is worse
-  than not having the row.
-- **The stale-index check stayed.** It is not in the table because it did
-  not exist when the table was written - it had never once fired, being
-  broken by a missing SQL alias. It is the only thing that can tell "never
-  stamped" from "stamped but the incremental scan skipped it", and those
-  need opposite responses.
-
-The badge counts only the rows on show; one that included hidden rows would
-send you looking for a number the panel does not display.
-
----
-
-### 4. Navigation — burger, both sizes
-
-Decided: **one pattern everywhere.** A menu button opening a full overlay,
-identical on phone and desktop. Costs two taps per navigation; buys room to
-grow past six items and one layout to maintain instead of two.
-
-This replaces the top tabs and the bottom bar. It also removes the reason
-the tab labels need short forms, and the badge-position workarounds that
-came with them.
-
-Carries over: the counts (Health, Duplicates) need to stay visible without
-opening the menu — an unread-style dot on the button when anything needs
-attention.
-
-**Shipped 2026-09-06.** Header is the burger, the current view's name and
-the connection pill; Settings, the username and Sign out moved into the
-overlay. Decided at build time: burger on the left (convention beats reach
-for a control pressed many times a session), and the view name in the header
-because with the tabs gone nothing else says where you are.
-
-One honest gap: the attention dot summarises the Health, Staging and
-Duplicates badges, but only Health and Staging are loaded at sign-in.
-`/api/duplicates` groups every row in the library, so fetching it on every
-page load would put a full scan in the way of the app opening. The dot is
-therefore right about Duplicates only after the panel has been opened once.
-Fixing it properly means a cheap count endpoint, which is worth doing when
-the Health tab is cut down (item 3) and that panel is being touched anyway.
+- [ ] **Split `app/main.py` into routers.** 2,287 lines holding every
+      route. The review proposes a split.
+- [ ] **Folders holding more than one album.** Found 2026-09-28: 57 of
+      Alex's folders carry more than one album UUID (e.g. `Aiden
+      Williams/Believe` holds *Believe*, *Breakup* and *Continuum EP*;
+      several `Artist/Unknown Album` folders hold two). Kelly's library was
+      not checked. The Library treats a folder as one album, so **Save
+      album**, **Find matches → Use this**, **Combine** and ReplayGain treat
+      such a row as one record and merge or mis-measure it. Likely cause,
+      unverified: `unfuse.py` split fused albums by tag without moving
+      files. Plan: (1) a guard - flag those rows and refuse folder-wide
+      actions on them; (2) a throwaway script re-filing those tracks by
+      their own tags, with the move list reviewed before it runs. UUIDs do
+      not change, so stars and plays are unaffected. Until then, avoid
+      renaming or matching a row whose tracks show different albums.
+- [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
+      tally alone. Reuse the album editor's merge-search pattern: a debounced
+      search across the genre tally, picking a target folds the source
+      genre's tracks into it. Needs a write path first - `genre` is not in
+      `filer._EASY`, so `write_tags` silently drops it today; every track
+      carrying the source genre has to be retagged and rescanned.
+- [ ] **MusicBrainz seeding from Spotify data.** A "seed a release" button
+      that opens MusicBrainz's add-release form pre-filled, using its
+      existing seeding format. Only if the genre and ReplayGain cleanup shows
+      enough releases need it.
 
 ---
 
 ## Later
-
-### Library maintenance tools
-
-New, from this conversation. Roughly in order of how much they need
-designing:
-
-- **Manual metadata editing.** Edit tags on a track or album from the
-  browser. Needs care: the file is the truth, Navidrome is a cache, and a
-  write has to be followed by a rescan or the two disagree.
-- **Pull from MusicBrainz on request.** Point at an album, search MusicBrainz,
-  apply the chosen release. This is beets' matcher, driven by hand instead of
-  by confidence thresholds — for the cases where beets refused to guess.
-  **Half of this shipped** (FIXES item 36): *Import as-is* files a refused
-  item under the tags it already has, so nothing is stuck any more. What is
-  left is the choosing — showing the five candidates beets would not pick
-  between, and applying the one you point at. Wanted where the seeded tags
-  are wrong, rather than merely unconfirmed.
-- **Index tracks.** Trigger a scan of a path without waiting for the sweep.
-- **Delete tracks.** Remove from the library. Must quarantine, never
-  `unlink` — the same rule the duplicates flow already follows.
-
-### Wrapped-style stats
-
-The Listening panel is the first half: coverage, and the most played tracks
-over a window, scoped to the signed-in account. What is missing is the
-*shape* of a year - months, discoveries, streaks - which needs more
-snapshots than exist yet. The imported Last.fm history covers the years
-before, so anything periodised over 2022-2026 can be built today.
 
 ### Music recommendations
 
@@ -484,134 +102,71 @@ substitute.
 
 **Likely sources**, both keyed on the MusicBrainz ids the library already
 carries: Last.fm's `track.getSimilar` / `artist.getSimilar` (an API key
-only; the old key was removed with `lastfm.py`, so it needs a new one), and
-ListenBrainz's similar-artist and recommendation data. Seeds come from our
-own play history (`play_snapshot` + `play_imported`) rather than an
+only), and ListenBrainz's similar-artist and recommendation data. Seeds come
+from our own play history (`play_snapshot` + `play_imported`) rather than an
 external account, so it works the same for Kelly. Filter out anything the
-ledger already holds.
+library already holds.
+
+### Wrapped-style stats
+
+Year figures, sessions and the hour-of-day chart are built. What is missing
+is the *shape* of a year — discoveries (first plays), streaks, a month-by-
+month story — which the five-minute timestamps now make possible.
+
+### The candidate picker, beyond beets
+
+*Find matches* shows beets' candidates and applies one. Still open: whether
+Picard would match better than beets for the releases beets ranks badly.
 
 ---
 
-## Code quality
+## Done
 
-Deliberately listed after the features: these are risk and speed, not
-comfort. A review on 2026-09-06 found four things that *are* on fire; they
-are listed under "Found by review" below and take precedence over the
-feature order above.
+The feedback round, in brief. Detail is in FEATURES.md and git history.
 
-### Tests — the real gap
-
-There are **none**. 5,522 lines of Python, and `duplicates.py` moves files
-irreversibly. Every check run while building the playlist editor — the rule
-round-trip against the six real playlists, the validation matrix, the
-browser test proving two Saves make one playlist — lived in a scratchpad and
-is gone.
-
-First tests to write, in order of what they would have caught:
-
-1. `playlists.to_form` / `to_rules` round-trip, against real rule blobs.
-2. Rule validation: empty values, unknown fields, operators a field cannot
-   take, negative limits.
-3. `duplicates.resolve` refusing when a star cannot be migrated.
-4. `workspace.key` and `.owner` marker handling — two users, one directory
-   name.
-5. Health checks against a fixture database.
-
-### CI runs nothing
-
-The workflow builds an arm64 image and pushes it. It does not run tests,
-lint, or a type check. So the feedback loop is: push → four minutes of QEMU
-build → pull on the Pi → hard-refresh → *the user* finds the bug. That loop
-is how the duplicate-save bug was found — in production, after it had made
-three playlists.
-
-Adding a test job that runs before the build changes how every subsequent
-change lands.
-
-### Structure
-
-- **`app/main.py` is 939 lines** — auth, jobs, settings, search, health,
-  duplicates, staging, playlists and websockets in one module. Split into
-  routers.
-- **`app/static/app.js` is 1,215 lines in one global scope.** Six panels
-  sharing globals. The tab switcher already broke once because a view name
-  outlived its markup and took every panel down with it. The burger rewrite
-  is a natural moment to split this per panel.
-- **No linter or formatter config exists.**
-- ~~Two empty stray directories, `config;C` and `untagged;C`.~~ Deleted.
-
-### Found by review — 2026-09-06
-
-A skeptical read of the whole codebase. Full list is in the conversation;
-these are the ones that lose data or hide themselves. Ordered by magnitude.
-
-1. **Resolving a duplicate has no confirmation step**
-   (`app/static/app.js`, `renderGroup`). The bulk auto-resolve confirms and
-   so does deleting a playlist's rules; the per-group button that moves a
-   file out of the library does not. Compounding: the quarantine directory
-   is flat, so album structure is destroyed and two `01 Intro.mp3` collide;
-   nothing records what moved where; and `postDupe` discards the response,
-   so a failed move or an unmigrated star is never shown.
-2. **The duplicate review UI never shows each copy's title** — only the
-   group's first. `normalise()` strips `feat.` clauses, so two different
-   collaborations group together and are presented as identical rows.
-3. **The ledger is global, not per-user** (`app/ledger.py` — no user or
-   library column). The moment Kelly signs in and queues something alex
-   already has, every track is skipped and nothing is written. Directly
-   contradicts rule 2 above. There is also no path that removes a ledger
-   row, so a quarantined track can never be re-downloaded.
-4. **`health.py`'s `indexed_stamped` query is broken and silently
-   suppressed** — `select count(*) from media_file` with no `mf` alias while
-   the WHERE clause says `mf.missing`. It raises `sqlite3.Error`, gets
-   swallowed by a bare `contextlib.suppress`, and so **"Stamped but not yet
-   scanned" has never once fired.** That is the only detector for the
-   failure mode the mtime-preserving stamper deliberately creates.
-
-Second tier, worth fixing but not urgent: long blocking work inside request
-handlers behind process-wide locks (`/api/staging/import` can hold
-`_import_lock` for 900s per path; `/api/health/audit` holds a module lock
-for a whole library walk, and its docstring claims the opposite); the
-websocket pushes whole jobs at 2 Hz and the browser rebuilds every row, with
-one slow client stalling publishes for everyone; the concurrency semaphore
-is per-job so N jobs give N×3 downloads; and `matcher._search` swallows every
-exception, turning a transient 429 into a permanent, never-retried "no
-results".
-
-Smaller, all verified: `sanitize()` does not strip backslashes (`\|` inside
-the character class escapes the pipe, not the backslash);
-`_move_into_place` silently overwrites after 98 collisions despite its
-docstring; `Workspace.key` does disk I/O in a property and changes answer if
-the `.owner` marker does; beets success is detected by string-matching
-`"Skipping"` in human output; `to_form` accepts operators `to_rules` will
-reject, so some playlists open but cannot be saved; `GET /api/settings` is
-not admin-gated and returns `navidrome_url`/`navidrome_user`; sessions are
-never pruned; `pyyaml` is imported but not in `requirements.txt`.
-
-**The pattern worth attacking:** every one of these fails *silently* — a
-bare `suppress`, an `except Exception: return []`, string-matched subprocess
-output, a discarded response body. That is the argument for item 5 below
-being worth more than its position suggests.
+- **Sessions 1–8** (2026-09-28): smart playlists scoped to the owner's
+  libraries; Library status bar, review filter and ReplayGain; the Drop
+  page; Queue merged into Browse; Listening merged into Home; top albums,
+  genres, hourly chart and sessions; inline track editing and the album
+  merge search; quarantine from Library; the genre tally.
+- **Library redesign and Combine** (2026-10-03): Albums / Artists / Needs
+  attention, cover grid, side panel, select mode, combine into album,
+  squared covers.
+- **Session 9 — rename and setup docs** (2026-10-04): Download Center is
+  now **Navidrome Companion** — repository, image
+  (`ghcr.io/awdimartino/navidrome-companion`), compose service, UI and
+  logs; the Pi redeployed under the new name. The docs were rewritten as
+  SETUP.md and FEATURES.md; HANDOFF.md, FIXES.md and ARCHITECTURE.md were
+  folded into them and removed.
+- **Session 10** — `app.js` split into sixteen ES modules, no bundler.
+- **Sessions 12–14 — aesthetics** (2026-10-04): the Library and Browse
+  redesigns, the Home cover, fade-ins, one style for every dropdown, and
+  Home's statistics made fast (`memo.py`).
+- Earlier: play-count collection (2026-09-06, five-minute readings since
+  2026-09-26), the Last.fm backfill (41,203 plays), the Health cut-down,
+  burger navigation, the direct-to-library redesign that removed staging and
+  the download ledger, tests and a CI gate.
 
 ---
 
 ## Operational backlog
 
-Not code — things waiting in the library itself.
+Not code — things waiting in the library itself. Numbers are from late
+September 2026; verify before acting.
 
-- **199 duplicate groups** and **15 staging items** sitting in the app.
-- **ReplayGain at 56%** — run `beet replaygain`, then set Navidrome's
-  ReplayGain mode to Track.
+- **~296 duplicate groups to review.** About 50 are a single beside its own
+  album rather than true duplicates. Do not bulk-resolve while music is
+  being filed.
+- **ReplayGain** is incomplete; *Measure all* in Library's Needs attention.
 - **~62 GB reclaimable** from `music_old`, `tagged_old`,
-  `music_backup_2026-09-04`.
-- **Re-download list** from the migration: `~/redownload.txt`,
-  `~/recheck-these.txt`, and 30 broken `.m4a`.
-- **Kelly should sign in once** so her workspace is created and can be
-  checked.
-- **Playlist field vocabulary is unverified.** The rule fields offered by the
-  editor are Navidrome 0.58's documented criteria plus the nine proven by
-  existing playlists. `bpm` and `compilation` are the least certain. A
-  rejected field surfaces Navidrome's own error naming it, so nothing fails
-  silently — but it has not been confirmed end to end.
+  `music_backup_2026-09-04` on the Pi.
+- **30 broken `.m4a`** from the migration (`tools/fix_broken_m4a.py`).
+- **5,572 imported plays are still day-granular**, because those tracks'
+  artist tags changed since the import; `python -m app.lastfm <user>
+  --times` after a tag cleanup picks up more.
+- **Playlist field vocabulary is unverified** end to end. `bpm` and
+  `compilation` are the least certain. A rejected field surfaces Navidrome's
+  own error naming it, so nothing fails silently.
 
 ---
 
@@ -619,25 +174,28 @@ Not code — things waiting in the library itself.
 
 Why things are the way they are, so they do not get re-litigated.
 
-- **2026-09-06 — The ledger is scoped to a library, not to a person.** The
-  question it answers is "is this recording already in this collection", and
-  a collection is a library. Two accounts writing into one library share the
-  answer, so an administrator does not re-fetch what somebody else filed
-  there; two libraries do not, so Kelly's first download is not silently
-  skipped because alex owns the record. Rows written before the column
-  existed are attributed to library 1, which is where they all went.
-- **2026-09-06 — Forgetting a ledger row is explicit, not automatic.** The
-  ledger is the only record that a track was fetched, so a file leaving the
-  library makes it permanently unfetchable. The "already have" tag in Browse
-  clears the row. Resolving a duplicate deliberately does *not*: it keeps a
-  copy, so the track is still held.
+- **2026-10-04 — Renamed to Navidrome Companion.** It stopped being only a
+  downloader long ago. The `DC_` environment prefix stays, so existing
+  installs keep their configuration.
+- **2026-10-04 — Two user-facing docs.** SETUP.md for installing, FEATURES.md
+  for what everything does and how. The handoff document went stale within
+  weeks of being written; the code and these two are what stay true.
+- **2026-09-26 — Play counts read every five minutes, not nightly.** At that
+  cadence a rise is almost always one play, and Navidrome's `play_date`
+  gives its exact time — which is what makes sessions and hour-of-day
+  possible.
+- **2026-09-25 — The download ledger is gone.** It made a track that left
+  the library permanently unfetchable. Browse asks Navidrome what is held
+  instead, and nothing refuses a download.
+- **2026-09-25 — One road into the library, no gate.** beets refused 82% of
+  what it was given for mechanical reasons. Everything is filed at once by
+  its own tags; matching is a manual tool in Library.
 - **2026-09-06 — Last.fm backfill is a one-time manual import.** It has the
   history snapshots cannot reconstruct; snapshots have the accuracy and the
   coverage of both users. Neither replaces the other.
 - **2026-09-06 — Burger navigation, both sizes.** One layout beats two, and
   six tabs is already the ceiling on a phone.
-- **2026-09-06 — Health shows only what can be acted on.** Too many checks
-  made it hard to see what mattered.
+- **2026-09-06 — Health shows only what can be acted on.**
 - **2026-09-06 — Smart playlists only, no track editing.** Navidrome edits
   ordinary playlists well; duplicating it would be a worse copy.
 - **2026-09-06 — Playlist rules translate server-side.** Navidrome's nested
@@ -653,11 +211,7 @@ Why things are the way they are, so they do not get re-litigated.
 
 ## Open questions
 
-- Should the downloader stay a first-class tab, or fold into a smaller
-  "add music" action once maintenance tools grow? (Leaning: stays.)
-- Metadata editing writes to files. Does that run as a job with progress,
-  like downloads, or synchronously with a spinner?
-- Track deletion: quarantine directory per library, or one shared with
-  `duplicates-removed/`?
 - Does Kelly need any of the maintenance tooling, or is her account
   effectively read-only plus downloads?
+- Should drops and uploads trigger a Navidrome scan the way downloads do?
+  (They do not today; see CODE_REVIEW.md.)

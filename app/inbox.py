@@ -39,7 +39,7 @@ from pathlib import Path
 from . import filer, uuidtags, workspace
 from .config import settings
 
-log = logging.getLogger("download_center.inbox")
+log = logging.getLogger("navidrome_companion.inbox")
 
 # How often to look. The quiet period before a file is touched is measured in
 # minutes, so this only decides how soon after that it is noticed.

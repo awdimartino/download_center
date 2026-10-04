@@ -25,7 +25,7 @@ from pathlib import Path
 
 from .config import CONFIG_DIR, settings
 
-log = logging.getLogger("download_center.workspace")
+log = logging.getLogger("navidrome_companion.workspace")
 
 # Usernames come from Navidrome and end up as directory names, so they are
 # reduced to something a filesystem cannot misread. Two accounts differing

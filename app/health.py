@@ -28,7 +28,7 @@ from typing import Any
 from . import diskaudit, navidrome, uuidtags
 from .config import settings
 
-log = logging.getLogger("download_center.health")
+log = logging.getLogger("navidrome_companion.health")
 
 # The tag whose value Navidrome is configured to use as its persistent track
 # identity. Stored parsed in media_file.tags, so it can be queried directly

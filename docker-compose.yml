@@ -1,12 +1,11 @@
 services:
-  download-center:
+  navidrome-companion:
     # Pulls the published multi-arch image (amd64 + arm64).
-    # Set DC_IMAGE in .env to your own ghcr.io path.
     # To build from source instead, comment this out and uncomment `build`.
-    image: ${DC_IMAGE:-ghcr.io/awdimartino/download_center:latest}
+    image: ${DC_IMAGE:-ghcr.io/awdimartino/navidrome-companion:latest}
     # build: .
 
-    container_name: download-center
+    container_name: navidrome-companion
     restart: unless-stopped
 
     ports:
@@ -19,29 +18,36 @@ services:
       PGID: ${PGID:-1000}
       TZ: ${TZ:-Etc/UTC}
 
+      # Where Navidrome answers, as seen from inside this container. Required
+      # to sign in. Can be set in the Settings panel instead, except that
+      # nobody can reach the Settings panel without signing in first.
+      DC_NAVIDROME_URL: ${DC_NAVIDROME_URL:-}
+
       # Optional: keeps credentials out of the config volume entirely.
       DC_SPOTIFY_CLIENT_ID: ${DC_SPOTIFY_CLIENT_ID:-}
       DC_SPOTIFY_CLIENT_SECRET: ${DC_SPOTIFY_CLIENT_SECRET:-}
 
     volumes:
-      # config.toml, the download ledger, and an optional cookies.txt.
-      # state.db lives here: back it up.
+      # config.toml, state.db, each person's beets config and an optional
+      # cookies.txt. state.db holds the only copy of your listening history
+      # and album identities: back it up.
       - ${CONFIG_DIR:-./config}:/config
 
-      # Staging. Downloads land here, and beets moves them out. albums/ and
-      # singles/ are created inside it.
-      - ${STAGING_DIR:-./untagged}:/downloads
+      # Scratch space: one inbox per person and library. Downloads are built
+      # here and leave as soon as they are filed, so at rest it is empty.
+      - ${STAGING_DIR:-./staging}:/downloads
 
-      # The tagged library beets files into, using the paths in each person's
-      # own config at /config/beets/<username>-<library id>/config.yaml.
-      # This is what Navidrome should index.
+      # The library, at the SAME path Navidrome mounts it. Navidrome reports
+      # where a library lives from its own database, and that path is used
+      # here as-is. Add one line per library, e.g. a second person's:
+      #   - /srv/music/kelly:/kelly
       - ${LIBRARY_DIR:-./library}:/music
 
-      # Navidrome's database. Uncomment and point at your navidrome.db.
-      # Read-only on purpose: Navidrome owns this file and caches from it, so
-      # nothing here ever writes to it.
+      # Navidrome's data directory, read-only. The directory and not just
+      # navidrome.db: Navidrome runs SQLite in WAL mode, and reading it needs
+      # the -wal and -shm files beside it.
       #
-      # This is NOT optional. Which libraries an account may see is read from
-      # this file, so without it every user signs in with no library, no
-      # download has anywhere to go, and Health has nothing to report.
-      # - /path/to/navidrome/navidrome.db:/navidrome/navidrome.db:ro
+      # NOT optional. Which libraries an account may see is read from here,
+      # so without it every user signs in with no library, no download has
+      # anywhere to go, and Health has nothing to report.
+      - ${NAVIDROME_DATA_DIR:-./navidrome-data}:/navidrome:ro

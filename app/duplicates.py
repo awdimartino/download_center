@@ -34,7 +34,7 @@ from typing import Any
 from . import navidrome, store
 from .config import settings
 
-log = logging.getLogger("download_center.duplicates")
+log = logging.getLogger("navidrome_companion.duplicates")
 
 # Qualifiers that mark a different pressing of one recording rather than a
 # different song, so an original and its reissue compare equal.
@@ -357,7 +357,7 @@ def _quarantine_root(root: Path) -> Path:
     readme = path / QUARANTINE_README
     if not readme.exists():
         readme.write_text(
-            "Copies set aside by Download Center as duplicates.\n"
+            "Copies set aside by Navidrome Companion as duplicates.\n"
             "\n"
             "Nothing here has been deleted. Each file kept the path it had\n"
             "inside the library, and the quarantine ledger in state.db\n"

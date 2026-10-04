@@ -43,7 +43,7 @@ from typing import Any
 
 from . import registry, survey as survey_module, uuidtags
 
-log = logging.getLogger("download_center.unfuse")
+log = logging.getLogger("navidrome_companion.unfuse")
 
 
 @dataclass

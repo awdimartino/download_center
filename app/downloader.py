@@ -11,7 +11,7 @@ import yt_dlp
 
 from .config import settings
 
-log = logging.getLogger("download_center.downloader")
+log = logging.getLogger("navidrome_companion.downloader")
 
 ProgressHook = Callable[[float], None]
 

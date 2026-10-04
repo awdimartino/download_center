@@ -168,7 +168,7 @@ def save(updates: dict[str, Any]) -> None:
     stored.update({key: getattr(settings, key) for key in EDITABLE})
 
     lines = [
-        "# Written by Download Center. Environment variables still take",
+        "# Written by Navidrome Companion. Environment variables still take",
         "# precedence over anything set here.",
         "",
         *(f"{key} = {_toml_value(value)}" for key, value in stored.items()),

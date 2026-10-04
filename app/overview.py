@@ -32,7 +32,7 @@ from typing import Any
 
 from . import memo, navidrome, playcounts, store
 
-log = logging.getLogger("download_center.overview")
+log = logging.getLogger("navidrome_companion.overview")
 
 # How far the chart looks back. Long enough that a year of listening has
 # shape, short enough that the bars stay wide enough to read.

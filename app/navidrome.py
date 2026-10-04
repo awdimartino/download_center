@@ -30,9 +30,9 @@ import requests
 
 from .config import settings
 
-log = logging.getLogger("download_center.navidrome")
+log = logging.getLogger("navidrome_companion.navidrome")
 
-CLIENT = "download-center"
+CLIENT = "navidrome-companion"
 API_VERSION = "1.16.1"
 TIMEOUT = 15
 

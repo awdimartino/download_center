@@ -30,7 +30,7 @@ import uuid
 
 from . import store
 
-log = logging.getLogger("download_center.registry")
+log = logging.getLogger("navidrome_companion.registry")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS album_registry (

@@ -1,14 +1,36 @@
-# Copy to config.toml and fill in. Every key can also be set with an
-# environment variable, e.g. DC_SPOTIFY_CLIENT_ID, which takes precedence.
+# Copy to config.toml and fill in, or leave it absent and use the Settings
+# panel (Navidrome administrators only). Every key can also be set with an
+# environment variable - DC_ plus the key in capitals, e.g.
+# DC_SPOTIFY_CLIENT_ID - which wins over this file. See docs/SETUP.md.
 
+# --- Navidrome --------------------------------------------------------------
+# Where Navidrome answers, from inside this container. Required to sign in.
+navidrome_url = ""
+# An administrator account, used to start scans after filing and to fetch
+# cover art. Without it new music waits for Navidrome's own scan schedule.
+navidrome_user = ""
+navidrome_password = ""            # stored here in plain text
+# navidrome_db = "/navidrome/navidrome.db"
+
+# --- Spotify (search, metadata, cover and album-name suggestions) -----------
 spotify_client_id = ""
 spotify_client_secret = ""
 
-# Staging root that beets imports from. Complete albums are written to
-# <output_dir>/albums, loose tracks to <output_dir>/singles.
-# output_dir = "untagged"
+# --- downloads --------------------------------------------------------------
+concurrency = 3                    # simultaneous downloads, whole server
+audio_bitrate = "320"              # MP3 kbps
+max_attempts = 3                   # tries per track before it fails
+rate_limit_sleep = 2.0             # seconds between downloads
 
-concurrency = 3
-audio_bitrate = "320"
-max_attempts = 3
-rate_limit_sleep = 2.0
+# --- filing -----------------------------------------------------------------
+# inbox_quiet_seconds = 120        # how long a dropped file must sit still
+# output_dir = "/downloads"        # where each person's inbox lives
+# music_dir = "/music"             # fallback library root
+
+# --- library tools ----------------------------------------------------------
+# beets_enabled = true             # MusicBrainz "Find matches" in Library
+# acoustid_key = ""                # tools/fingerprint.py only
+
+# --- listening history ------------------------------------------------------
+# Which midnight ends a listening day, as an IANA zone name.
+# play_day_timezone = "UTC"

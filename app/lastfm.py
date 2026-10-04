@@ -46,7 +46,7 @@ from typing import Any
 from . import navidrome, playcounts, store
 from .config import settings
 
-log = logging.getLogger("download_center.lastfm")
+log = logging.getLogger("navidrome_companion.lastfm")
 
 API = "https://ws.audioscrobbler.com/2.0/"
 PAGE = 200
@@ -117,7 +117,7 @@ def _call(method: str, secret: str | None = None, **params: str) -> dict:
 
     url = API + "?" + urllib.parse.urlencode(query)
     request = urllib.request.Request(
-        url, headers={"User-Agent": "download-center/1.0"})
+        url, headers={"User-Agent": "navidrome-companion/1.0"})
 
     last = ""
     for attempt, delay in enumerate(RETRY_BACKOFF, start=1):

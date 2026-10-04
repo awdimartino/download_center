@@ -39,7 +39,7 @@ from typing import Any
 from . import navidrome, store
 from .playcounts import GENRE_TAG
 
-log = logging.getLogger("download_center.library")
+log = logging.getLogger("navidrome_companion.library")
 
 # One page. Sending a whole library to a phone helps nobody.
 PAGE = 50

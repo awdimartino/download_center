@@ -30,14 +30,14 @@ from typing import Any
 from . import workspace
 from .config import settings
 
-log = logging.getLogger("download_center.beets")
+log = logging.getLogger("navidrome_companion.beets")
 
 # Long enough for art fetching and MusicBrainz lookups on a slow connection,
 # short enough that a wedged retag cannot hold a thread forever.
 TIMEOUT = 900
 
 DEFAULT_CONFIG = """\
-# Written by Download Center on first run. Edit freely - it is never
+# Written by Navidrome Companion on first run. Edit freely - it is never
 # overwritten, and the container reads it on every import.
 
 directory: __DIRECTORY__

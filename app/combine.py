@@ -30,7 +30,7 @@ from typing import Any
 
 from . import covers, filer, workspace
 
-log = logging.getLogger("download_center.combine")
+log = logging.getLogger("navidrome_companion.combine")
 
 
 def combine(space: workspace.Workspace, *,
