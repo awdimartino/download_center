@@ -133,9 +133,12 @@ function buildJob(job) {
 
   const remove = el("button", "dl-job-remove", "✕");
   remove.type = "button";
+  // An active job is cancelled, not deleted: it moves to "needs a look"
+  // with what it finished and a Retry. Deleting it threw both away.
   remove.addEventListener("click", (event) => {
     event.stopPropagation();
-    deleteJob(job.id);
+    if (remove.dataset.action === "cancel") cancelJob(job.id, remove);
+    else deleteJob(job.id);
   });
   head.append(art, text, remove);
 
@@ -177,6 +180,11 @@ function updateJob(job) {
   parts.fill.style.width = `${Math.round(jobProgress(job) * 100)}%`;
   const label = group === "active" ? `Cancel ${name}` : `Clear ${name}`;
   parts.remove.title = group === "active" ? "Cancel" : "Clear from the list";
+  parts.remove.dataset.action = group === "active" ? "cancel" : "clear";
+  if (parts.group !== group) {
+    parts.group = group;
+    parts.remove.disabled = false;   // a pressed Cancel has done its work
+  }
   parts.remove.setAttribute("aria-label", label);
   parts.card.classList.toggle("small", group === "done");
 
@@ -213,6 +221,21 @@ async function deleteJob(id) {
     }
   } catch {
     showError("Could not reach the server.");
+  }
+}
+
+async function cancelJob(id, button) {
+  button.disabled = true;     // until the job's next message repaints it
+  try {
+    const response = await fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      showError(body.detail || "Could not cancel that download.");
+      button.disabled = false;
+    }
+  } catch {
+    showError("Could not reach the server.");
+    button.disabled = false;
   }
 }
 

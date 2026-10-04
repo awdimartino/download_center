@@ -826,8 +826,12 @@ it less likely.
       **Fixed:** `drop.js` sets `accept` to `audio/*` plus every audio and
       cover extension it already filters by; a test keeps those lists equal
       to the server's. Checked in headless Chromium.
-- [ ] **L13.** The ✕ on an active job deletes it (history and Retry gone);
+- [x] **L13.** The ✕ on an active job deletes it (history and Retry gone);
       `POST /api/jobs/{id}/cancel` is never called.
+      **Fixed:** the ✕ on an active job calls cancel; the job lands in
+      *needs a look* with Retry, and its ✕ then clears it. A retried job
+      is put in `RUNNING` when its task is created, so it can be cancelled
+      at once. Checked in headless Chromium with a stubbed socket.
 - [ ] **L14.** Two jobs filing the same track can both choose the same free
       name; the second move overwrites the first (`filer.py:527-535`).
       *Race window unverified.*

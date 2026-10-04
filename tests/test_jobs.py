@@ -409,3 +409,25 @@ async def test_a_retry_with_room_starts(queueing):
     assert await main.retry_job("old", SESSION) == {"retrying": 1}
     assert job["status"] == "queued"
     assert job["items"][0]["status"] == "pending"
+
+
+# --- cancel, not delete (L13) --------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_a_retried_job_can_be_cancelled_straight_away(queueing):
+    """The page's ✕ on an active job now cancels it. A retried job was only
+    tracked once its task first ran, so a cancel pressed at once was told
+    the job was not running."""
+    _failed_job()
+    await main.retry_job("old", SESSION)
+
+    assert await main.cancel_job("old", SESSION) == {"ok": True}
+
+
+def test_the_page_cancels_an_active_job_rather_than_deleting_it():
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent / "app" / "static" / "js"
+          / "downloads.js").read_text(encoding="utf-8")
+    assert "/cancel`, { method: \"POST\" }" in js
+    assert 'remove.dataset.action === "cancel"' in js

@@ -429,11 +429,13 @@ hover. A track filed without its identity tags (the UUID write failed)
 shows **Done, no identity**, and its finished card says how many: it is
 playable, but stars and play counts cannot follow it.
 
-The ✕ on an active job stops it and removes it: its task is cancelled **and
-awaited** before its scratch files are deleted (deleting first once left
-yt-dlp recreating its directory forever while holding a download slot,
-which stalled every later job of every user). Tracks already filed stay in
-the library.
+The ✕ on an active job **cancels** it: it moves to *needs a look* as
+Cancelled, with what it finished and *Retry failed* for the rest. Tracks
+already filed stay in the library. The ✕ on a finished job clears it from
+the list; for a job still running, its task is cancelled **and awaited**
+before its scratch files are deleted (deleting first once left yt-dlp
+recreating its directory forever while holding a download slot, which
+stalled every later job of every user).
 
 Progress arrives over the WebSocket, to the job's owner only: the whole job
 at each phase change, and twice a second only the items whose status,

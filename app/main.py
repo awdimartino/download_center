@@ -791,7 +791,9 @@ async def retry_job(
         item.update(status="pending", error=None, progress=0, attempts=0)
     job.update(status="queued", error=None)
     await push_job(job)
-    asyncio.create_task(_run(job, space))
+    # Tracked now, not when _run first runs, so a cancel pressed straight
+    # away finds it.
+    RUNNING[job_id] = asyncio.create_task(_run(job, space))
     return {"retrying": len(retryable)}
 
 
