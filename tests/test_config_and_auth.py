@@ -292,3 +292,16 @@ def test_account_reads_the_admin_flag_and_libraries(navidrome_db, monkeypatch):
     assert navidrome.account(_identity("alex")) == (
         False, [{"id": 1, "name": "Music", "path": str(navidrome_db.parent / "music")}])
     assert navidrome.account(_identity("nobody")) is None
+
+
+# --- the collector's status is an administrator's (L25) ------------------------
+
+def test_the_playcount_status_needs_an_administrator():
+    """Its totals sum every account's imported plays."""
+    from app import main
+
+    route = next(r for r in main.app.routes
+                 if getattr(r, "path", None) == "/api/playcounts"
+                 and "GET" in r.methods)
+    dependencies = {d.call for d in route.dependant.dependencies}
+    assert main.admin_session in dependencies

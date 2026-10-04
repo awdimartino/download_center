@@ -903,9 +903,11 @@ it less likely.
       **Fixed:** the artist page keeps paging until it has the total.
       Checked in headless Chromium with a stubbed 450-record artist: 200
       cards before, 450 after.
-- [ ] **L25.** `GET /api/playcounts` is not admin-only and shows imported
+- [x] **L25.** `GET /api/playcounts` is not admin-only and shows imported
       totals summed across accounts — on a two-person install, one person's
       total (`main.py:2093-2103`). Nothing in the UI uses it.
+      **Fixed:** admin-only. Kept rather than removed: it is the one check
+      that the collector is running.
 - [ ] **L26.** "This month" and "this year" come from UTC while plays are
       local: from 8pm New York time on the last day of a month, Home shows
       next month's empty bucket (`overview.py:283, 341, 565`).

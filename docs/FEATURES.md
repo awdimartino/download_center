@@ -1075,7 +1075,7 @@ administrator.
 | GET | `/api/status` | whether Spotify is configured |
 | GET · PUT | `/api/settings` | read / change settings (**admin** to see values or change) |
 | GET | `/api/overview` | Home's dashboard |
-| GET | `/api/playcounts` | collector status |
+| GET | `/api/playcounts` | collector status (admin) |
 | GET | `/api/playcounts/top` | the statistics section for a range |
 | POST | `/api/playcounts/snapshot` | **admin**; read play counts now |
 | GET | `/api/search` | Spotify search with "in library" marks |

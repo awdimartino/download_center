@@ -2337,13 +2337,17 @@ async def list_operations(
 
 @app.get("/api/playcounts")
 async def playcount_status(
-    session: auth.Session = Depends(current_session),
+    session: auth.Session = Depends(admin_session),
 ) -> dict[str, Any]:
     """Whether snapshots are actually being taken.
 
     The thing that must not fail quietly is the collecting, and that is
     checkable tonight - long before there is enough history to say anything
     interesting with.
+
+    An administrator's: the collector is the installation's, and its totals
+    sum every account's imported plays - on a two-person install, the other
+    person's listening.
     """
     return await asyncio.to_thread(playcounts.status)
 
