@@ -227,6 +227,10 @@ async def lifespan(app: FastAPI):
     log.info("workspace root: %s", settings.output_dir)
     if not settings.spotify_configured:
         log.warning("Spotify credentials missing - add them to config/config.toml")
+    try:
+        await asyncio.to_thread(inbox.clear_scratch)
+    except Exception:
+        log.exception("clearing unfinished downloads failed")
 
     background = [asyncio.create_task(_audit_loop()),
                   asyncio.create_task(_inbox_loop()),

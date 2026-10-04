@@ -150,6 +150,32 @@ def discard(space: workspace.Workspace, job_id: str) -> None:
     shutil.rmtree(scratch_root(space, job_id), ignore_errors=True)
 
 
+def clear_scratch() -> int:
+    """Throw away every half-built download. Run once, at start-up.
+
+    Jobs live in memory, so after a restart nothing will ever finish what
+    is in `.incomplete/` or discard it - a crash mid-download left those
+    folders there for good. A finished download is never in here: it has
+    already been delivered into the inbox, where the poller files it.
+    Returns how many job folders went.
+    """
+    cleared = 0
+    for space in workspace.existing():
+        try:
+            leftovers = list(space.incomplete_dir.iterdir())
+        except OSError:
+            continue
+        for path in leftovers:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+            cleared += 1
+    if cleared:
+        log.info("cleared %d unfinished download(s) left by the last run", cleared)
+    return cleared
+
+
 def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
     """Put a finished download into the inbox, and file it straight away.
 

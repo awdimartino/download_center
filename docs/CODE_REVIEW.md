@@ -768,8 +768,11 @@ it less likely.
       **Fixed:** `generic._options` adds `cookiefile` for the playlist
       read and each entry's full read, as the download does. Reproduced
       first (no cookie option on either read).
-- [ ] **L3.** `.incomplete/<job>` folders left by a crash are never removed
+- [x] **L3.** `.incomplete/<job>` folders left by a crash are never removed
       (`inbox.py:110-117`). *Fix:* clear `.incomplete/` at start-up.
+      **Fixed** as suggested: `inbox.clear_scratch`, run once from the
+      lifespan, empties every workspace's `.incomplete/`. Delivered files
+      are in the inbox proper and untouched.
 - [ ] **L4.** If filing fails after the move into the inbox, the item is
       marked failed but the poller files it two minutes later; Retry then
       makes a second copy (`worker.py:181-186`).

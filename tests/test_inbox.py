@@ -844,3 +844,25 @@ async def test_an_album_drop_is_filed_with_its_cover_that_came_last(space,
     assert len(finished["filed"]) == 2
     album = space.library_path / "Artist" / "Album"
     assert (album / "cover.jpg").read_bytes() == b"\xff\xd8 art"
+
+
+# --- what a crash leaves in scratch space (L3) --------------------------------
+
+def test_unfinished_downloads_are_cleared_at_start_up(space):
+    """Jobs live in memory, so nothing ever finished or discarded a job's
+    scratch folder once the process that owned it had died."""
+    built(space, job="crashed", item="i1", title="Half")
+    (space.incomplete_dir / "stray.part").write_bytes(b"x")
+
+    assert inbox.clear_scratch() == 2
+
+    assert list(space.incomplete_dir.iterdir()) == []
+    assert space.incomplete_dir.is_dir()
+
+
+def test_clearing_scratch_leaves_the_inbox_alone(space):
+    dropped = drop(space, albumartist="Artist", album="Album", title="Song",
+                   tracknumber="1")
+
+    assert inbox.clear_scratch() == 0
+    assert dropped.exists()
