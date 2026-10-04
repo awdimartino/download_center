@@ -211,3 +211,23 @@ def test_the_same_clause_is_removed_everywhere_titles_are_compared():
     assert duplicates.normalise("Gift of Love") != duplicates.normalise("Gift Horse")
     assert duplicates.normalise("Song (feat. X)") == duplicates.normalise("Song")
     assert lastfm.normalise("With or Without You") == "with or without you"
+
+
+# --- version markers are words, not substrings (CODE_REVIEW M23) -----------
+
+@pytest.mark.parametrize("title", ["Olive", "Demons", "Obsession", "Discover"])
+def test_a_marker_inside_a_word_is_not_a_version(title):
+    assert matcher._markers(title) == set()
+
+
+@pytest.mark.parametrize("title, marker", [
+    ("Song (Live)", "live"), ("Song - Demo", "demo"),
+    ("Song (Sped Up)", "sped up"), ("Song - Radio Edit", "radio edit")])
+def test_a_marker_that_is_a_word_still_counts(title, marker):
+    assert marker in matcher._markers(title)
+
+
+def test_a_correct_result_is_not_penalised_for_a_word_inside_its_title():
+    track = _track(title="Olive", artist="Someone", ms=200_000)
+    _, parts = matcher.score(_result("Olive", ("Someone",), 200), track)
+    assert parts["penalty"] == 0

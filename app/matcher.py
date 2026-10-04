@@ -27,6 +27,13 @@ VERSION_MARKERS = (
     "extended", "radio edit", "session", "unplugged", "tribute", "backing",
 )
 
+# Whole words only. A substring test found "live" in "Olive", "demo" in
+# "Demons", "session" in "Obsession" and "cover" in "Discover", so a correct
+# result lost 0.25, or a target containing one stopped penalising real
+# live and demo versions.
+_MARKER_PATTERNS = [(marker, re.compile(rf"\b{re.escape(marker)}\b"))
+                    for marker in VERSION_MARKERS]
+
 # Runtime difference, in seconds, past which a candidate scores nothing for
 # duration. Studio versions of the same track rarely differ by more than a
 # couple of seconds across services.
@@ -102,7 +109,8 @@ def normalise(text: str) -> str:
 
 def _markers(text: str) -> set[str]:
     lowered = (text or "").lower()
-    return {marker for marker in VERSION_MARKERS if marker in lowered}
+    return {marker for marker, pattern in _MARKER_PATTERNS
+            if pattern.search(lowered)}
 
 
 def _duration_score(candidate_seconds: int | None, target_ms: int | None) -> float:

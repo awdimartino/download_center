@@ -555,11 +555,13 @@ it less likely.
       "resolving". Tested against a fake yt-dlp only; not tried on a real
       YouTube Music album, since nothing here reaches YouTube.
 
-- [ ] **M23. Version markers match inside words.** *Verified.*
+- [x] **M23. Version markers match inside words.** *Verified.*
       `app/matcher.py:95-97`. "Olive" contains *live*, "Demons" *demo*,
       "Obsession" *session*, "Discover" *cover*: a correct result loses 0.25,
       or a target containing one stops penalising real live/demo versions.
       *Fix:* match on word boundaries.
+      **Fixed** as suggested. Reproduced first; whole words only, so a
+      plural such as "Remixes" no longer counts either.
 
 - [ ] **M24. Session expiry is never detected over the WebSocket.**
       `app/main.py:2198-2201`, `app/static/js/ws.js:87`. `close(4401)` before
