@@ -560,9 +560,72 @@ def _read_index() -> dict[str, dict[str, Any]] | None:
     return found
 
 
+def increments(user_id: str) -> list[tuple[str, str, int]]:
+    """Every play this person made, as (when, track uuid, how many).
+
+    Shared between callers until the history changes; read-only."""
+    return memo.cached(("increments", user_id), history_version(),
+                       lambda: _read_increments(user_id))
+
+
+def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
+    """Every play this person made, as (when, track uuid, how many).
+
+    Both sources flattened into the same shape, so everything downstream is
+    a sum over one list rather than two special cases.
+
+    `when` is the play's own time wherever it is known. Navidrome stores
+    the moment of a track's most recent play beside its running total, so a
+    reading that catches the count rising by one carries that play's exact
+    timestamp - which is the whole reason the counts are read every few
+    minutes rather than nightly. Where it is missing or unreadable the
+    reading's own time stands in, and for rows written while this ran
+    nightly that is a bare date. All three sort and bucket alike.
+    """
+    db = store.connection()
+    with store._lock:
+        rows = db.execute(
+            "select track_uuid, taken_on, play_count, play_date"
+            "  from play_snapshot where user_id = ?"
+            " order by track_uuid, taken_on",
+            (user_id,)).fetchall()
+        imported = db.execute(
+            "select played_at, track_uuid, plays from play_imported"
+            " where user_id = ?", (user_id,)).fetchall()
+
+    first = baseline_stamp()
+    plays: list[tuple[str, str, int]] = []
+    previous_track = None
+    previous_count = 0
+    for track_uuid, taken_on, count, play_date in rows:
+        if track_uuid != previous_track:
+            previous_track = track_uuid
+            if taken_on == first:
+                # The counter as it stood when collection began: a
+                # lifetime, not listening.
+                previous_count = count
+                continue
+            # First seen later: `take` stores only counts above zero, so
+            # this row is the track's first plays. Treating every first row
+            # as a baseline lost the first play of everything newly played
+            # - exactly the music being discovered.
+            previous_count = 0
+        if count > previous_count:
+            # A rise of more than one means the same track was played
+            # twice inside one interval. Only the last of them has a
+            # recorded time, so they share it; at a five-minute cadence
+            # that smear is bounded by five minutes.
+            when = local_stamp(play_date) or taken_on
+            plays.append((when, track_uuid, count - previous_count))
+        previous_count = count
+
+    plays.extend((day, track_uuid, n) for day, track_uuid, n in imported if n)
+    return plays
+
+
 def plays_between(start: str, end: str,
                   user_id: str | None = None) -> list[dict[str, Any]]:
-    """Plays per track over a date range, as deltas between snapshots.
+    """Plays per track over a range of local days, most played first.
 
     Shared between callers until the history changes - the Listening panel
     asks the same range for its tracks, albums and genres - so the rows are
@@ -575,77 +638,36 @@ def plays_between(start: str, end: str,
 
 def _plays_between(start: str, end: str,
                    user_id: str | None = None) -> list[dict[str, Any]]:
-    """The value on a given day is the most recent snapshot at or before it,
-    because only changes are stored. A count that fell is reported as zero
-    plays rather than a negative number; the drop itself is in play_anomaly.
+    """Summed from `increments`, the per-play list Home is built from, by
+    the local day each play happened on.
+
+    This used to subtract the count at the start of the range from the count
+    at the end, bucketed by the UTC time of the *reading*, while Home
+    bucketed each play by its own local time. A play at 20:58 in New York
+    landed on different days in the two halves of one page, and "Today"
+    stopped moving at 8pm. One list, one clock.
     """
-    def value_at(day: str) -> dict[tuple[str, str], int]:
-        """The last count known at the end of `day`.
-
-        Bounded by the start of the day after, not by `day` itself. Readings
-        are stamped to the second now, and "2026-09-25T17:09:46+00:00" sorts
-        *after* "2026-09-25" - so the obvious `taken_on <= day` excluded
-        every reading actually taken that day and reported the total as it
-        stood the previous midnight.
-        """
-        rows = store.connection().execute("""
-            select s.track_uuid, s.user_id, s.play_count
-              from play_snapshot s
-              join (select track_uuid, user_id, max(taken_on) as taken_on
-                      from play_snapshot
-                     where taken_on < ?
-                     group by track_uuid, user_id) latest
-                on latest.track_uuid = s.track_uuid
-               and latest.user_id = s.user_id
-               and latest.taken_on = s.taken_on
-        """, (next_day(day),)).fetchall()
-        return {(t, u): c for t, u, c in rows}
-
-    # A snapshot labelled D holds the total at the *end* of D, so the
-    # opening balance for the range is the end of the day before it.
-    before = (datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
-              - timedelta(days=1)).strftime("%Y-%m-%d")
-    opening, closing = value_at(before), value_at(end)
-    # A range opening before collection began has no reading to subtract
-    # from. Falling back to zero counted each track's whole lifetime at the
-    # first reading as plays in range - on top of the imported plays that
-    # lifetime already includes - so All time came out roughly doubled.
-    # The first reading is the opening balance instead, and a track whose
-    # first row came later started from zero, which is what that row says.
-    first = baseline_stamp()
-    baseline = {} if first is None else {
-        (t, u): c for t, u, c in store.connection().execute(
-            "SELECT track_uuid, user_id, play_count FROM play_snapshot"
-            " WHERE taken_on = ?", (first,))}
-
-    names = dict(store.connection().execute(
+    db = store.connection()
+    if user_id is not None:
+        users = [user_id]
+    else:
+        users = [row[0] for row in db.execute(
+            "SELECT user_id FROM play_snapshot UNION"
+            " SELECT user_id FROM play_imported")]
+    names = dict(db.execute(
         "SELECT user_id, username FROM play_snapshot GROUP BY user_id"))
+    for who, username in db.execute(
+            "SELECT user_id, username FROM play_imported GROUP BY user_id"):
+        names.setdefault(who, username)
 
     totals: dict[tuple[str, str], int] = {}
-    for key, finished in closing.items():
-        if user_id is not None and key[1] != user_id:
-            continue
-        started = opening.get(key, baseline.get(key, 0))
-        if finished > started:
-            totals[key] = finished - started
-
-    # Days before the snapshots began, imported from Last.fm. Added rather
-    # than merged: the two sources cover disjoint periods by construction -
-    # the import stops the day snapshots start - so nothing is counted twice.
-    # Half-open on the right for the same reason as `value_at`: an imported
-    # row carries a timestamp wherever one could be recovered, and `between`
-    # would drop every play after midnight on the closing day.
-    imported = store.connection().execute("""
-        select track_uuid, user_id, username, sum(plays)
-          from play_imported
-         where played_at >= ? and played_at < ?
-         group by track_uuid, user_id, username
-    """, (start, next_day(end))).fetchall()
-    for track_uuid, who, username, plays in imported:
-        if user_id is not None and who != user_id:
-            continue
-        names.setdefault(who, username)
-        totals[(track_uuid, who)] = totals.get((track_uuid, who), 0) + plays
+    for who in users:
+        for when, track_uuid, plays in increments(who):
+            # A bare date, a timestamp and a local stamp all start with the
+            # day they belong to.
+            if start <= when[:10] <= end:
+                key = (track_uuid, who)
+                totals[key] = totals.get(key, 0) + plays
 
     out = [{"track_uuid": track_uuid, "user_id": who,
             "username": names.get(who), "plays": plays}

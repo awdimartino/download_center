@@ -30,8 +30,9 @@ def wired(navidrome_db, state_db, monkeypatch):
     return navidrome_db
 
 
-def played(db, track_id, user_id, count, when="2026-03-01T12:00:00Z"):
-    """Set a play count, the way Navidrome would."""
+def played(db, track_id, user_id, count, when=None):
+    """Set a play count, the way Navidrome would. `when` is its play_date;
+    left out, the reading that catches the rise dates the play."""
     connection = sqlite3.connect(db)
     with connection:
         connection.execute(

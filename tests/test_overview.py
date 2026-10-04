@@ -653,3 +653,24 @@ def test_cover_albums_are_empty_when_nothing_has_an_album():
     named = {"x": {"album": "", "album_artist": "", "id": "mf-x"}}
     assert overview._cover_albums({"x": 3}, named) == []
     assert overview._cover_albums({}, {}) == []
+
+
+# --- one clock for both halves of the page ---------------------------------
+# The statistics section used to bucket by the UTC time of the reading and
+# Home by the local time of the play, so an evening play in New York landed
+# on different days in each, and "Today" stopped moving at 8pm (CODE_REVIEW M1).
+
+def test_an_evening_play_is_on_the_same_local_day_everywhere(state_db, monkeypatch):
+    from app import playcounts
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "play_day_timezone", "America/New_York")
+    snapshot("2026-10-04T12:00:00+00:00", "t1", 5)
+    snapshot("2026-10-05T01:00:00+00:00", "t1", 6,
+             played_at="2026-10-05 00:58:00+00:00")
+
+    on_the_4th = playcounts.plays_between("2026-10-04", "2026-10-04", ALEX)
+
+    assert [row["plays"] for row in on_the_4th] == [1]
+    assert playcounts.plays_between("2026-10-05", "2026-10-05", ALEX) == []
+    assert overview._increments(ALEX)[0][0].startswith("2026-10-04T20:58")

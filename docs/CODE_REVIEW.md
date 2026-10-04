@@ -284,13 +284,20 @@ it less likely.
 
 ### Listening history
 
-- [ ] **M1. Home and Listening cut days differently.** `app/playcounts.py:571-581`
+- [x] **M1. Home and Listening cut days differently.** `app/playcounts.py:571-581`
       vs `app/overview.py:107`. Listening's `value_at` buckets by the UTC time
       of the *reading*; Home by the local time of the *play*. Measured in
       New York: a play at 20:58 local on 4 October is credited to 5 October
       in Listening, and "Today" stops moving after 8pm. Together with H4/H5,
       the two halves of one page disagree.
       *Fix:* one per-play list, filtered by local date, for both.
+      **Fixed:** the per-play list moved to `playcounts.increments`; Home
+      uses it as before and `plays_between` now sums it by local day instead
+      of subtracting readings. The H4 opening-balance code went with the
+      old method; H4's baseline rule lives on in the list. A count that
+      falls then rises now counts the rise. The test helper `played()` had
+      dated every play 1 March; it now leaves `play_date` unset unless asked.
+      Reproduced first.
 
 - [ ] **M2. Re-running the Last.fm import after `--times` doubles plays; the
       hand-over day is imported twice.** `app/lastfm.py:240, 311-324, 606-607`.

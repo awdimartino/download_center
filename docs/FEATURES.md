@@ -262,24 +262,20 @@ track, and rolls back if the total would move.
 
 ### How the numbers are computed
 
-Two derivations exist, and they are used in different places:
+Everything comes from one list of plays (`playcounts.increments`), used by
+Home's top half and the statistics section alike. It walks each track's
+snapshot rows in order and counts each rise, dated by that reading's
+`play_date` in `play_day_timezone` (the reading's own time stands in when
+there is none), and appends the imported history. A range is the plays
+whose local day falls in it, so both halves of the page agree to the play.
 
-- **Home's top half** (`overview.py`) walks each track's snapshot rows in
-  order and counts each rise, dated by that reading's `play_date`. A
-  track's first row is a baseline only if it came from the first reading
-  (see below); otherwise it counts from zero.
-- **The statistics section** (`playcounts.plays_between`) takes the count at
-  the end of the range minus the count at the start. A range that opens
-  before collection began opens at the first reading's counts, not zero —
-  those are lifetimes, already covered by the imported history.
+A track's first row is a baseline only if it came from the reading when
+collection began, recorded in `play_collection` by the first reading ever
+taken (even one that found nothing to store). Those rows are lifetimes,
+already covered by the imported history; a track's first row from any later
+reading counts from zero.
 
-When collection began is recorded in `play_collection` by the first reading
-ever taken, even one that found nothing to store; rows from that reading are
-the baseline, and a track's first row from any later reading counts from
-zero.
-
-Both add imported history. They do not always agree; see
-[CODE_REVIEW.md](CODE_REVIEW.md).
+A count that falls and rises again counts the rise: 10, 4, 6 is two plays.
 
 **Caching** (`memo.py`). Home's figures are kept in memory with the version
 of the data they were computed from: the row counts and highest row ids of

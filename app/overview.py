@@ -60,65 +60,8 @@ def _versions() -> tuple:
 
 def _increments(user_id: str) -> list[tuple[str, str, int]]:
     """Every play this person made, as (when, track uuid, how many).
-
-    Shared between callers until the history changes; read-only."""
-    return memo.cached(("increments", user_id), playcounts.history_version(),
-                       lambda: _read_increments(user_id))
-
-
-def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
-    """Every play this person made, as (when, track uuid, how many).
-
-    Both sources flattened into the same shape, so everything downstream is
-    a sum over one list rather than two special cases.
-
-    `when` is the play's own time wherever it is known. Navidrome stores
-    the moment of a track's most recent play beside its running total, so a
-    reading that catches the count rising by one carries that play's exact
-    timestamp - which is the whole reason the counts are read every few
-    minutes rather than nightly. Where it is missing or unreadable the
-    reading's own time stands in, and for rows written while this ran
-    nightly that is a bare date. All three sort and bucket alike.
-    """
-    db = store.connection()
-    with store._lock:
-        rows = db.execute(
-            "select track_uuid, taken_on, play_count, play_date"
-            "  from play_snapshot where user_id = ?"
-            " order by track_uuid, taken_on",
-            (user_id,)).fetchall()
-        imported = db.execute(
-            "select played_at, track_uuid, plays from play_imported"
-            " where user_id = ?", (user_id,)).fetchall()
-
-    first = playcounts.baseline_stamp()
-    plays: list[tuple[str, str, int]] = []
-    previous_track = None
-    previous_count = 0
-    for track_uuid, taken_on, count, play_date in rows:
-        if track_uuid != previous_track:
-            previous_track = track_uuid
-            if taken_on == first:
-                # The counter as it stood when collection began: a
-                # lifetime, not listening.
-                previous_count = count
-                continue
-            # First seen later: `take` stores only counts above zero, so
-            # this row is the track's first plays. Treating every first row
-            # as a baseline lost the first play of everything newly played
-            # - exactly the music being discovered.
-            previous_count = 0
-        if count > previous_count:
-            # A rise of more than one means the same track was played
-            # twice inside one interval. Only the last of them has a
-            # recorded time, so they share it; at a five-minute cadence
-            # that smear is bounded by five minutes.
-            when = playcounts.local_stamp(play_date) or taken_on
-            plays.append((when, track_uuid, count - previous_count))
-        previous_count = count
-
-    plays.extend((day, track_uuid, n) for day, track_uuid, n in imported if n)
-    return plays
+    The one list Home and the statistics section are both computed from."""
+    return playcounts.increments(user_id)
 
 
 def _timed_plays(user_id: str) -> list[tuple[datetime, str, int]]:
