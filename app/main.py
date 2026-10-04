@@ -852,8 +852,11 @@ async def upload_to_inbox(
                         break
                     out.write(chunk)
             if 0 < written <= MAX_UPLOAD_BYTES:
+                # Not backdated here: a track backdated as it landed was
+                # filed by the poller mid-upload, before the album's cover
+                # (which often comes last) had arrived. `finish` releases
+                # the whole drop at once.
                 os.replace(partial, target)
-                inbox.backdate(target)
         finally:
             partial.unlink(missing_ok=True)
         return written
@@ -872,6 +875,7 @@ async def upload_to_inbox(
 @app.post("/api/inbox/upload/finish")
 async def finish_upload(
     library_id: int | None = None,
+    batch: str | None = None,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
     """File whatever has landed, instead of waiting for the next poll.
@@ -885,6 +889,10 @@ async def finish_upload(
         space = workspace.for_session(session.identity, library_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if batch:
+        # Every file of this drop has arrived, so it can be filed now, all
+        # together, rather than after the quiet period.
+        await asyncio.to_thread(inbox.release, space, filer.sanitize(batch))
     result = await asyncio.to_thread(inbox.drain, space)
     return {
         "filed": [str(path.relative_to(space.library_path))

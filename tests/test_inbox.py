@@ -802,3 +802,45 @@ async def test_an_undeclared_oversize_upload_stops_at_the_cap(space, monkeypatch
         await main.upload_to_inbox(_upload(b"x" * 50), "", None, None, _session())
     assert refused.value.status_code == 413
     assert not [p for p in space.inbox_dir.rglob("*") if p.is_file()]
+
+
+# --- a drop is filed when it is finished (CODE_REVIEW M21) -------------------
+# Every file was backdated as it landed, so the poller filed an album's
+# tracks mid-upload, before its cover (often last) had arrived.
+
+@pytest.mark.asyncio
+async def test_an_album_drop_is_filed_with_its_cover_that_came_last(space,
+                                                                    monkeypatch):
+    from mutagen.easyid3 import EasyID3 as Tags
+
+    from app import main
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
+    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
+    tracks = []
+    for n in (1, 2):
+        path = space.staging / f"src{n}.mp3"
+        shutil.copy(SILENCE, path)
+        tags = Tags(path)
+        tags.update({"albumartist": "Artist", "album": "Album",
+                     "title": f"Song {n}", "tracknumber": str(n)})
+        tags.save()
+        tracks.append(path.read_bytes())
+
+    batch = None
+    for n, data in enumerate(tracks, start=1):
+        answer = await main.upload_to_inbox(
+            _upload(data, name=f"{n:02d}.mp3"), f"Album/{n:02d}.mp3", batch,
+            None, _session())
+        batch = answer["batch"]
+    mid_upload = inbox.drain(space)          # the poller, mid-drop
+    await main.upload_to_inbox(_upload(b"\xff\xd8 art", name="cover.jpg"),
+                               "Album/cover.jpg", batch, None, _session())
+
+    finished = await main.finish_upload(None, batch, _session())
+
+    assert mid_upload.filed == []
+    assert len(finished["filed"]) == 2
+    album = space.library_path / "Artist" / "Album"
+    assert (album / "cover.jpg").read_bytes() == b"\xff\xd8 art"

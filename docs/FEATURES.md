@@ -474,12 +474,14 @@ batch: files upload one at a time with progress, then the batch reports
 
 Underneath, each file is posted to `POST /api/inbox/upload` and written
 into a per-drop folder `inbox/upload-<id>/`, keeping its relative path.
-Uploads are capped at 200 MB a file, and only audio and cover images are
-accepted. Its modification time is then **backdated** past the quiet
-period: unlike an SMB copy, an HTTP request knows when every byte has
-arrived, so there is nothing to wait for. `POST /api/inbox/upload/finish`
-then drains the inbox immediately. If the tab is closed first, the poller
-files the backdated files on its next pass anyway.
+Uploads are capped at 200 MB a file, streamed to disk in chunks, and only
+audio and cover images are accepted. When the last file of the drop has
+arrived, `POST /api/inbox/upload/finish?batch=<id>` **backdates** the whole
+drop past the quiet period and drains the inbox at once: unlike an SMB copy,
+the browser knows when every byte has arrived. Backdating each file as it
+landed let the poller file an album's tracks before its cover had uploaded.
+If the tab is closed first, the poller files the drop once it has been still
+for the quiet period.
 
 The per-drop folder exists for covers: the filer copies a `cover.jpg` it
 finds beside a track into that track's album folder, and if two drops shared

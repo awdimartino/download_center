@@ -533,11 +533,14 @@ it less likely.
       cap and renamed into place. Tests fail if the route reads the upload
       whole.
 
-- [ ] **M21. An album upload can be filed before its cover arrives.**
+- [x] **M21. An album upload can be filed before its cover arrives.**
       `app/inbox.py:178-188`, `app/static/js/drop.js:164-185`. Each file is
       backdated as it lands, so the 15 s poller files tracks mid-upload;
       covers often upload last, and the album gets no folder art.
       *Fix:* upload covers first, or backdate only in `finish`.
+      **Fixed** the second way: `finish` takes the batch and
+      `inbox.release` backdates that drop's files, then drains; drop.js
+      passes it. Reproduced first: the poller filed a track mid-drop.
 
 - [ ] **M22. Playlists from YouTube and other direct links are tagged from
       thin metadata.** `app/generic.py:114, 135-138`. Flat playlist entries

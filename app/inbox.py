@@ -223,6 +223,21 @@ def backdate(path: Path) -> None:
     os.utime(path, (age, age))
 
 
+def release(space: workspace.Workspace, batch: str) -> None:
+    """Mark one finished browser drop as settled, all of it at once.
+
+    Called when the browser says the drop is complete. Backdating each file
+    as it landed let the poller file an album's tracks before its cover had
+    uploaded; this is the moment every byte of the drop is known to be here.
+    """
+    root = upload_root(space, batch)
+    if not root.is_dir():
+        return
+    for path in root.rglob("*"):
+        if path.is_file():
+            backdate(path)
+
+
 def settled(path: Path) -> bool:
     """Whether a path has stopped changing and is safe to file.
 

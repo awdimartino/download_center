@@ -124,8 +124,12 @@ function dropUpload(file, relpath, batch, onProgress) {
   });
 }
 
-async function dropFinish() {
-  const response = await fetch("/api/inbox/upload/finish", { method: "POST" });
+// Names the drop, so the server files all of it at once now that every file
+// has arrived - not track by track while the cover is still uploading.
+async function dropFinish(batch) {
+  const response = await fetch(
+    `/api/inbox/upload/finish?batch=${encodeURIComponent(batch)}`,
+    { method: "POST" });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || "Could not finish filing.");
@@ -195,7 +199,7 @@ async function dropRunBatch(items, rows, card, skipped) {
 
   card.meta.textContent = "filing…";
   try {
-    const summary = await dropFinish();
+    const summary = await dropFinish(batch);
     const parts = [];
     if (summary.filed.length) parts.push(`${summary.filed.length} filed`);
     if (failed) parts.push(`${failed} upload${failed === 1 ? "" : "s"} failed`);
