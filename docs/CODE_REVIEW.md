@@ -854,8 +854,12 @@ it less likely.
       **Fixed:** `covers.squared(url)` keeps the last eight squared covers
       and lets one track fetch while the others wait; failures are not
       kept. Reproduced first (six tracks, six fetches; now one).
-- [ ] **L17.** An upload path segment starting with `.` is never filed —
+- [x] **L17.** An upload path segment starting with `.` is never filed —
       hidden folders are skipped (`main.py:793-794`).
+      **Fixed:** folder segments lose their leading dots (a `..` segment
+      is now dropped rather than becoming `unknown`); a file whose own name
+      starts with a dot, macOS's `._` companions mostly, is refused with a
+      400 and skipped by the Drop page. Reproduced first.
 - [ ] **L18.** `_delivering.add` happens after the move, leaving a window
       at `inbox_quiet_seconds = 0` (`inbox.py:134-136`).
 - [ ] **L19.** `audio_bitrate = 320` re-encodes YouTube's ~130–160 kbps Opus

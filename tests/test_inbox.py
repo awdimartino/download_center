@@ -887,3 +887,50 @@ def test_a_download_that_cannot_be_filed_is_not_left_for_the_poller(space,
     assert inbox.waiting(space) == []
     monkeypatch.setattr(filer, "file_track", real)
     assert inbox.drain(space).filed == []
+
+
+# --- a hidden folder in an upload's path (L17) ---------------------------------
+
+def test_an_upload_under_a_hidden_folder_is_filed(space):
+    """The poller walks past hidden folders, so a drop of `.music/Album/`
+    sat in the inbox for ever."""
+    from app import main
+
+    segments = main._relpath_segments(".music/Abbey Road/01.mp3", None)
+    assert segments == ["music", "Abbey Road", "01.mp3"]
+
+    path = inbox.upload_root(space, "batch1").joinpath(*segments)
+    path.parent.mkdir(parents=True)
+    tagged(path, albumartist="The Beatles", album="Abbey Road",
+           title="Come Together", tracknumber="1")
+    inbox.backdate(path)
+
+    assert len(inbox.drain(space).filed) == 1
+
+
+def test_a_dot_dot_segment_still_cannot_climb_out():
+    from app import main
+
+    assert main._relpath_segments("../../etc/song.mp3", None) == ["etc", "song.mp3"]
+
+
+@pytest.mark.asyncio
+async def test_a_hidden_file_is_refused_rather_than_left_unfiled(space, monkeypatch):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app import main, workspace
+
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
+
+    async def close():
+        return None
+
+    upload = SimpleNamespace(filename="._01.mp3", size=10, file=None, close=close)
+    with pytest.raises(HTTPException) as refused:
+        await main.upload_to_inbox(file=upload, relpath="Album/._01.mp3",
+                                   batch=None, library_id=None,
+                                   session=SimpleNamespace(identity=None))
+    assert refused.value.status_code == 400
+    assert "hidden" in refused.value.detail

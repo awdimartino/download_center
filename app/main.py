@@ -820,9 +820,18 @@ def _relpath_segments(relpath: str, filename: str | None) -> list[str]:
     keeps a ``..`` segment from walking out of its upload folder - sanitizing
     the joined string would only turn its slashes into underscores and leave
     the dots untouched.
+
+    A folder whose name starts with a dot loses the dot: the poller walks
+    past hidden folders, so nothing uploaded under one was ever filed. The
+    file's own name keeps it, for the caller to refuse.
     """
-    raw = (relpath or filename or "").replace("\\", "/").split("/")
-    return [filer.sanitize(part) for part in raw if part.strip()]
+    raw = [part for part in (relpath or filename or "").replace("\\", "/").split("/")
+           if part.strip()]
+    if not raw:
+        return []
+    folders = [part.lstrip(".") for part in raw[:-1]]
+    return ([filer.sanitize(part) for part in folders if part.strip()]
+            + [filer.sanitize(raw[-1])])
 
 
 @app.post("/api/inbox/upload")
@@ -842,6 +851,11 @@ async def upload_to_inbox(
     if not segments:
         raise HTTPException(status_code=400, detail="No filename given.")
     name = segments[-1]
+    if name.startswith("."):
+        # macOS's ._ companions, mostly. Hidden from the poller, so it
+        # would sit in the inbox for ever.
+        raise HTTPException(
+            status_code=400, detail=f"{name}: a hidden file, not filed.")
     suffix = Path(name).suffix.lower()
     if not (uuidtags.is_audio(Path(name)) or suffix in filer.COVER_SUFFIXES):
         raise HTTPException(

@@ -32,7 +32,10 @@ function dropExt(name) {
   return dot === -1 ? "" : name.slice(dot).toLowerCase();
 }
 
-function dropUploadable(name) {
+function dropUploadable(relpath) {
+  const name = relpath.split("/").pop();
+  // A dotfile - macOS's ._ companions above all - is refused by the server.
+  if (name.startsWith(".")) return false;
   const ext = dropExt(name);
   return DROP_AUDIO_EXT.has(ext) || DROP_COVER_EXT.has(ext);
 }
