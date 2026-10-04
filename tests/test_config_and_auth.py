@@ -436,3 +436,69 @@ def test_the_form_can_clear_text_and_untick_beets():
     assert '<input name="beets_enabled" type="checkbox">' in html
     assert 'const CLEARABLE = ["spotify_client_id", "navidrome_url", "navidrome_user"]' in js
     assert "payload[box.name] = box.checked" in js
+
+
+# --- a change has to come from this app's own page (L38) ------------------------
+
+def _post(path, headers):
+    import asyncio
+
+    from starlette.requests import Request
+
+    from app import main
+
+    raw = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
+    request = Request({"type": "http", "method": "POST", "path": path,
+                       "headers": raw, "query_string": b""})
+
+    async def call_next(request):
+        return "served"
+
+    return asyncio.run(main.require_session(request, call_next))
+
+
+@pytest.mark.parametrize("headers", [
+    {"sec-fetch-site": "same-site", "host": "pi:8000", "origin": "http://pi:4533"},
+    {"host": "pi:8000", "origin": "http://pi:4533"},
+    {"sec-fetch-site": "cross-site", "host": "pi:8000"},
+])
+def test_a_post_from_another_page_is_refused(headers):
+    """Navidrome on :4533 is the same *site* as this on :8000, so the Lax
+    cookie went along with its POSTs."""
+    response = _post("/api/library/rescan", headers)
+    assert getattr(response, "status_code", None) == 403
+
+
+@pytest.mark.parametrize("headers", [
+    {"sec-fetch-site": "same-origin", "host": "pi:8000", "origin": "http://pi:8000"},
+    {"host": "pi:8000", "origin": "http://pi:8000"},
+    {"host": "localhost:8000", "x-forwarded-host": "music.example.com",
+     "origin": "https://music.example.com"},
+    {"host": "pi:8000"},
+])
+def test_a_post_from_this_page_or_no_browser_goes_through(headers):
+    # Signed out, so it reaches the session check rather than the handler.
+    response = _post("/api/library/rescan", headers)
+    assert getattr(response, "status_code", None) == 401
+
+
+def test_a_socket_opened_by_another_page_is_closed(monkeypatch):
+    import asyncio
+
+    from app import auth, main
+
+    monkeypatch.setattr(auth, "get", lambda sid: object())
+    events = []
+
+    class Socket:
+        cookies = {"dc_session": "s1"}
+        headers = {"host": "pi:8000", "origin": "http://pi:4533"}
+
+        async def accept(self):
+            events.append("accept")
+
+        async def close(self, code):
+            events.append(code)
+
+    asyncio.run(main.websocket(Socket()))
+    assert events == ["accept", 4403]

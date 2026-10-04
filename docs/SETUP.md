@@ -327,6 +327,12 @@ with TLS. The session cookie is marked `secure` when the request arrives
 over HTTPS. FastAPI's `/docs`, `/redoc` and `/openapi.json` need a
 signed-in session, like the API they describe.
 
+Anything that changes something (a POST, PUT or DELETE) and the live
+socket are refused unless the browser says they came from this app's own
+page. Modern browsers say so with `Sec-Fetch-Site`; for one that does not,
+the `Origin` is compared with the `Host` asked for, so a reverse proxy
+should pass the original `Host` (or `X-Forwarded-Host`) through.
+
 ---
 
 ## 8. Updating, backups and maintenance

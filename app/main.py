@@ -9,6 +9,7 @@ import hashlib
 import logging
 import os
 import time
+import urllib.parse
 import uuid
 from datetime import datetime, UTC
 from pathlib import Path
@@ -449,6 +450,34 @@ async def healthz() -> dict[str, bool]:
     return {"ok": True}
 
 
+# Methods that change something, and so must come from this app's own page.
+CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def same_origin(headers: Any) -> bool:
+    """Whether a browser sent this from a page of this app's own origin.
+
+    The session cookie is SameSite=Lax, and "site" ignores the port: a page
+    served by Navidrome or Calibre on another port of the same host is the
+    same site, so it could fire POSTs here that carried the cookie - the
+    body-less ones (an auto-resolve, an audit, a rescan) need nothing else.
+
+    Sec-Fetch-Site is the browser's own answer and is right behind a proxy
+    that rewrites Host. Without it, Origin is compared with the host asked
+    for. A request with neither did not come from a browser page - curl, a
+    script - and carries no cookie it did not mean to.
+    """
+    site = headers.get("sec-fetch-site")
+    if site:
+        return site in ("same-origin", "none")
+    origin = headers.get("origin")
+    if not origin:
+        return True
+    asked = {headers.get("host", "")} | {
+        h.strip() for h in headers.get("x-forwarded-host", "").split(",") if h.strip()}
+    return urllib.parse.urlsplit(origin).netloc in asked
+
+
 @app.middleware("http")
 async def require_session(request: Request, call_next):
     # Looked up once and kept on the request, because the handler needs the
@@ -456,6 +485,9 @@ async def require_session(request: Request, call_next):
     session = auth.get(request.cookies.get(auth.COOKIE))
     request.state.session = session
     path = request.url.path
+    if request.method in CHANGING and not same_origin(request.headers):
+        return JSONResponse({"detail": "That came from another page."},
+                            status_code=403)
     gated = (path.startswith("/api/") and path not in OPEN_PATHS) or path in DOC_PATHS
     if gated and session is None:
         return JSONResponse({"detail": "Please sign in."}, status_code=401)
@@ -2469,6 +2501,12 @@ async def status(
 @app.websocket("/ws")
 async def websocket(ws: WebSocket) -> None:
     session = auth.get(ws.cookies.get(auth.COOKIE))
+    # A socket is not bound by CORS: any page could open one with this
+    # person's cookie and read their downloads as they move.
+    if session is not None and not same_origin(ws.headers):
+        await ws.accept()
+        await ws.close(code=4403)
+        return
     if session is None:
         # Accepted first: a close before accepting becomes an HTTP 403, the
         # browser only ever sees 1006, and the page went on reconnecting as

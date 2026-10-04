@@ -977,12 +977,17 @@ it less likely.
       not a 502 (`main.py:1270`).
       **Fixed** already, by M27 (`98dedc3`), which wrapped the ownership
       check; a test now holds it.
-- [ ] **L38.** CSRF rests on `SameSite=Lax` alone, which ignores ports — a
+- [x] **L38.** CSRF rests on `SameSite=Lax` alone, which ignores ports — a
       page on another port of the same host (Navidrome, Calibre) could fire
       body-less POSTs: `/api/duplicates/auto?apply=true`,
       `/api/health/audit`, `/api/library/rescan`, `/api/playcounts/snapshot`.
       `/ws` checks no Origin. *Unverified in practice.* *Fix:* reject
       non-GET requests whose `Origin`/`Sec-Fetch-Site` is not same-origin.
+      **Fixed** as suggested: `main.same_origin` reads `Sec-Fetch-Site`,
+      falling back to `Origin` against `Host`/`X-Forwarded-Host`; the
+      middleware answers 403 to a POST, PUT, PATCH or DELETE that fails it,
+      and `/ws` closes with 4403. A request with neither header (curl, a
+      script) passes, since it carries no cookie by accident.
 - [ ] **L39.** Sign-in returns raw exception text (internal hostnames) to
       unauthenticated callers and is not rate-limited (`main.py:454-457`).
 - [ ] **L40.** Cover art is served `Cache-Control: public` though it is
