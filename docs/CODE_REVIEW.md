@@ -338,7 +338,7 @@ it less likely.
       merge search, which also drops an answer once the box is cleared.
       Found by reading; not reproduced in a browser.
 
-- [ ] **M6. The Dates button does not look selected until a range is
+- [x] **M6. The Dates button does not look selected until a range is
       submitted** (reported by the user). `app/static/js/listening.js:162-175`.
       Clicking *Dates* only unhides the pickers and sets `aria-expanded`;
       the `active` class moves only in the form's submit handler (`:185-187`).
@@ -349,6 +349,10 @@ it less likely.
       the selection is a class only, invisible to screen readers.
       *Fix:* a `markRange()` helper that sets the class and `aria-pressed`,
       called on load, on a range click, and when Dates opens.
+      **Fixed:** `markRange`/`markShown` set the class and `aria-pressed`;
+      opening Dates marks Dates, closing it unsubmitted marks the range
+      still shown. The markup no longer carries a default, and a frontend
+      test ties `listeningDays` to `overview.OPENING_DAYS`.
 
 ### Library
 

@@ -403,3 +403,20 @@ def test_the_day_count_operators_are_the_servers_date_operators():
 
 def test_the_editor_does_not_match_operators_by_substring():
     assert not re.search(r"operator(?:\.value)?\.indexOf\(", JS_FILES["playlists.js"])
+
+
+# --- the Listening range ------------------------------------------------------
+# The default range was written in three places, and the selection was a
+# class only (CODE_REVIEW M6). The page now marks it itself, so the markup
+# carries none, and the server warms the cache for the same default.
+
+def test_the_default_listening_range_is_the_one_the_server_warms():
+    from app import overview
+
+    found = re.search(r"let listeningDays = (\d+);", JS_FILES["listening.js"])
+    assert found and int(found.group(1)) == overview.OPENING_DAYS
+    assert not re.search(r'class="range[^"]*\bactive\b', HTML)
+
+
+def test_the_selected_range_is_announced_not_only_coloured():
+    assert 'setAttribute("aria-pressed"' in JS_FILES["listening.js"]

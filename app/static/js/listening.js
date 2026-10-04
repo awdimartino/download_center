@@ -23,6 +23,8 @@ const sessionPart = document.getElementById("listening-session-part");
 const hourlyPart = document.getElementById("listening-hourly-part");
 const albumsPart = document.getElementById("listening-albums-part");
 const genresPart = document.getElementById("listening-genres-part");
+// The default range. overview.OPENING_DAYS warms the cache for the same
+// one; the markup carries no default of its own (markShown sets it).
 let listeningDays = 3650;
 // Set when a date range is chosen; takes precedence over listeningDays.
 let listeningDates = null;
@@ -153,12 +155,27 @@ export async function loadListening() {
 export function selectRange(days) {
   listeningDays = days;
   listeningDates = null;
-  document.querySelectorAll(".listen-range .range").forEach((button) => {
-    button.classList.toggle("active", Number(button.dataset.days) === days);
-  });
+  markShown();
   listenDates.hidden = true;
   listenCustom.setAttribute("aria-expanded", "false");
   loadListening();
+}
+
+// One range button marked as selected: the class for the eye, aria-pressed
+// for a screen reader. Dates used to change neither until its range was
+// submitted, so while choosing, the old range still looked selected.
+function markRange(active) {
+  document.querySelectorAll(".listen-range .range").forEach((button) => {
+    const on = button === active;
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-pressed", String(on));
+  });
+}
+
+// Mark whichever range is actually on screen.
+function markShown() {
+  markRange(listeningDates ? listenCustom
+    : document.querySelector(`.listen-range .range[data-days="${listeningDays}"]`));
 }
 
 // Local date as YYYY-MM-DD, the format a date input and the server both use.
@@ -173,6 +190,10 @@ listenCustom.addEventListener("click", () => {
   const open = listenDates.hidden;
   listenDates.hidden = !open;
   listenCustom.setAttribute("aria-expanded", String(open));
+  // Open: Dates is what is being chosen. Closed without a submit: back to
+  // the range still on screen.
+  if (open) markRange(listenCustom);
+  else markShown();
   if (open && !listenFrom.value) {
     const today = new Date();
     const monthAgo = new Date(today);
@@ -190,9 +211,7 @@ listenDates.addEventListener("submit", (event) => {
     return;
   }
   listeningDates = { start: listenFrom.value, end: listenTo.value };
-  document.querySelectorAll(".listen-range .range").forEach((button) => {
-    button.classList.toggle("active", button === listenCustom);
-  });
+  markShown();
   loadListening();
 });
 
@@ -204,3 +223,5 @@ listeningMore.addEventListener("click", () => {
   showAllTracks = !showAllTracks;
   renderTracks();
 });
+
+markShown();
