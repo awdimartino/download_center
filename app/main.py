@@ -2094,7 +2094,8 @@ async def library_replaygain(
         if body.folder is not None:
             if body.library_id is None:
                 raise ValueError("Say which library the album is in.")
-            library.album_dir(identity, body.library_id, body.folder)
+            library.album_dir(identity, body.library_id, body.folder,
+                              any_depth=True)
             targets = [(body.library_id, body.folder)]
         else:
             targets = await asyncio.to_thread(library.without_gain, identity)

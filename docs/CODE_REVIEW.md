@@ -356,7 +356,7 @@ it less likely.
 
 ### Library
 
-- [ ] **M7. `album_dir`'s depth check can be bypassed, and is too strict for
+- [x] **M7. `album_dir`'s depth check can be bypassed, and is too strict for
       legitimate folders.** `app/library.py:727-738`. Parts are counted before
       resolving, so `Artist/.` passes as two parts and resolves to the
       artist directory; `retag_album` then uses `rglob` and would merge the
@@ -368,6 +368,12 @@ it less likely.
       quarantined files.
       *Fix:* reject `.`/`..` and the quarantine; count parts after resolving;
       make `without_gain` agree with `album_dir`.
+      **Fixed:** `.`/`..` parts are refused, depth is counted after
+      resolving, and `album_dir` and `track_path` refuse the quarantine.
+      Rather than narrowing `without_gain`, ReplayGain passes
+      `any_depth=True`, so depth-1 and depth-3 folders are measured and the
+      count can reach zero; editing and matching stay at exactly
+      `artist/album`. Reproduced first (`Artist/.` resolved to `Artist`).
 
 - [ ] **M8. Editing an album opened from a song search writes the track
       artist as the album artist.** `app/static/js/library.js:341-344, 1114-1135`.

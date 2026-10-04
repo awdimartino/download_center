@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import navidrome, store
+from . import navidrome, store, walk
 from .playcounts import GENRE_TAG
 
 log = logging.getLogger("navidrome_companion.library")
@@ -681,6 +681,9 @@ def track_path(identity: navidrome.Identity, library_id: int,
     here = root.joinpath(*parts).resolve()
     if root.resolve() not in here.parents:
         raise ValueError("That is not a track in your library.")
+    if here.relative_to(root.resolve()).parts[0] == walk.QUARANTINE_NAME:
+        raise ValueError("That track has been set aside; it is not part of "
+                         "the library.")
     if not here.is_file():
         raise ValueError(f"{path} is not on disk.")
     return here
@@ -708,34 +711,48 @@ def owns_track(identity: navidrome.Identity, track_id: str) -> bool:
 
 
 def album_dir(identity: navidrome.Identity, library_id: int,
-              folder: str) -> Path:
+              folder: str, any_depth: bool = False) -> Path:
     """Where that album actually is on disk, if it really is that person's.
 
     The folder arrives from the browser, so this is the boundary that has to
     hold: asking to match "../../etc" must not hand back a path outside the
     library. Resolved and compared against the root rather than filtered for
     "..", since a symlink walks out of a filtered name too.
+
+    `any_depth` is for measuring rather than editing: ReplayGain on a folder
+    at any depth inside the library changes nothing but gain tags, and
+    without it albums filed at depth 1 or 3 were listed for measuring and
+    then skipped on every run.
     """
     root = next((Path(lib["path"]) for lib in identity.libraries
                  if str(lib["id"]) == str(library_id)), None)
     if root is None:
         raise ValueError("That library does not belong to this account.")
 
+    parts = [part for part in folder.replace("\\", "/").split("/") if part]
+    if any(part in (".", "..") for part in parts):
+        raise ValueError("That is not a folder in your library.")
+    path = root.joinpath(*parts).resolve()
+    base = root.resolve()
+    if base not in path.parents:
+        raise ValueError("That is not a folder in your library.")
+    # Counted after resolving, not before: "Artist/." was two parts and
+    # resolved to the artist directory, and a retag applies to everything
+    # underneath - that artist's whole discography, merged.
+    inside = path.relative_to(base).parts
+    if inside[0] == walk.QUARANTINE_NAME:
+        raise ValueError("That folder has been set aside; it is not part "
+                         "of the library.")
     # Exactly `$albumartist/$album`, which is what the filer writes and
     # therefore what one album is. Anything shallower is not an album: the
     # library root would hand a matcher the whole collection as one release,
     # and an artist directory would hand it that artist's entire discography
     # - and a retag applies to every file underneath, so being wrong here
     # merges records permanently.
-    parts = [part for part in folder.replace("\\", "/").split("/") if part]
-    if len(parts) != 2:
+    if len(inside) != 2 and not any_depth:
         raise ValueError(
             "That is not an album folder. An album lives in "
             "artist/album, and a retag applies to everything inside it.")
-
-    path = root.joinpath(*parts).resolve()
-    if root.resolve() not in path.parents:
-        raise ValueError("That is not a folder in your library.")
     if not path.is_dir():
         raise ValueError(f"{folder} is not on disk.")
     return path

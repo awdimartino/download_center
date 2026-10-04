@@ -743,3 +743,39 @@ def test_an_unreadable_database_is_reported_not_raised_for_genres(
     assert tally["available"] is False
     assert tally["genres"] == []
     assert tally["reason"]
+
+
+# --- what counts as an album folder (CODE_REVIEW M7) -----------------------
+# Parts were counted before resolving, so "Artist/." passed as two and
+# resolved to the artist directory - and a retag applies to everything under
+# it. A folder in the quarantine passed too.
+
+@pytest.mark.parametrize("folder", ["Radiohead/.", "Radiohead/Kid A/..",
+                                    "./Radiohead"])
+def test_a_dot_never_reaches_an_artist_directory(tmp_path, identity, folder):
+    (tmp_path / "music" / "Radiohead" / "Kid A").mkdir(parents=True)
+    with pytest.raises(ValueError):
+        library.album_dir(identity, 1, folder)
+
+
+def test_a_quarantined_folder_is_not_an_album(tmp_path, identity):
+    (tmp_path / "music" / "duplicates-removed" / "Radiohead").mkdir(parents=True)
+    with pytest.raises(ValueError, match="set aside"):
+        library.album_dir(identity, 1, "duplicates-removed/Radiohead")
+
+
+def test_a_quarantined_track_is_not_editable(tmp_path, identity):
+    folder = tmp_path / "music" / "duplicates-removed" / "A" / "B"
+    folder.mkdir(parents=True)
+    (folder / "song.mp3").write_bytes(b"x")
+    with pytest.raises(ValueError, match="set aside"):
+        library.track_path(identity, 1, "duplicates-removed/A/B/song.mp3")
+
+
+def test_measuring_may_reach_a_disc_folder_editing_may_not(tmp_path, identity):
+    (tmp_path / "music" / "Artist" / "Album" / "CD1").mkdir(parents=True)
+
+    with pytest.raises(ValueError):
+        library.album_dir(identity, 1, "Artist/Album/CD1")
+    assert library.album_dir(identity, 1, "Artist/Album/CD1",
+                             any_depth=True).name == "CD1"

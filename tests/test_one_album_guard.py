@@ -56,7 +56,7 @@ async def test_matching_a_folder_holding_two_albums_is_refused(space, monkeypatc
     folder, _, _ = _two_albums_in_one_folder(space)
     monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
     monkeypatch.setattr(main.library, "album_dir",
-                        lambda identity, lid, name: folder)
+                        lambda identity, lid, name, **_: folder)
     session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
 
     with pytest.raises(HTTPException) as refused:
@@ -69,7 +69,7 @@ def test_replaygain_skips_a_folder_holding_two_albums(space, identity, monkeypat
     folder, _, _ = _two_albums_in_one_folder(space)
     measured = []
     monkeypatch.setattr(replaygain.library, "album_dir",
-                        lambda identity, lid, name: folder)
+                        lambda identity, lid, name, **_: folder)
     monkeypatch.setattr(replaygain.inbox, "settled", lambda path: True)
     monkeypatch.setattr(replaygain, "measure", measured.append)
     replaygain.operations.reset()

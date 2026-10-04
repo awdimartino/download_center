@@ -642,8 +642,10 @@ starts over.
 The Library groups tracks by folder, because the filer puts exactly one
 album in one directory. Album-level actions — rename, match, cover,
 ReplayGain, quarantine, combine — act on the folder. Editable albums are
-`artist/album` folders inside the library; anything shallower or deeper is
-read-only. Every request names a library id and a folder, never a path;
+`artist/album` folders inside the library, counted after resolving, so
+`Artist/.` is the artist directory and refused; anything shallower or deeper
+is read-only, except that ReplayGain measures a folder at any depth. Nothing
+under `duplicates-removed/` can be edited. Every request names a library id and a folder, never a path;
 the server checks the library is yours, resolves the path, and refuses
 anything that lands outside the library root (resolving, not filtering
 `..`, so a symlink cannot walk out either).

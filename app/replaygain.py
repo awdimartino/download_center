@@ -87,7 +87,8 @@ def measure_all(identity: navidrome.Identity,
             break
         operations.report(NAME, owner, done=n, total=len(targets), album=folder)
         try:
-            path = library.album_dir(identity, library_id, folder)
+            path = library.album_dir(identity, library_id, folder,
+                                     any_depth=True)
         except ValueError as exc:
             # Moved or renamed since the list was read. Not the scanner's
             # failure, and the next run finds it where it is now.
