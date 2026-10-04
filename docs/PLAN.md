@@ -4,7 +4,7 @@ Working document. The repository copy is the source of truth; if something
 here disagrees with the code, the code is what shipped and this is what we
 meant. Updated as work lands.
 
-Last updated: 2026-09-06.
+Last updated: 2026-10-04.
 
 ---
 
@@ -470,6 +470,25 @@ over a window, scoped to the signed-in account. What is missing is the
 *shape* of a year - months, discoveries, streaks - which needs more
 snapshots than exist yet. The imported Last.fm history covers the years
 before, so anything periodised over 2022-2026 can be built today.
+
+### Music recommendations
+
+Added 2026-10-04, not designed yet. Suggest music that isn't in the
+library yet, seeded from what each person actually plays, with a way to send
+a suggestion straight to Browse to download.
+
+**Not Spotify.** `GET /v1/recommendations`, along with related artists and
+audio features, returns 403 for any app created after 2024-11-27, and
+Development Mode lost more in February 2026. Search alone gives only a rough
+substitute.
+
+**Likely sources**, both keyed on the MusicBrainz ids the library already
+carries: Last.fm's `track.getSimilar` / `artist.getSimilar` (an API key
+only; the old key was removed with `lastfm.py`, so it needs a new one), and
+ListenBrainz's similar-artist and recommendation data. Seeds come from our
+own play history (`play_snapshot` + `play_imported`) rather than an
+external account, so it works the same for Kelly. Filter out anything the
+ledger already holds.
 
 ---
 
