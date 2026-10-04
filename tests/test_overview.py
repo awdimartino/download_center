@@ -719,3 +719,16 @@ def test_the_last_evening_of_a_month_is_still_that_month(state_db,
     assert page["months"][-1]["month"] == "2026-10"
     assert page["this_month"] == 3
     assert page["year"]["year"] == 2026
+
+
+def test_the_reading_time_that_stands_in_is_local_too(state_db, monkeypatch):
+    """With no play_date, the reading's UTC stamp was used as it stood and
+    then bucketed as if local (L27)."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "play_day_timezone", "America/New_York")
+    snapshot("2026-10-01T00:55:00+00:00", "t1", 4)
+    snapshot("2026-10-01T01:00:00+00:00", "t1", 5)
+
+    when, _track, _n = overview._increments(ALEX)[0]
+
+    assert when.startswith("2026-09-30T21:00:00"), when

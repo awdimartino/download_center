@@ -915,8 +915,11 @@ it less likely.
       for the month list and the year; the cache key drops the UTC day.
       Reproduced first with the clock frozen at 20:30 on 31 October in
       New York.
-- [ ] **L27.** A play with no `play_date` falls back to the reading's UTC
+- [x] **L27.** A play with no `play_date` falls back to the reading's UTC
       stamp, bucketed as if local (`overview.py:107`).
+      **Fixed:** the stand-in reading stamp goes through `local_stamp`
+      like a play date; a bare nightly-era date is left as it is.
+      Reproduced first.
 - [ ] **L28.** The headline "You've played N tracks this month" counts plays
       (`overview.py:456-460`).
 - [ ] **L29.** The *In year* tile is the calendar year; tapping it shows the

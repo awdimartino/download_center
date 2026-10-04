@@ -657,7 +657,12 @@ def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
             # twice inside one interval. Only the last of them has a
             # recorded time, so they share it; at a five-minute cadence
             # that smear is bounded by five minutes.
-            when = local_stamp(play_date) or taken_on
+            # The reading's own stamp is UTC, so it is converted the same
+            # way; bucketed raw, a reading at 01:00 UTC put a New York
+            # evening's play on the next day. A bare date from the nightly
+            # era has no time to convert and stands as it is.
+            when = (local_stamp(play_date)
+                    or (local_stamp(taken_on) if "T" in taken_on else taken_on))
             plays.append((when, track_uuid, count - previous_count))
         previous_count = count
 
