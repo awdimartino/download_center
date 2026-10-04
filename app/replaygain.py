@@ -80,11 +80,12 @@ def measure_all(identity: navidrome.Identity,
     checks between albums whether it has been asked to stop. One album
     failing does not end the run - it is listed and the rest carry on.
     """
+    owner = identity.username
     done, failed, skipped = 0, [], []
     for n, (library_id, folder) in enumerate(targets):
-        if operations.stopping(NAME):
+        if operations.stopping(NAME, owner):
             break
-        operations.report(NAME, done=n, total=len(targets), album=folder)
+        operations.report(NAME, owner, done=n, total=len(targets), album=folder)
         try:
             path = library.album_dir(identity, library_id, folder)
         except ValueError as exc:
@@ -115,6 +116,6 @@ def measure_all(identity: navidrome.Identity,
     if done:
         navidrome.notify()
     return {"measured": done, "total": len(targets),
-            "stopped": operations.stopping(NAME),
+            "stopped": operations.stopping(NAME, owner),
             "failures": len(failed), "failed": failed[:20],
             "skipped": skipped[:20]}

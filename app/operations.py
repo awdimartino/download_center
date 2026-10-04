@@ -10,9 +10,14 @@ the forty threads FastAPI has, blocking on a lock, for as long as the first
 one took. Enough clicks and every `to_thread` call in the application - the
 health panel, playlists, queueing a download - had nowhere to run.
 
-So they run here instead: one at a time per name, off the request, with a
-status anyone can ask for. Starting one that is already running reports the
-one in flight rather than starting a second.
+So they run here instead: one at a time per person and name, off the
+request, with a status its owner can ask for. Starting one that is already
+running reports the one in flight rather than starting a second.
+
+Per person, not per name. Keyed by name alone, Kelly starting a combine
+while Alex's ran was handed Alex's operation - hers was silently never run
+and its result went to him - and every person's results, folder names and
+candidate lists included, were readable by everyone.
 
 This deliberately does not persist. An operation that was interrupted by a
 restart has no meaningful "resume" - beets either moved the files or it did
@@ -77,7 +82,7 @@ class Operation:
         }
 
 
-_operations: dict[str, Operation] = {}
+_operations: dict[tuple[str | None, str], Operation] = {}
 
 # Called with an Operation whenever one changes state, so the browser can be
 # told without polling. Set by main.py; left unset in tests.
@@ -89,12 +94,14 @@ def subscribe(callback: Callable[[Operation], Awaitable[None]]) -> None:
     _on_change = callback
 
 
-def get(name: str) -> Operation:
-    return _operations.setdefault(name, Operation(name))
+def get(name: str, owner: str | None) -> Operation:
+    return _operations.setdefault((owner, name), Operation(name, owner=owner))
 
 
-def all_operations() -> list[dict[str, Any]]:
-    return [op.as_dict() for op in _operations.values()]
+def all_operations(owner: str | None) -> list[dict[str, Any]]:
+    """This person's operations, and nobody else's."""
+    return [op.as_dict() for (who, _), op in _operations.items()
+            if who == owner]
 
 
 async def _announce(operation: Operation) -> None:
@@ -116,12 +123,11 @@ def start(name: str, owner: str | None,
     queueing a second: these are idempotent sweeps, so running one twice
     concurrently gains nothing and costs a thread.
     """
-    operation = get(name)
+    operation = get(name, owner)
     if operation.running:
         return operation, False
 
     operation.status = RUNNING
-    operation.owner = owner
     operation.started_at = time.time()
     operation.finished_at = None
     operation.result = None
@@ -148,29 +154,29 @@ def start(name: str, owner: str | None,
     return operation, True
 
 
-def report(name: str, **progress: Any) -> None:
+def report(name: str, owner: str | None, **progress: Any) -> None:
     """Called from the work's thread: how far it has got. Announced at once.
 
     Without this a run of an hour looks, from the browser, exactly like one
     that has hung.
     """
-    operation = get(name)
+    operation = get(name, owner)
     operation.progress = progress
     if operation.loop is not None and not operation.loop.is_closed():
         asyncio.run_coroutine_threadsafe(_announce(operation), operation.loop)
 
 
-def stop(name: str) -> Operation:
+def stop(name: str, owner: str | None) -> Operation:
     """Ask a running operation to finish after the unit it is on."""
-    operation = get(name)
+    operation = get(name, owner)
     if operation.running:
         operation.stop_requested = True
     return operation
 
 
-def stopping(name: str) -> bool:
+def stopping(name: str, owner: str | None) -> bool:
     """For the work to check between units."""
-    return get(name).stop_requested
+    return get(name, owner).stop_requested
 
 
 def reset() -> None:

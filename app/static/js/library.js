@@ -961,9 +961,9 @@ function candidateRow(album, candidate) {
   return row;
 }
 
-// Whether an answer (or the operation in flight) is about this album. The
-// lookup is one at a time for the whole server, so the answer arriving can
-// be somebody else's - or an earlier album's from this tab.
+// Whether an answer (or the operation in flight) is about this album. Your
+// lookups run one at a time, so the answer arriving can be an earlier
+// album's, from this tab or another.
 function sameAlbum(target, album) {
   return Boolean(target && album)
     && target.library_id === album.library_id && target.folder === album.folder;

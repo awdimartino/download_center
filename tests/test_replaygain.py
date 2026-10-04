@@ -63,7 +63,7 @@ def test_a_stop_is_honoured_between_albums(albums, identity, monkeypatch):
 
     def measure(path):
         seen.append(path.name)
-        operations.get(replaygain.NAME).stop_requested = True
+        operations.get(replaygain.NAME, "alex").stop_requested = True
     monkeypatch.setattr(replaygain, "measure", measure)
 
     result = replaygain.measure_all(identity, albums)
@@ -99,7 +99,7 @@ def test_progress_is_reported(albums, identity, monkeypatch):
 
     replaygain.measure_all(identity, albums)
 
-    assert operations.get(replaygain.NAME).progress == {
+    assert operations.get(replaygain.NAME, "alex").progress == {
         "done": 2, "total": 3, "album": "A/Three"}
 
 

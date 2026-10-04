@@ -65,7 +65,7 @@ async def test_matching_a_folder_holding_two_albums_is_refused(space, monkeypatc
     assert refused.value.status_code == 409
 
 
-def test_replaygain_skips_a_folder_holding_two_albums(space, monkeypatch):
+def test_replaygain_skips_a_folder_holding_two_albums(space, identity, monkeypatch):
     folder, _, _ = _two_albums_in_one_folder(space)
     measured = []
     monkeypatch.setattr(replaygain.library, "album_dir",
@@ -74,7 +74,7 @@ def test_replaygain_skips_a_folder_holding_two_albums(space, monkeypatch):
     monkeypatch.setattr(replaygain, "measure", measured.append)
     replaygain.operations.reset()
 
-    result = replaygain.measure_all(None, [(1, "Aiden Williams/Believe")])
+    result = replaygain.measure_all(identity, [(1, "Aiden Williams/Believe")])
 
     assert measured == []
     assert result["skipped"] == ["Aiden Williams/Believe: holds more than one album"]

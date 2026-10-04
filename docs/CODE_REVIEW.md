@@ -152,7 +152,7 @@ it less likely.
       old folder with new tags and the old UUID, for a person to sort out.
       Reproduced first.
 
-- [ ] **H3. Long operations are global by name: one person's result goes to
+- [x] **H3. Long operations are global by name: one person's result goes to
       another, and every person's results are readable by all.**
       `app/operations.py:75-118`, `app/main.py:2085-2090`, `app/static/js/main.js:157-163`.
       Operations are keyed `candidates`, `import`, `combine`, `replaygain`,
@@ -164,6 +164,13 @@ it less likely.
       user, strictly private".
       *Fix:* key operations by `(user, name)` — by target for match and
       apply — and filter `/api/operations` on the server.
+      **Fixed:** keyed by `(owner, name)`; `get`, `report`, `stop` and
+      `stopping` all take the owner, `/api/operations` returns only the
+      caller's, and the ReplayGain stop can only name your own run. Not keyed
+      by target: C3's `target` and offered-release check already cover
+      match and apply. The old suite had a test asserting the bug (Kelly's
+      start returned Alex's operation). Trade-off: two people can now run
+      ReplayGain, or a lookup, at the same time on the Pi.
 
 - [ ] **H4. Listening overcounts, by default.** `app/playcounts.py:597`
       (`started = opening.get(key, 0)`). For a range that starts before a

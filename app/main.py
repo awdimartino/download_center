@@ -2036,7 +2036,8 @@ async def library_combine(
             keep=folders.get(body.keep) if body.keep else None,
             order=[files[name] for name in body.order],
             cover=cover,
-            report=functools.partial(operations.report, "combine"))
+            report=functools.partial(operations.report, "combine",
+                                     identity.username))
         _reviewed(identity, body.library_id, ids, "edited")
         navidrome.notify()
         return result
@@ -2115,20 +2116,21 @@ async def library_replaygain(
 async def library_replaygain_stop(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """Finish the album in hand, then stop."""
-    operation = operations.get(replaygain.NAME)
-    if operation.owner != session.identity.username:
-        raise HTTPException(status_code=403,
-                            detail="That run is somebody else's.")
-    return {"operation": operations.stop(replaygain.NAME).as_dict()}
+    """Finish the album in hand, then stop. Only your own run: there is no
+    way to name anybody else's."""
+    return {"operation": operations.stop(
+        replaygain.NAME, session.identity.username).as_dict()}
 
 
 @app.get("/api/operations")
 async def list_operations(
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    """What long-running work is in flight, and how the last run went."""
-    return {"operations": operations.all_operations()}
+    """Your long-running work in flight, and how your last runs went.
+
+    Filtered here rather than in the browser: results carry folder names,
+    paths and candidate lists, which are as private as the library."""
+    return {"operations": operations.all_operations(session.identity.username)}
 
 
 @app.get("/api/playcounts")

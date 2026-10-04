@@ -702,7 +702,7 @@ that release.
   track lives.
 - The album is marked reviewed ("matched") only if beets actually applied
   the release; if it did not, the panel says the album is unchanged.
-- Lookups run one at a time for the whole server. Asking about a second
+- Your lookups run one at a time. Asking about a second
   album while one is in flight is refused with a message, an answer is shown
   only under the album it was asked about, and **Use this** applies only a
   release that was offered for that album, to the person it was offered to.
@@ -982,11 +982,13 @@ Three loops run for the life of the process:
 
 **Operations** (`operations.py`) are the long jobs that are not downloads:
 finding candidates, applying a match, combining, ReplayGain, the disk audit.
-Each runs off the request in a worker thread, one at a time per name, with a
-status the browser can ask for and progress pushed over the WebSocket to the
-person who started it. Starting one that is already running reports the one
-in flight instead of starting a second. On reload, the page picks up any
-operation of yours still running.
+Each runs off the request in a worker thread, one at a time per person and
+name, with a status only its owner can ask for (`/api/operations` returns
+only yours) and progress pushed over the WebSocket to that person. Starting
+one of yours that is already running reports the one in flight instead of
+starting a second; someone else's never blocks yours, so two people can
+each run ReplayGain at once. On reload, the page picks up any operation of
+yours still running.
 
 Messages about work a panel started appear in that panel, not in a banner
 over the whole page; switching view clears the page-wide banner.

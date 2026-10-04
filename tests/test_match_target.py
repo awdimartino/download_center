@@ -47,7 +47,7 @@ async def test_the_answer_names_the_album_it_is_about(monkeypatch):
                         lambda space, path: {"candidates": [{"id": "mb-a"}]})
     answer = await main.library_match(
         main.AlbumTarget(library_id=1, folder="Artist/A"), _session())
-    operation = operations.get("candidates")
+    operation = operations.get("candidates", "alex")
     await _settle(operation)
 
     assert answer["operation"]["target"] == {"library_id": 1, "folder": "Artist/A"}
@@ -72,7 +72,7 @@ async def test_a_lookup_refused_while_another_runs_says_whose_it_is(monkeypatch)
     assert second["started"] is False
     assert second["operation"]["target"]["folder"] == "Artist/A"
     release.set()
-    await _settle(operations.get("candidates"))
+    await _settle(operations.get("candidates", "alex"))
 
 
 @pytest.mark.asyncio
@@ -82,14 +82,14 @@ async def test_a_release_offered_for_one_album_cannot_be_applied_to_another(
                         lambda space, path: {"candidates": [{"id": "mb-a"}]})
     await main.library_match(
         main.AlbumTarget(library_id=1, folder="Artist/A"), _session())
-    await _settle(operations.get("candidates"))
+    await _settle(operations.get("candidates", "alex"))
 
     with pytest.raises(HTTPException) as refused:
         await main.library_match_apply(
             main.AlbumChoice(library_id=1, folder="Artist/B", release_id="mb-a"),
             _session())
     assert refused.value.status_code == 409
-    assert operations.get("import").status == operations.IDLE
+    assert operations.get("import", "alex").status == operations.IDLE
 
 
 @pytest.mark.asyncio
@@ -98,7 +98,7 @@ async def test_a_release_offered_to_someone_else_is_not_offered_to_you(monkeypat
                         lambda space, path: {"candidates": [{"id": "mb-a"}]})
     await main.library_match(
         main.AlbumTarget(library_id=1, folder="Artist/A"), _session("kelly"))
-    await _settle(operations.get("candidates"))
+    await _settle(operations.get("candidates", "kelly"))
 
     with pytest.raises(HTTPException):
         await main.library_match_apply(
@@ -119,12 +119,12 @@ async def test_a_release_offered_for_this_album_is_applied(monkeypatch):
         or {"imported": 0})
     await main.library_match(
         main.AlbumTarget(library_id=1, folder="Artist/A"), _session())
-    await _settle(operations.get("candidates"))
+    await _settle(operations.get("candidates", "alex"))
 
     answer = await main.library_match_apply(
         main.AlbumChoice(library_id=1, folder="Artist/A", release_id="mb-a"),
         _session())
-    await _settle(operations.get("import"))
+    await _settle(operations.get("import", "alex"))
 
     assert answer["started"] is True
     assert applied == [("A", "mb-a")]

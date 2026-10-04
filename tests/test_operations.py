@@ -45,15 +45,56 @@ async def test_starting_one_already_running_reports_the_one_in_flight():
         return {"ran": True}
 
     first, started_first = operations.start("import", "alex", slow)
-    second, started_second = operations.start("import", "kelly", slow)
+    second, started_second = operations.start("import", "alex", slow)
 
     assert started_first is True
     assert started_second is False
     assert second is first
-    assert second.owner == "alex", "the running one keeps its owner"
 
     release.set()
     await _settle(first)
+
+
+# Keyed by name alone, Kelly starting a combine while Alex's ran was handed
+# Alex's operation - hers never ran and its result went to him - and every
+# person's results were readable by everyone (CODE_REVIEW H3).
+
+@pytest.mark.asyncio
+async def test_another_persons_operation_does_not_block_yours():
+    release = threading.Event()
+
+    def slow():
+        release.wait(timeout=5)
+        return {"who": "alex"}
+
+    alex, _ = operations.start("combine", "alex", slow)
+    kelly, started = operations.start("combine", "kelly", lambda: {"who": "kelly"})
+    await _settle(kelly)
+
+    assert started is True
+    assert kelly is not alex
+    assert kelly.result == {"who": "kelly"}
+    release.set()
+    await _settle(alex)
+    assert alex.result == {"who": "alex"}
+
+
+@pytest.mark.asyncio
+async def test_you_see_only_your_own_operations():
+    operation, _ = operations.start("candidates", "alex",
+                                    lambda: {"folder": "Alex/Private"})
+    await _settle(operation)
+
+    assert [op["owner"] for op in operations.all_operations("alex")] == ["alex"]
+    assert operations.all_operations("kelly") == []
+
+
+def test_stopping_is_asked_of_your_own_run_only():
+    operations.get("replaygain", "alex").status = operations.RUNNING
+
+    operations.stop("replaygain", "kelly")
+
+    assert operations.stopping("replaygain", "alex") is False
 
 
 @pytest.mark.asyncio
@@ -98,8 +139,8 @@ async def test_finishing_announces_so_the_browser_hears_about_it():
 
 @pytest.mark.asyncio
 async def test_an_unstarted_operation_reads_as_idle():
-    assert operations.get("import").status == operations.IDLE
-    assert operations.get("import").running is False
+    assert operations.get("import", "alex").status == operations.IDLE
+    assert operations.get("import", "alex").running is False
 
 
 # --- the locks that used to block a threadpool worker ---------------------
