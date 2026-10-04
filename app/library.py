@@ -31,13 +31,14 @@ would materialise 6,800 track objects to show fifty rows.
 from __future__ import annotations
 
 import collections
+import dataclasses
 import logging
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import navidrome, store, walk
+from . import memo, navidrome, store, walk
 from .playcounts import GENRE_TAG
 
 log = logging.getLogger("navidrome_companion.library")
@@ -331,7 +332,7 @@ def listing(identity: navidrome.Identity, limit: int = PAGE, offset: int = 0,
     try:
         connection = navidrome.open_db()
         with connection:
-            albums = _load(connection, identity)
+            albums = _cached_load(connection, identity)
             songs = (_songs(connection, identity, needle)
                      if needle and offset == 0 else [])
     except (navidrome.Unavailable, sqlite3.Error) as exc:
@@ -415,11 +416,31 @@ def genre_tally(identity: navidrome.Identity) -> dict[str, Any]:
     return {"available": True, "genres": genres, "untagged": untagged}
 
 
+def _cached_load(connection: sqlite3.Connection,
+                 identity: navidrome.Identity) -> dict[tuple[int, str], Album]:
+    """`_load`, kept until this person's library or plays change.
+
+    Every Library request walked the whole of media_file: opening an album,
+    each inline save (two to five walks with the refresh and the attention
+    tab), every combine target. Copies are returned, because the listing
+    marks albums reviewed and barred in place, and the cached ones are
+    shared.
+    """
+    allowed = tuple(sorted(lib["id"] for lib in identity.libraries))
+    stamp = navidrome.library_stamp(connection, identity.user_id)
+    if stamp is None:
+        # No way to tell cheaply whether it changed: read it fresh.
+        return _load(connection, identity)
+    albums = memo.cached(("albums", identity.user_id, allowed), stamp,
+                         lambda: _load(connection, identity))
+    return {key: dataclasses.replace(album) for key, album in albums.items()}
+
+
 def _albums_or_raise(identity: navidrome.Identity) -> list[Album]:
     try:
         connection = navidrome.open_db()
         with connection:
-            return list(_load(connection, identity).values())
+            return list(_cached_load(connection, identity).values())
     except (navidrome.Unavailable, sqlite3.Error) as exc:
         raise ValueError(f"Navidrome's database is unreadable: {exc}") from exc
 
@@ -641,6 +662,11 @@ def tracks(identity: navidrome.Identity, library_id: int,
             # this reads a database another application owns.
             columns = navidrome.columns_of(connection, "media_file")
             disc = "mf.disc_number" if "disc_number" in columns else "0"
+            # Narrowed in SQL to paths under the folder, then checked
+            # exactly below. Every row of the library used to be read to
+            # show one album's tracks.
+            prefix = (folder.replace("\\", "\\\\").replace("%", "\\%")
+                      .replace("_", "\\_") + "/%")
             rows = connection.execute(f"""
                 select mf.id, mf.path, coalesce(mf.title, ''),
                        coalesce(mf.artist, ''), coalesce(mf.track_number, 0),
@@ -651,7 +677,8 @@ def tracks(identity: navidrome.Identity, library_id: int,
                        coalesce(mf.album_artist, '')
                   from media_file mf
                  where {navidrome.live_clause(connection, [int(library_id)])}
-                """).fetchall()
+                   and replace(mf.path, char(92), '/') like ? escape char(92)
+                """, (prefix,)).fetchall()
     except (navidrome.Unavailable, sqlite3.Error) as exc:
         raise ValueError(f"Navidrome's database is unreadable: {exc}") from exc
 

@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-from app import memo, playcounts
+from app import library, memo, playcounts
 from conftest import add_track
 
 
@@ -70,3 +70,39 @@ def test_a_play_does_not_rebuild_the_track_index(db, monkeypatch):
     _, tracks = playcounts.track_index()
     assert len(reads) == 2
     assert tracks["u1"]["title"] == "Retitled"
+
+
+def test_the_album_list_is_read_once_until_something_changes(db, identity,
+                                                              monkeypatch):
+    add_track(db, "a", path="A/B/1.mp3", album="B", updated_at="2026-10-01")
+    loads = _counting(monkeypatch, library, "_load")
+
+    library.listing(identity)
+    library.listing(identity)
+    assert len(loads) == 1
+
+    _sql(db, "INSERT INTO annotation (user_id, item_id, item_type, play_count)"
+             " VALUES ('u-alex', 'a', 'media_file', 4)")
+    listed = library.listing(identity, sort="plays")
+    assert len(loads) == 2, "this person's plays are part of the list"
+    assert listed["albums"][0]["plays"] == 4
+
+
+def test_a_cached_album_is_not_changed_by_a_caller(db, identity):
+    add_track(db, "a", path="A/B/1.mp3", album="B", updated_at="2026-10-01")
+
+    first = library.listing(identity)["albums"][0]
+    first["artist"] = "scribbled on"
+
+    assert library.listing(identity)["albums"][0]["artist"] != "scribbled on"
+
+
+def test_opening_an_album_reads_only_that_folder(db, identity):
+    add_track(db, "in", path="A_1/B/1.mp3", updated_at="x")
+    add_track(db, "lookalike", path="AX1/B/1.mp3", updated_at="x")
+    add_track(db, "deeper", path="A_1/B/CD1/1.mp3", updated_at="x")
+    add_track(db, "beside", path="A_1/B C/1.mp3", updated_at="x")
+
+    opened = library.tracks(identity, 1, "A_1/B")
+
+    assert [t["id"] for t in opened["items"]] == ["in"]

@@ -703,13 +703,18 @@ it less likely.
 
 ### Performance
 
-- [ ] **M36. Library pages walk the whole library on every request.**
+- [x] **M36. Library pages walk the whole library on every request.**
       `app/library.py:636-651` and the listing. Opening one album reads every
       `media_file` row; *Combine* does that once per selected album in
       parallel; every inline save triggers 2–5 full walks (refresh plus the
       attention tab); `album_ids` walks per edit and per bulk *Mark
       reviewed*. *Fix:* filter by folder in SQL; memoise the listing on
       Navidrome's database stamp (`memo.py` exists).
+      **Fixed** as suggested: `library._cached_load` memoises the album list
+      on `library_stamp` plus the person's annotation totals and hands out
+      copies; `tracks()` narrows by folder with an escaped `LIKE`. Combine
+      still reads each album's tracks, now one folder each. Reproduced
+      first (two listings, two walks).
 
 - [x] **M37. The track index is rebuilt on almost every request while music
       plays.** *Cost on the Pi unmeasured.* `app/playcounts.py:470-494`,
