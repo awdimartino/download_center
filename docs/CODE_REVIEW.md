@@ -866,8 +866,13 @@ it less likely.
       delivered before moving onto it. A move that fails partway now
       removes its half-written copy rather than moving it back over the
       intact original. Reproduced first.
-- [ ] **L19.** `audio_bitrate = 320` re-encodes YouTube's ~130–160 kbps Opus
+- [x] **L19.** `audio_bitrate = 320` re-encodes YouTube's ~130–160 kbps Opus
       at twice the size for no gain. Consider 192, or keeping Opus/M4A.
+      **Fixed** by choice (192 when the source is no better): the MP3
+      step reads the downloaded format's bitrate and encodes at 192 when
+      it is at most 192; a better or unreported source keeps the setting,
+      and a VBR level is left alone. Checked with a real YouTube download:
+      Opus at 106 kbps became a 192 kbps MP3, where it was 320.
 
 ### Library and listening
 

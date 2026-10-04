@@ -8,6 +8,7 @@ from typing import Any
 from collections.abc import Callable
 
 import yt_dlp
+from yt_dlp.postprocessor.ffmpeg import FFmpegExtractAudioPP
 
 from .config import settings
 
@@ -49,6 +50,60 @@ def _make_hook(on_progress: ProgressHook | None):
     return hook
 
 
+# The MP3 bitrate for a source that is no better than it. YouTube's usual
+# audio is Opus at 130-160 kbps; re-encoding that at 320 made files twice the
+# size with nothing more in them, while 192 MP3 keeps everything a source
+# that size had. A better source - 256 kbps AAC, a lossless upload - still
+# gets the configured bitrate.
+MATCHED_BITRATE = 192
+
+
+def bitrate_for(source_kbps: float | None, configured: str) -> str:
+    """The bitrate to encode at, given what the download actually was.
+
+    A VBR level (0-9) is left alone: it already scales with the audio. So is
+    a source whose bitrate yt-dlp did not report - better too big than
+    quietly worse.
+    """
+    try:
+        wanted = int(configured)
+    except ValueError:
+        return configured
+    if wanted <= 9 or not source_kbps or source_kbps > MATCHED_BITRATE:
+        return configured
+    return str(min(wanted, MATCHED_BITRATE))
+
+
+def _source_kbps(info: dict[str, Any]) -> float | None:
+    """The audio bitrate of what was downloaded, as yt-dlp reported it."""
+    for one in (info, *(info.get("requested_formats") or [])):
+        for key in ("abr", "tbr"):
+            value = one.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                return float(value)
+    return None
+
+
+class _MatchedQuality(FFmpegExtractAudioPP):
+    """yt-dlp's MP3 extraction, at a bitrate chosen once the source is known.
+
+    The quality is otherwise fixed when the downloader is built, before
+    yt-dlp has picked a format - so it could not depend on that format.
+    """
+
+    @classmethod
+    def pp_key(cls) -> str:
+        # yt-dlp's own name, so its logs and per-step arguments still apply.
+        return "ExtractAudio"
+
+    def run(self, information):
+        chosen = bitrate_for(_source_kbps(information), settings.audio_bitrate)
+        self._preferredquality = float(chosen)
+        log.debug("encoding %s at %s (source %s kbps)", information.get("id"),
+                  chosen, _source_kbps(information))
+        return super().run(information)
+
+
 def download(url: str, destination: Path, on_progress: ProgressHook | None = None) -> Path:
     """Download `url` and leave an MP3 at `destination`.
 
@@ -70,13 +125,6 @@ def download(url: str, destination: Path, on_progress: ProgressHook | None = Non
         "updatetime": False,
         "retries": 3,
         "fragment_retries": 3,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": settings.audio_bitrate,
-            }
-        ],
     }
 
     cookies = settings.cookies_file
@@ -85,6 +133,10 @@ def download(url: str, destination: Path, on_progress: ProgressHook | None = Non
 
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
+            ydl.add_post_processor(
+                _MatchedQuality(ydl, preferredcodec="mp3",
+                                preferredquality=settings.audio_bitrate),
+                when="post_process")
             ydl.download([url])
     except yt_dlp.utils.DownloadError as exc:
         raise DownloadError(str(exc).replace("\n", " ")[:300]) from exc

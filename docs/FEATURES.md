@@ -396,7 +396,10 @@ title doubles as the album.
    is to fetch, so a doubtful match fails rather than downloads, and you can
    retry it.
 3. **Download.** yt-dlp fetches the best audio and ffmpeg converts it to MP3
-   at the configured bitrate (320 kbps by default). If
+   at the configured bitrate (320 kbps by default) - or at 192 when the
+   source is no better than that, which is most of YouTube (Opus at
+   130-160 kbps). A source whose bitrate is not reported keeps the
+   configured one. If
    `/config/cookies.txt` exists it is used, checked on every download.
 4. **Tag** (`tagger.py`). Every existing tag is cleared and ID3v2.4 written:
    title, artist, album artist, album, track `n/total`, disc, date, ISRC,

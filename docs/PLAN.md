@@ -61,9 +61,8 @@ has been done and written up; fixing what it found comes next.
       each. M29 is only partly done (a lock on `take()`; readers still
       share state.db's connection) and stays open in CODE_REVIEW.md.
 - [x] **Fix the review's low findings.** Done 2026-10-04, one commit
-      each, except L19 (the default bitrate), which is a choice about the
-      library's audio and waits for a decision. L37 had already been fixed
-      by M27 and only gained a test.
+      each. L19 was decided: a source at or below 192 kbps is encoded at
+      192. L37 had already been fixed by M27 and only gained a test.
 - [ ] **Deploy and check on the Pi**: the state.db migrations
       (`play_collection`, `duplicate_dismissed.decided_by`), the new caches'
       cost, and Health's stamped-but-not-scanned row clearing (H6). From the
@@ -72,9 +71,8 @@ has been done and written up; fixing what it found comes next.
       in Settings; a direct YouTube link still queues (L42 resolves its
       host); `config/.cover-survey.json` appears after a survey and the
       Cover flags survive a restart (L21); `tools/` is in the image (L34);
-      the session cookie is re-sent after a day (L33).
-- [ ] **Decide L19**: keep 320 kbps MP3, drop to 192, or keep YouTube's
-      Opus/M4A as it arrives (the tagger and filer assume MP3 today).
+      the session cookie is re-sent after a day (L33); a YouTube download
+      lands at 192 kbps (L19).
 - [ ] **The review's readability items.**
 
 ### Next

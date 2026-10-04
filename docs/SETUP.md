@@ -252,7 +252,7 @@ copy environment secrets into the file; check yours if you set
 | `spotify_client_id` | | yes | Spotify app |
 | `spotify_client_secret` | | yes | Spotify app |
 | `concurrency` | `3` | yes | simultaneous downloads, whole server (1–10) |
-| `audio_bitrate` | `320` | yes | MP3 kbps, 32 to 320, or a VBR level 0 to 9 |
+| `audio_bitrate` | `320` | yes | MP3 kbps, 32 to 320, or a VBR level 0 to 9; a source at or below 192 kbps is encoded at 192 |
 | `max_attempts` | `3` | yes | tries per track before it fails (1–10) |
 | `rate_limit_sleep` | `2.0` | yes | seconds between downloads, up to 300 |
 | `inbox_quiet_seconds` | `120` | no | how long a dropped file must sit unchanged before it is filed |
