@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poster fade — Home redesign C</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  /* C: a tall poster of the top album. On a phone it fades down into the
+     stats; on a desktop it fades sideways, so the cover reads as the left
+     half of one sheet whose right half is the numbers. */
+  :root{
+    --bg:#110F0C;
+    --text:#F7F0E6;
+    --text-dim:#B3A794;
+    --text-faint:#6F6553;
+    --accent:#E9B949;
+    --line:rgba(247,240,230,0.10);
+    --font:'Space Grotesk', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--font);
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  main{position:relative;max-width:1120px;margin:0 auto;padding-bottom:80px;}
+
+  .top{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:18px 20px;position:relative;z-index:3;
+  }
+  .wordmark{font-weight:700;font-size:0.95rem;letter-spacing:0.02em;}
+  .menu{
+    width:36px;height:30px;background:none;border:none;cursor:pointer;
+    display:flex;flex-direction:column;justify-content:space-between;padding:3px 0;
+  }
+  .menu span{display:block;height:2px;background:var(--text);border-radius:2px;}
+
+  /* The poster and the fade. On a phone the poster is full width and its
+     bottom is the gradient; the stats begin inside that gradient. */
+  .hero-wrap{position:relative;}
+  .header{position:relative;}
+  .poster{position:relative;height:118vw;min-height:420px;max-height:600px;overflow:hidden;}
+  .poster-art{position:absolute;inset:0;}
+  .poster-art svg{width:100%;height:100%;display:block;}
+  .poster-fade{
+    position:absolute;inset:0;
+    background:linear-gradient(180deg, rgba(17,15,12,0) 40%, rgba(17,15,12,0.85) 80%, var(--bg) 100%);
+  }
+  .poster-copy{
+    position:absolute;left:0;right:0;bottom:90px;z-index:2;padding:0 20px;
+  }
+  .greeting{font-size:0.9rem;color:var(--text-dim);margin:0 0 10px;}
+  .fact-label{
+    font-size:0.74rem;text-transform:uppercase;letter-spacing:0.16em;
+    color:var(--accent);font-weight:700;margin:0 0 6px;
+  }
+  .fact-value{
+    font-size:clamp(2.5rem, 12vw, 4.6rem);font-weight:700;line-height:0.92;
+    letter-spacing:-0.03em;margin:0 0 10px;
+  }
+  .fact-tail{margin:0;font-size:0.95rem;color:var(--text-dim);}
+
+  .stats{
+    position:relative;z-index:2;
+    margin-top:-30px;padding:0 20px;
+    display:grid;grid-template-columns:repeat(3, 1fr);
+  }
+  .stat{padding:14px 0 14px 14px;border-left:2px solid var(--accent);}
+  .stat:first-child{border-left-color:var(--accent);}
+  .stat + .stat{border-left-color:rgba(233,185,73,0.35);}
+  .stat-value{display:block;font-size:clamp(1.6rem, 6vw, 2.4rem);font-weight:700;letter-spacing:-0.02em;line-height:1;}
+  .stat-label{display:block;margin-top:6px;font-size:0.78rem;color:var(--text-dim);line-height:1.3;}
+
+  .section{padding:40px 20px 0;}
+  .section-title{font-size:1rem;font-weight:700;margin:0 0 4px;letter-spacing:-0.01em;}
+  .section-note{display:block;font-size:0.78rem;color:var(--text-faint);margin-bottom:18px;}
+
+  .grid-months{display:grid;grid-template-columns:repeat(12, 1fr);gap:6px;align-items:end;height:140px;}
+  .m{display:flex;flex-direction:column;justify-content:flex-end;height:100%;}
+  .m-bar{background:var(--text);opacity:0.2;border-radius:2px;}
+  .m.peak .m-bar{opacity:1;background:var(--accent);}
+  .m-label{font-size:0.66rem;color:var(--text-faint);text-align:center;margin-top:6px;}
+
+  .rank{display:grid;gap:0;}
+  .rank-row{
+    display:grid;grid-template-columns:28px 1fr auto;align-items:baseline;gap:8px;
+    padding:12px 0;border-top:1px solid var(--line);
+  }
+  .rank-row:last-child{border-bottom:1px solid var(--line);}
+  .rank-n{font-size:0.8rem;color:var(--text-faint);font-variant-numeric:tabular-nums;}
+  .rank-name{font-weight:600;font-size:0.98rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rank-count{font-size:0.85rem;color:var(--text-dim);font-variant-numeric:tabular-nums;}
+
+  @media (min-width: 860px){
+    /* Desktop: the poster on the left fades sideways into the numbers on
+       the right, one sheet split down the middle. */
+    .hero-wrap{display:grid;grid-template-columns:1fr 1fr;align-items:center;min-height:580px;}
+    .poster{height:100%;min-height:580px;max-height:none;}
+    .poster-fade{
+      background:linear-gradient(90deg, rgba(17,15,12,0) 45%, rgba(17,15,12,0.8) 85%, var(--bg) 100%);
+    }
+    .poster-copy{bottom:56px;padding:0 0 0 40px;right:auto;width:70%;}
+    .stats{
+      margin-top:0;grid-template-columns:1fr;padding:0 56px 0 24px;
+    }
+    .stat{padding:20px 0 20px 18px;}
+    .section{padding:56px 0 0;}
+    .grid-months{height:180px;}
+  }
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+</style>
+</head>
+<body>
+<main>
+
+  <div class="top">
+    <span class="wordmark">Navidrome Companion</span>
+    <button class="menu" aria-label="Menu"><span></span><span></span><span></span></button>
+  </div>
+
+  <div class="hero-wrap">
+    <header class="header">
+      <div class="poster">
+        <div class="poster-art" id="poster-art"></div>
+        <div class="poster-fade"></div>
+        <div class="poster-copy">
+          <p class="greeting" id="greeting"></p>
+          <p class="fact-label">Your most-played artist</p>
+          <p class="fact-value" id="fact-value"></p>
+          <p class="fact-tail" id="fact-tail"></p>
+        </div>
+      </div>
+    </header>
+
+    <section class="stats" id="stats" aria-label="Summary"></section>
+  </div>
+
+  <section class="section">
+    <h2 class="section-title">Plays by month</h2>
+    <span class="section-note">Last 12 months · busiest in <span id="busiest"></span></span>
+    <div class="grid-months" id="months"></div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Most played artists</h2>
+    <span class="section-note">Last 12 months</span>
+    <div class="rank" id="artists"></div>
+  </section>
+
+</main>
+
+<script src="../home-mockups/data.js"></script>
+<script>
+  // Warm and printed: ochre and cream against near-black, the palette of
+  // a record sleeve left in the sun.
+  const ART_PALETTE = ['#3A2A16', '#E9B949', '#F4E4C1', '#110F0C', '#6B4A22'];
+
+  const feature = ALBUMS[0];
+  document.getElementById('poster-art').innerHTML =
+    albumArt(feature.title + feature.artist, ART_PALETTE);
+
+  document.getElementById('greeting').textContent = greeting();
+  document.getElementById('fact-value').textContent = FACTS.topArtist;
+  document.getElementById('fact-tail').textContent =
+    FACTS.topArtistPlays.toLocaleString() + ' plays in the last year';
+
+  const stats = [
+    [FACTS.tracksThisYear, 'tracks in ' + FACTS.year],
+    [FACTS.hoursThisYear, 'hours in ' + FACTS.year],
+    [FACTS.artistsHeard, 'artists heard'],
+  ];
+  document.getElementById('stats').innerHTML = stats.map(([v, l]) =>
+    `<div class="stat"><span class="stat-value">${v.toLocaleString()}</span>
+     <span class="stat-label">${l}</span></div>`).join('');
+
+  const peak = Math.max(...MONTHS.map(m => m.plays));
+  document.getElementById('busiest').textContent = FACTS.busiestMonth;
+  document.getElementById('months').innerHTML = MONTHS.map(m =>
+    `<div class="m ${m.plays === peak ? 'peak' : ''}" title="${m.label}: ${m.plays} plays">
+       <div class="m-bar" style="height:${(m.plays / peak) * 100}%"></div>
+       <span class="m-label">${m.label}</span>
+     </div>`).join('');
+
+  document.getElementById('artists').innerHTML = ARTISTS.map((a, i) =>
+    `<div class="rank-row">
+       <span class="rank-n">${String(i + 1).padStart(2, '0')}</span>
+       <span class="rank-name">${a.name}</span>
+       <span class="rank-count">${a.plays}</span>
+     </div>`).join('');
+</script>
+</body>
+</html>

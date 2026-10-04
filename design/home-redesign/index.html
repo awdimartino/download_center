@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home redesign — three directions</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0E0D12;color:#F4F1EC;max-width:640px;margin:0 auto;padding:40px 20px 80px;line-height:1.5;}
+  h1{font-size:1.3rem;margin-bottom:4px;}
+  p.lede{color:#A8A29A;margin-top:0;}
+  ul{list-style:none;padding:0;margin:28px 0 0;display:flex;flex-direction:column;gap:14px;}
+  li{border:1px solid rgba(244,241,236,0.12);border-radius:10px;padding:16px 18px;background:rgba(244,241,236,0.03);}
+  a{color:#F4F1EC;text-decoration:none;font-weight:700;font-size:1.05rem;}
+  a:hover{text-decoration:underline;}
+  .desc{color:#A8A29A;font-size:0.9rem;margin-top:4px;}
+</style>
+</head>
+<body>
+  <h1>Home page — three directions</h1>
+  <p class="lede">Each one uses the album art as the header and fades it into the numbers. Same data as the earlier mockups, so they compare on content, not on which one got the nicer stats. Resize the window to check phone width.</p>
+  <ul>
+    <li>
+      <a href="a-cover.html">A · Cover</a>
+      <div class="desc">One full-width cover. Its bottom dissolves into the page and the three numbers sit on the dissolve, overlapping it.</div>
+    </li>
+    <li>
+      <a href="d-cover-mosaic.html">D · Cover mosaic</a>
+      <div class="desc">A's layout with the single cover replaced by a mosaic of the top eight albums, tiled as the header. The same fade carries the numbers. Six tiles on a phone, eight on a desktop.</div>
+    </li>
+    <li>
+      <a href="b-mosaic.html">B · Mosaic</a>
+      <div class="desc">Your six most-played covers tiled as the header. The bottom rows fade into glass stat cards, and the hourly curve is the only chart.</div>
+    </li>
+    <li>
+      <a href="c-poster.html">C · Poster</a>
+      <div class="desc">A tall poster. On a phone it fades down into the stats; on a desktop it fades sideways, so the cover and the numbers read as one sheet.</div>
+    </li>
+  </ul>
+  <p class="desc" style="margin-top:32px;">Covers are generated from each title (<code>../home-mockups/data.js</code>), not real art. Swapping in the app's own covers is one line per page: the <code>albumArt(...)</code> call becomes an <code>&lt;img&gt;</code> pointing at <code>/api/library/art</code>.</p>
+</body>
+</html>

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalog — Home mockup 4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=IBM+Plex+Sans:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --card:#E7E4DD;
+    --card-deep:#D9D5CB;
+    --navy:#1B2430;
+    --navy-soft:#5A6472;
+    --stamp:#B3312C;
+    --teal:#4F6E62;
+    --rule:#B7B2A5;
+    --font-mono:'Courier Prime', monospace;
+    --font-ui:'IBM Plex Sans', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:#CFCBC0;
+    color:var(--navy);
+    font-family:var(--font-mono);
+    line-height:1.55;
+  }
+  main{
+    max-width:700px;
+    margin:0 auto;
+    padding:22px 16px 70px;
+  }
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--navy);
+    box-shadow:5px 5px 0 rgba(27,36,48,0.15);
+    padding:26px 22px;
+  }
+
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-family:var(--font-ui);
+    font-size:0.72rem;
+    font-weight:600;
+    letter-spacing:0.03em;
+    color:var(--navy-soft);
+    padding-bottom:14px;
+    margin-bottom:20px;
+    border-bottom:2px solid var(--navy);
+  }
+  .wordmark{color:var(--navy);}
+  .menu-toggle{background:none;border:1px solid var(--navy-soft);border-radius:2px;width:28px;height:22px;display:flex;flex-direction:column;justify-content:center;gap:3px;align-items:center;cursor:pointer;}
+  .menu-toggle span{display:block;width:14px;height:1.5px;background:var(--navy);}
+
+  .field{
+    display:flex;
+    gap:0;
+    font-size:0.86rem;
+    margin-bottom:6px;
+    white-space:nowrap;
+  }
+  .field-label{color:var(--navy-soft);}
+  .field-leader{
+    flex:1;
+    overflow:hidden;
+    color:var(--rule);
+    letter-spacing:2px;
+  }
+  .field-value{font-weight:700;}
+
+  .stamp-wrap{
+    margin:24px 0 22px;
+    display:flex;
+    justify-content:center;
+  }
+  .stamp{
+    border:3px solid var(--stamp);
+    color:var(--stamp);
+    padding:14px 22px;
+    transform:rotate(-2.5deg);
+    text-align:center;
+    position:relative;
+  }
+  .stamp::before,.stamp::after{
+    content:"";
+    position:absolute;
+    left:6px;right:6px;
+    height:1px;
+    background:var(--stamp);
+    opacity:0.5;
+  }
+  .stamp::before{top:5px;}
+  .stamp::after{bottom:5px;}
+  .stamp-number{
+    font-weight:700;
+    font-size:2.6rem;
+    line-height:1;
+  }
+  .stamp-unit{font-size:1rem;letter-spacing:0.08em;}
+  .stamp-tail{
+    font-size:0.72rem;
+    margin-top:4px;
+    letter-spacing:0.03em;
+  }
+
+  .fact-row{
+    display:flex;
+    justify-content:space-between;
+    font-size:0.8rem;
+    border-top:1px dashed var(--rule);
+    padding:16px 0 6px;
+    margin-bottom:22px;
+  }
+  .fact{text-align:center;flex:1;}
+  .fact-value{display:block;font-weight:700;font-size:1.15rem;}
+  .fact-label{color:var(--navy-soft);font-size:0.68rem;}
+
+  .section-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    font-weight:700;
+    font-size:0.92rem;
+    margin:30px 0 4px;
+    padding-bottom:4px;
+    border-bottom:1px solid var(--navy);
+  }
+  .section-note{font-size:0.74rem;color:var(--navy-soft);margin:0 0 14px;}
+
+  /* month grid - typed ledger */
+  .ledger{display:flex;gap:0;border:1px solid var(--rule);}
+  .ledger-col{
+    flex:1;
+    text-align:center;
+    border-left:1px solid var(--rule);
+    padding:6px 2px 4px;
+    display:flex;flex-direction:column;
+    justify-content:flex-end;
+    height:100px;
+  }
+  .ledger-col:first-child{border-left:none;}
+  .ledger-bar{background:var(--navy);width:60%;margin:0 auto;}
+  .ledger-col.peak .ledger-bar{background:var(--stamp);}
+  .ledger-mo{font-size:0.58rem;color:var(--navy-soft);margin-top:5px;}
+
+  /* artists */
+  .artist-line{
+    display:flex;
+    align-items:baseline;
+    gap:6px;
+    font-size:0.86rem;
+    padding:5px 0;
+  }
+  .artist-num{width:1.2rem;color:var(--navy-soft);}
+  .artist-name{white-space:nowrap;}
+  .artist-leader{flex:1;overflow:hidden;color:var(--rule);letter-spacing:2px;}
+  .artist-plays{color:var(--navy-soft);}
+
+  /* spines */
+  .spines{
+    display:flex;
+    gap:3px;
+    overflow-x:auto;
+    padding:6px 2px 14px;
+    align-items:flex-end;
+    scrollbar-width:none;
+  }
+  .spines::-webkit-scrollbar{display:none;}
+  .spine{
+    flex:0 0 34px;
+    height:150px;
+    border:1px solid var(--navy);
+    position:relative;
+    overflow:hidden;
+    cursor:default;
+  }
+  .spine svg{position:absolute;inset:0;width:100%;height:100%;opacity:0.85;}
+  .spine-label{
+    position:relative;
+    writing-mode:vertical-rl;
+    transform:rotate(180deg);
+    font-family:var(--font-ui);
+    font-weight:600;
+    font-size:0.62rem;
+    color:var(--card);
+    mix-blend-mode:difference;
+    padding:6px 0;
+    height:100%;
+    display:flex;
+    align-items:center;
+  }
+
+  /* pulled card */
+  .pulled{
+    display:flex;
+    gap:16px;
+    align-items:flex-start;
+    margin-top:16px;
+    padding-top:16px;
+    border-top:1px dashed var(--rule);
+  }
+  .pulled-art{width:104px;height:104px;flex:0 0 auto;border:1px solid var(--navy);transform:rotate(-1.5deg);box-shadow:3px 3px 0 rgba(27,36,48,0.18);}
+  .pulled-art svg{display:block;width:100%;height:100%;}
+  .pulled-fields{font-size:0.8rem;}
+  .pulled-title{font-weight:700;font-size:0.92rem;margin-bottom:2px;}
+  .pulled-artist{color:var(--navy-soft);margin-bottom:6px;}
+
+  .card-foot{
+    display:flex;
+    justify-content:space-between;
+    font-size:0.68rem;
+    color:var(--navy-soft);
+    margin-top:34px;
+    padding-top:12px;
+    border-top:1px solid var(--navy);
+  }
+
+  @media(min-width:640px){
+    .fact-row{padding:16px 30px 6px;}
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <header>
+      <span class="wordmark">DOWNLOAD CENTER</span>
+      <button class="menu-toggle" aria-label="Menu"><span></span></button>
+    </header>
+
+    <div class="field">
+      <span class="field-label">NAME</span><span class="field-leader"></span>
+      <span class="field-value">Alex</span>
+    </div>
+    <div class="field">
+      <span class="field-label">AS OF</span><span class="field-leader"></span>
+      <span class="field-value" id="today">—</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--navy-soft);margin-top:14px;" id="greeting">Good evening.</p>
+
+    <div class="stamp-wrap">
+      <div class="stamp">
+        <div><span class="stamp-number">340</span><span class="stamp-unit"> HRS</span></div>
+        <div class="stamp-tail">OF MUSIC LOGGED IN 2026</div>
+      </div>
+    </div>
+
+    <div class="fact-row">
+      <div class="fact"><span class="fact-value">1,842</span><span class="fact-label">TRACKS</span></div>
+      <div class="fact"><span class="fact-value">64</span><span class="fact-label">ARTISTS</span></div>
+      <div class="fact"><span class="fact-value">MAR.</span><span class="fact-label">PEAK MONTH</span></div>
+    </div>
+
+    <div class="section-head"><span>PLAYS BY MONTH</span><span class="section-note" style="margin:0;">LAST 12</span></div>
+    <div class="ledger" id="ledger"></div>
+
+    <div class="section-head">MOST PLAYED ARTISTS</div>
+    <p class="section-note">Last twelve months.</p>
+    <div id="artists"></div>
+
+    <div class="section-head">ON THE SHELF</div>
+    <p class="section-note">Most-played albums this year, spine out.</p>
+    <div class="spines" id="spines"></div>
+
+    <div class="pulled" id="pulled"></div>
+
+    <div class="card-foot">
+      <span>LONGEST SESSION 8H 14M · 106 TRACKS</span>
+      <span>4,080 SESSIONS TOTAL</span>
+    </div>
+  </div>
+</main>
+
+<script src="data.js"></script>
+<script>
+  document.getElementById('greeting').textContent = greeting().replace('Alex', '') .trim() + '.';
+  document.getElementById('today').textContent = new Date().toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+
+  function leader(el, chars){ el.textContent = '.'.repeat(chars); }
+  document.querySelectorAll('.field-leader').forEach(el => leader(el, 40));
+
+  const ART_PALETTE = ['#1B2430', '#4F6E62', '#B3312C', '#D9D5CB'];
+
+  const ledger = document.getElementById('ledger');
+  const maxPlays = Math.max(...MONTHS.map(m => m.plays));
+  MONTHS.forEach(m => {
+    const col = document.createElement('div');
+    col.className = 'ledger-col' + (m.plays === maxPlays ? ' peak' : '');
+    col.innerHTML = `<div class="ledger-bar" style="height:${Math.max(6,(m.plays/maxPlays)*100)}%"></div><div class="ledger-mo">${m.label}</div>`;
+    ledger.appendChild(col);
+  });
+
+  const artistsWrap = document.getElementById('artists');
+  ARTISTS.forEach((a, i) => {
+    const line = document.createElement('div');
+    line.className = 'artist-line';
+    line.innerHTML = `
+      <span class="artist-num">${i + 1}.</span>
+      <span class="artist-name">${a.name}</span>
+      <span class="artist-leader">${'.'.repeat(30)}</span>
+      <span class="artist-plays">${a.plays} plays</span>`;
+    artistsWrap.appendChild(line);
+  });
+
+  const spines = document.getElementById('spines');
+  ALBUMS.forEach(al => {
+    const spine = document.createElement('div');
+    spine.className = 'spine';
+    spine.innerHTML = `${albumArt(al.title + al.artist, ART_PALETTE)}<span class="spine-label">${al.title}</span>`;
+    spines.appendChild(spine);
+  });
+
+  const pulled = document.getElementById('pulled');
+  const feature = ALBUMS[0];
+  pulled.innerHTML = `
+    <div class="pulled-art">${albumArt(feature.title + feature.artist, ART_PALETTE)}</div>
+    <div class="pulled-fields">
+      <div class="pulled-title">${feature.title}</div>
+      <div class="pulled-artist">${feature.artist}</div>
+      <div class="field"><span class="field-label">PLAYS</span><span class="field-leader">${'.'.repeat(20)}</span><span class="field-value">${feature.plays}</span></div>
+      <div class="field"><span class="field-label">RANK</span><span class="field-leader">${'.'.repeat(24)}</span><span class="field-value">No. 1</span></div>
+    </div>`;
+</script>
+</body>
+</html>
