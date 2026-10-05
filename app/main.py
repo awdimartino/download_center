@@ -1106,9 +1106,13 @@ async def put_settings(
 
     try:
         # Validate against the model before touching the live settings.
-        settings.__class__(**{**settings.model_dump(), **changes})
+        validated = settings.__class__(**{**settings.model_dump(), **changes})
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc).split(chr(10))[0]) from exc
+    # What is stored is what the model made of it, not what was typed: "320k"
+    # validates because the model drops the k, and the raw string then failed
+    # every download until a restart read it back through the model.
+    changes = {key: getattr(validated, key) for key in changes}
 
     await asyncio.to_thread(config.save, changes)
     if "spotify_client_id" in changes or "spotify_client_secret" in changes:

@@ -588,3 +588,23 @@ def test_a_bitrate_ffmpeg_cannot_use_is_refused(value):
 def test_the_pause_between_downloads_is_bounded():
     with pytest.raises(ValueError):
         config.Settings(rate_limit_sleep=2000)
+
+
+@pytest.mark.asyncio
+async def test_a_saved_setting_is_stored_as_the_model_reads_it(
+        config_file, monkeypatch):
+    """"320k" validates because the model drops the k. Storing the raw text
+    left the live setting as "320k", which failed every download until a
+    restart read the file back through the model."""
+    from types import SimpleNamespace
+
+    from app import main
+
+    monkeypatch.setattr(config.settings, "audio_bitrate", "192")
+    monkeypatch.setattr(config, "FROM_ENV", set())
+    admin = SimpleNamespace(identity=SimpleNamespace(is_admin=True))
+
+    await main.put_settings(main.SettingsUpdate(audio_bitrate="320k"), admin)
+
+    assert config.settings.audio_bitrate == "320"
+    assert 'audio_bitrate = "320"' in config_file.read_text(encoding="utf-8")
