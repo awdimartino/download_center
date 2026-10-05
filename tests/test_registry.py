@@ -262,3 +262,18 @@ def test_the_punctuation_fallback_mints_separate_uuids(state_db):
     minus = album_uuid_for(1, "Ed Sheeran", "-")
     assert plus != minus
     assert registry.count(1) == 2
+
+
+def test_a_uuid_another_album_owns_is_not_adopted_under_a_new_name(state_db):
+    """A track retagged to another album in another tagger still carries the
+    old album's UUID. Recording it under the new name gave two names one
+    UUID, and Navidrome showed the two albums as one."""
+    owned = album_uuid_for(1, "Queen", "Greatest Hits")
+    key = registry.album_key("Queen", "Best Of")
+    assert registry.uuid_for_key(1, key, on_miss=owned) != owned
+
+
+def test_a_uuid_owned_in_another_library_can_still_be_adopted(state_db):
+    owned = album_uuid_for(1, "Queen", "Greatest Hits")
+    key = registry.album_key("Queen", "Best Of")
+    assert registry.uuid_for_key(2, key, on_miss=owned) == owned

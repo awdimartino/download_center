@@ -183,6 +183,15 @@ def uuid_for_key(library_id: int, key: str, on_miss: str | None = None) -> str:
         if row:
             return row[0]
 
+        # A UUID on the file is kept only while no other album answers to
+        # it. A track retagged to another album elsewhere still carries the
+        # old album's UUID, and recording that under the new name gave two
+        # names one UUID - which Navidrome shows as one fused album.
+        if on_miss and store_.execute(
+                "SELECT 1 FROM album_registry"
+                " WHERE library_id = ? AND album_uuid = ?",
+                (library_id, on_miss)).fetchone():
+            on_miss = None
         settled = on_miss or str(uuid.uuid4())
         store_.execute(
             "INSERT INTO album_registry"
