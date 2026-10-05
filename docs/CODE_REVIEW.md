@@ -1,6 +1,8 @@
 # Code review — 2026-10-04
 
 A read-only review of the whole codebase (Session 11), at commit `6e45ae2`.
+A second round, at `f900521`, follows the first and is numbered `2H`, `2M`,
+`2L` and `2D`; see [Round 2](#round-2--2026-10-04).
 Fixes are being worked through top-down; a ticked item carries a **Fixed:**
 note saying what changed. Findings are ordered by severity, then
 by how much they matter in daily use. Tick them off as they land; do not
@@ -635,7 +637,8 @@ it less likely.
       reading and the timer run one after the other (reproduced first: two
       overlapping readings). Readers still share the connection unlocked;
       moving to per-thread WAL connections is a large change for an effect
-      nobody has seen, so it waits for evidence.
+      nobody has seen, so it waits for evidence. Round 2 found the
+      evidence: see **2M20**.
 
 - [x] **M30. Resolving a duplicate silently loses other users' ratings and
       play counts, and your own play count.** `app/duplicates.py:144-151, 207-210`.
@@ -1154,3 +1157,567 @@ it less likely.
   first snapshot and Home's first plays (H4, H5); JS operator names against
   `OPERATORS` (H8); config escaping and atomic writes (M26); the audit loop
   surviving an exception (M28); token and cookie refresh (M27, L33).
+
+---
+
+# Round 2 — 2026-10-04
+
+A second read-only review, at commit `f900521`, after every round-1 item
+except R1 and M29 had been fixed. Five reviewers worked in parallel on
+ingest, the Library, listening and integrations, the platform, and the
+frontend. They were told not to repeat round 1, and to look for what it
+missed, for gaps or regressions in its fixes, and for structural problems.
+Most findings were reproduced against the real functions with temp
+directories and in-memory databases, or in headless Chromium against stubbed
+APIs. Nothing was run against the Pi or the network.
+
+Items are numbered `2H`, `2M`, `2L` and `2D` (design) so they cannot be
+confused with round 1's. Severity and tick-off rules are the same as above.
+
+Nothing was rated Critical. All 57 routes and the websocket are guarded, no
+cross-account leak was found, and the frontend has no HTML sinks at all. The
+R2 split of `library.js` lost nothing.
+
+## High
+
+- [x] **2H1. An incoming file's album UUID is adopted under a new name even
+      when another album already owns it.** *Verified.*
+      `app/registry.py` (`uuid_for_key`), `app/filer.py` (`file_track`,
+      `after_retag`). A track retagged to another album in Mp3tag or Picard
+      keeps its `NAVIDROME_ALBUM_UUID`. Dropped back in, the new name is
+      unregistered, so the UUID on the file was recorded for it: two keys,
+      one UUID, two folders, one fused album in Navidrome.
+      **Fixed** (`baff4c2`): `on_miss` is honoured only when no other key in
+      that library already holds the UUID; otherwise a fresh one is minted.
+      The check is inside the same lock. New test fails on the old code.
+
+- [ ] **2H2. Every request competes with long work for one 8-thread pool.**
+      *Verified locally, not on the Pi.* `app/main.py:484` (middleware),
+      `app/worker.py:126,142,216,234`, `app/operations.py:142`,
+      `app/spotify.py:53-65`. Every blocking call uses `asyncio.to_thread`,
+      i.e. the default executor: `min(32, cpus + 4)` = 8 threads on the Pi.
+      Since L41 the session lookup for every request, `/healthz` included,
+      needs one. Downloads (3 by default, Settings allows 10), resolving
+      jobs, a ReplayGain run (hours), the disk audit, Find matches and apply
+      each hold one for their whole length. With eight busy, the UI,
+      sign-in, the websocket and the Docker healthcheck hang with nothing
+      logged. The Spotify client's `retries=3` honours `Retry-After`, so one
+      long 429 pins a thread for the whole wait, per search and per resolve.
+      `operations.py`'s docstring assumes forty threads (anyio's pool, which
+      this code never uses). A regression in effect from L41.
+      *Fix:* give downloads and operations their own executors and keep the
+      default pool for the request path; skip the thread hop when there is
+      no cookie; build the Spotify client so it does not sleep on
+      `Retry-After`.
+
+- [ ] **2H3. An operation that finishes while the socket is down is never
+      reported.** *Verified in Chromium.* `app/static/js/ws.js:39-58,71-75`,
+      `app/static/js/main.js:147,158-168`, `app/main.py:2577`. Operations
+      are announced once over the socket. On reconnect the server sends a
+      jobs snapshot only, and `resumeOperations()` runs only in `start()`.
+      After a phone sleep or a Wi-Fi blip, the page says "live" but keeps
+      "ReplayGain: 1 of 3" with a Stop button, "Re-read files" disabled,
+      and "Asking MusicBrainz…" unresolved, until a reload.
+      *Fix:* on every reconnect after the first, re-fetch `/api/operations`
+      and pass each through `showOperation`; or put operations in the
+      snapshot.
+
+- [ ] **2H4. A name starting with a dot may be filed where Navidrome never
+      scans.** *Our side verified; Navidrome's side unverified.*
+      `app/filer.py:65-73` (`sanitize`), `app/inbox.py:326`,
+      `app/walk.py:39-43`. `.38 Special` and `.5: The Gray Chapter` are
+      filed as `.38 Special/…` and `Slipknot/.5_ The Gray Chapter/`. Two
+      reviewers recall that Navidrome's scanner skips directories starting
+      with a single dot; if so, the album is reported Done and never
+      appears, and Health counts it as stamped-but-unscanned. Separately
+      (verified), a dot-folder dropped into the inbox over SMB is skipped by
+      `waiting()` and never reported (L17 fixed browser uploads only).
+      *Check first:* make a dot-folder in a test library on the Pi and scan.
+      *Fix:* replace a leading single dot in `sanitize`; report hidden
+      folders in the inbox rather than pass over them.
+
+## Medium
+
+### Jobs, shutdown and the platform
+
+- [x] **2M1. A setting that validates is stored un-normalised: saving
+      bitrate `320k` fails every download until a restart.** *Verified.*
+      Regression from L44 + L19. `put_settings` validated a throwaway copy
+      and `config.save` stored the raw text; `bitrate_for` passed `"320k"`
+      through and `float()` raised in the post-processor.
+      **Fixed** (`26d24da`): the values stored are the validated model's.
+      New test fails on the old code.
+
+- [ ] **2M2. Cancelling a job does not stop its threads.** *Verified with
+      the real `_run`/`_stop_job` and a threaded fake downloader.*
+      `app/worker.py:126,234`, `app/main.py:664-684,812-839`, comment at
+      `app/main.py:71-74`. `task.cancel()` ends only the asyncio task.
+      Cancelled while filing, the item reads `cancelled` with no path, the
+      thread files it anyway, and Retry files it again as `(2)` with a second
+      track UUID. Cancelled mid-download, the gate slot is freed and the
+      scratch folder removed while yt-dlp keeps writing, so more than
+      `concurrency` downloads run and `.incomplete/` is recreated. The
+      cancellation tests use `asyncio.sleep` for the download, so they
+      cannot see this.
+      *Fix:* a per-job `threading.Event` the yt-dlp progress hook raises on;
+      release the gate when the thread returns; never mark an item cancelled
+      once delivery has started.
+
+- [ ] **2M3. Shutdown never stops in-flight work, so a redeploy ends in
+      SIGKILL mid-write.** *Mechanism verified; file damage unverified.*
+      `app/main.py:239-246`, `docker-compose.yml`. The lifespan cancels only
+      the three loops; executor threads keep the process alive until Docker
+      kills it after 10 s, possibly with rsgain or mutagen part-way through
+      rewriting a library file.
+      *Fix:* on shutdown set `stop_requested` on operations, cancel jobs
+      (with 2M2's flag) and wait a bounded time; `stop_grace_period: 2m`.
+
+- [ ] **2M4. A move into the library that dies part-way leaves a truncated
+      track under the real name, and the next attempt files a second copy.**
+      *Verified by simulation.* `app/filer.py:645-668`. `claim` creates the
+      name, `shutil.move` copies onto it across filesystems; on failure the
+      placeholder is removed only if still empty. The source stays in
+      scratch or the inbox and is filed again as `(2)`, both carrying one
+      track UUID. A kill between claim and move leaves a zero-byte file.
+      *Fix:* copy to a hidden temp name in the target folder, then
+      `os.replace` onto the claim; remove both on failure.
+
+- [ ] **2M5. One unreadable workspace marker stops the inbox for every
+      account.** *Verified.* `app/workspace.py:209-249`,
+      `app/inbox.py:415-427,483-491`, `app/main.py:258-267`. A root-owned or
+      damaged `.owner` makes `existing()` raise out of `drain_all`; nothing
+      is filed for anyone and only the log says so, every 15 s.
+      *Fix:* try/except per workspace; record each loop's last success and
+      last error and show them in Health.
+
+- [ ] **2M6. What the poller cannot file is still thrown away (M18 half
+      fixed).** *Traced by reading; dot-folder case run.*
+      `app/main.py:260-264`, `app/inbox.py:309-330,448-457`. `drain_all`
+      returns failures but `_inbox_loop` reads only `changed`; only a
+      browser upload's finish shows them. An SMB drop that cannot be filed
+      is logged once and never mentioned. Never counted at all: formats not
+      in `AUDIO_SUFFIXES` (`.aac`, `.wma`, `.aif`, `.dsf`, `.m4b`), dot
+      folders, a file with a future mtime.
+      *Fix:* keep the last result per workspace and show it on Health or the
+      Drop page, listing what was not filed and why.
+
+### Album identity and covers
+
+- [ ] **2M7. A folder cover is still carried to the wrong album (H7's
+      siblings).** *Verified.* `app/filer.py:516-550,724-726`, reached from
+      `retag_track` and combine's loose tracks. Moving one track from an
+      album with `cover.jpg` to one with embedded art only copies the old
+      cover across, and Navidrome prefers it. A dropped folder holding
+      several albums and one `cover.jpg` copies it into every album it
+      feeds, including existing ones.
+      *Fix:* carry a cover only when the whole folder is one album moving
+      together; never from `retag_track`; skip if the destination already
+      holds audio or any folder cover.
+
+- [ ] **2M8. A registry miss mints a new album UUID without looking at
+      disk.** *Verified.* `app/filer.py:387-392,707-710`. Files agree on an
+      album UUID but their key is unregistered (retagged elsewhere, a
+      backfill conflict). Moving a track into that album mints a fresh UUID,
+      splitting it; the next *Save album* moves every file to the newcomer's
+      UUID and the album loses its stars and plays.
+      *Fix:* on a miss when moving, adopt the UUID the files already under
+      that key or folder agree on (subject to 2H1's ownership check).
+
+- [ ] **2M9. `album_key_of` reads only the first file, so an untagged stray
+      that sorts first re-UUIDs the whole album.** *Verified.*
+      `app/filer.py:436-451`, used at `:358` and `app/main.py:2138`.
+      `require_one_album` ignores strays, but if the stray is first, `was`
+      is empty and `after_retag` mints rather than moves. The old key stays
+      registered against a UUID no file carries.
+      *Fix:* take `was` from `_by_album`, the key the tagged files share.
+
+- [ ] **2M10. A rename that fails part-way cannot be finished, and the
+      suggested route splits the album.** *Verified.*
+      `app/filer.py:352-366,419-433`. If `write_tags` fails on file *k* (or
+      the container dies), the folder holds two keys; retrying is refused as
+      "more than one album", and editing track by track mints a new UUID for
+      the remaining tracks.
+      *Fix:* write an intent record before the first tag write and let
+      `retag_album` resume a folder whose two keys are exactly that pair; or
+      roll back the files already written.
+
+- [ ] **2M11. Health fails permanently once an artist has two album-less
+      tracks.** *Verified.* `app/diskaudit.py:137-140`,
+      `app/health.py:381-384`. Loose tracks are each their own record in
+      `Artist/Unknown Album/` by design; the audit counts the folder as a
+      split album.
+      *Fix:* leave files with no album tag out of `by_directory`.
+
+- [ ] **2M12. Folder covers are recognised only in lower case.** *Verified
+      for `covers._look`; the rest by reading.*
+      `app/filer.py:512-540,325-327`,
+      `app/covers.py:308-329,461-466,504-511`. On the Pi, `Folder.jpg` or
+      `cover.JPG` is missed: *Fetch cover* embeds new art and reports
+      success while Navidrome keeps showing the file; the survey judges the
+      wrong picture; a dropped album's `Folder.jpg` is not carried.
+      *Fix:* one helper that matches names and suffixes case-insensitively,
+      used everywhere a folder cover is looked for.
+
+- [ ] **2M13. `unfuse` gives the shared UUID to the keeper even when only a
+      stray file carries it.** *Verified.* `app/unfuse.py:124-137,211-233`.
+      Album A has 3 files on UUID `a`; album B has 9 on `b` and one stray on
+      `a`. B is the keeper, so all 9 are rewritten to `a` and A gets a fresh
+      one. The report shows `retired: []`.
+      *Fix:* give the shared UUID to the album where it is the majority; add
+      the keeper's dropped UUIDs to `retired`.
+
+- [ ] **2M14. Resolving duplicates takes no folder lock.** *By reading.*
+      `app/main.py:1327-1348,1429-1437`, `app/duplicates.py:566-633`. A
+      resolve can move a file out of a folder that ReplayGain or a rename
+      holds, leaving 2M10's state. The single resolve also skips the "still
+      arriving" check. (The lock never covers a rename's or combine's
+      destination either; see 2D3.)
+      *Fix:* wrap each set-aside in `folderlock.holding(source.parent)` and
+      report Busy per file; add `_not_arriving` to the single resolve.
+
+### Listening
+
+- [ ] **2M15. A track the collector could not see at the first reading has
+      its whole lifetime counted as plays when it appears.** *Verified;
+      whether it has happened on the Pi is unknown.*
+      `app/playcounts.py:179-200,617-642`, `app/store.py:168-176`. Only rows
+      from the first reading are baselines. A track that was missing, set
+      aside and restored, or not yet stamped has its full counter counted as
+      new plays when it appears, dated at its last play (possibly months
+      before collection began), and doubled with any Last.fm import. A
+      variant: one of two files sharing a UUID goes missing and returns,
+      adding the difference as phantom plays.
+      *Check on the Pi:* rows after `play_collection.began` that are a
+      track and user's earliest, with `play_count > 1` or
+      `play_date < began`.
+      *Fix:* treat a first-seen row as a baseline when its `play_date`
+      predates the previous reading; never count a rise older than the
+      reading before it.
+
+- [x] **2M16. The Last.fm fetch double-counts and can silently truncate.**
+      *Verified with a mocked `_call`.* `app/lastfm.py` (`scrobbles`). Pages
+      ran newest first with no `to=`, so a scrobble landing mid-fetch
+      returned an old one twice. `totalPages` was re-read from every page,
+      so an empty answer ended the fetch as complete. A single-track page
+      raised `AttributeError`.
+      **Fixed** (`b27735b`): `to=` anchored at the start, dedup on
+      `(artist, track, uts)`, page count taken from page 1, an empty page
+      part-way raises `LastfmError`, a single object is read as a list.
+      Temporary errors are still not retried: see 2L19.
+
+- [ ] **2M17. `library_index` counts missing files, so a resolved duplicate
+      makes its scrobbles "ambiguous".** *Verified.*
+      `app/lastfm.py:200-212`. Navidrome keeps a set-aside copy's row as
+      missing; with two UUIDs per title, every scrobble of that track is
+      dropped from the import. Likely the source of the 3,402 scrobbles
+      assigned by hand.
+      *Fix:* build the index from live rows (`navidrome.live_clause`),
+      falling back to missing rows only where a key has no live candidate.
+
+- [ ] **2M18. A second plain Last.fm import adds rows instead of replacing
+      them when a match has moved.** *Verified.* `app/lastfm.py:341-354`,
+      guard at `:638-642`. Re-run after a duplicate resolve or a retitle and
+      both the old-UUID and new-UUID rows remain: 4 plays for 2.
+      *Fix:* in one transaction, delete this user's and source's bare-date
+      rows before inserting the new plan.
+
+- [x] **2M19. The smart playlist editor drops `order` (and `offset`) on
+      save.** *Verified.* `app/playlists.py` (`to_form`, `to_rules`). A rule
+      written as `"sort": "playcount", "order": "desc"` opened as ascending,
+      and Save turned the 50 most played into the 50 least played.
+      `offset` and `limitPercent` vanished; a multi-field sort opened as
+      editable and failed on Save.
+      **Fixed** (`943b8b2`): `order` is read (a `-` and `order: desc` cancel
+      out); `offset`, `limitPercent` and an unknown sort raise
+      `Unsupported`. Such playlists now open as not editable here.
+
+- [ ] **2M20. M29's remainder: no writer rolls back, so a failed write is
+      committed half-done by the next one.** *Verified.* `app/store.py`.
+      Still unlocked on the shared connection: `playcounts.baseline_stamp`,
+      `_last_known`, `last_reading`, `status`, `history_version`,
+      `_plays_between`, `coverage`, `_person_coverage`, `overview.warm`,
+      `health._decisions_version`. Dirty reads are harmless today. The real
+      hazard: with `_take`'s run-log insert forced to fail, the connection
+      stayed in a transaction, unlocked readers served uncommitted rows, a
+      CLI writer got `database is locked`, and the next unrelated
+      `mark_reviewed()` committed the half-reading. `registry.repoint`
+      (DELETE then INSERT or UPDATE) could be half-committed the same way.
+      The CLI tools are second writers that the per-process lock does not
+      cover.
+      *Fix:* one `store.transaction()` context manager that takes the lock
+      and rolls back on exception, used by every writer; take the lock in
+      the reads above.
+
+### Frontend
+
+- [ ] **2M21. The Library tabs race each other; M5's counter covers only
+      albums against albums.** *Verified in Chromium, all four directions.*
+      `app/static/js/library.js:304-345,423-439`,
+      `app/static/js/library-attention.js:68-72,151-223`. A slow albums
+      answer draws the grid under Artists or Needs attention, and the
+      reverse.
+      *Fix:* one request token owned by `loadLibrary`, checked by all three
+      loaders.
+
+- [ ] **2M22. A session that ends while the socket stays open never shows
+      the sign-in form.** *Verified.* `app/static/js/main.js:129-136`,
+      `app/static/js/ws.js:87`. Only socket close 4401 leads to sign-in; no
+      JS looks at HTTP 401. After the 30-day cap, a removed account or a
+      sign-out in another tab, every panel says "Please sign in." until a
+      reload.
+      *Fix:* a shared fetch wrapper that handles 401 (see 2D5); close that
+      user's sockets with 4401 in `auth.sign_out`.
+
+- [ ] **2M23. Combine and *Use this* treat "not started" as success.**
+      *Verified for combine; Use this by reading.*
+      `app/static/js/library-combine.js:356-374`,
+      `app/static/js/library-drawer.js:763-778`,
+      `app/static/js/operations.js:35-40`. With one combine running, a
+      second answers `started: false`; the dialog closes, the selection is
+      cleared, and the second never runs. *Use this* closes the drawer the
+      same way.
+      *Fix:* treat `!payload.started` as a refusal; keep the dialog and
+      selection and say why.
+
+- [ ] **2M24. A drop is split across two libraries if the Into picker
+      changes mid-upload.** *Verified.* A gap in L11.
+      `app/static/js/drop.js:116-117,140-143`. `targetLibrary()` is read per
+      file and again at finish.
+      *Fix:* capture it once per batch.
+
+- [ ] **2M25. Escape in a text box discards the selection or closes the
+      album panel.** *Verified.* `app/static/js/library.js:628-633`. Escape
+      in the search box exits select mode and wipes the selection; in the
+      "Merge into" box it closes the unsaved editor. `nav.js:66` handles
+      Escape too, unaware of this one.
+      *Fix:* ignore Escape from inputs, selects and textareas, and while
+      the menu is open.
+
+- [ ] **2M26. A refused inline track edit leaves the unsaved text in the
+      field.** *Verified for the page; frequency on the Pi unverified.*
+      `app/static/js/library-drawer.js:375-407,447-462`. Save-on-blur meets
+      M14's non-blocking lock: a second edit during the first gets 409, the
+      text stays, the next save says "Saved.", and nothing retries.
+      *Fix:* restore the old value on failure; chain one album's edits so
+      they never overlap.
+
+- [ ] **2M27. A client the broker drops for a stalled send stays connected
+      and deaf.** *Verified with a fake socket.* `app/main.py:175-191`.
+      After the 5-second timeout the socket is unregistered but never
+      closed, so the page shows "live" and receives nothing.
+      *Fix:* close it (code 1011, bounded) when dropping it.
+
+- [ ] **2M28. Bulk *Square covers* caches the old picture for a week.**
+      *Verified in Chromium; unverified against Navidrome.*
+      `app/static/js/library-attention.js:306-317`,
+      `app/static/js/library-shared.js:127,140-141`, `app/main.py:1956`.
+      `applyCover` waits 20 s before stamping the art URL; `squareCovers`
+      stamps at once, so the stamped URL caches the old art
+      (`max-age=604800`). `artStamps` lives in memory, so after any cover
+      change a reload shows the old art for up to a week.
+      *Fix:* the same wait; better, a cover version (file mtime) from the
+      listing as `v=`.
+
+- [ ] **2M29. The Combine dialog rebuilds itself under the user.**
+      *Verified.* `app/static/js/library-combine.js:120-129,264-269,336`.
+      Spotify's guess arriving mid-typing replaces the input and loses
+      keystrokes; every keyboard ↑/↓ drops focus to the page; the dialog
+      takes no focus on open and has no trap.
+      *Fix:* update the hint and summary in place; re-focus the moved row's
+      button; focus the sheet on open.
+
+## Low
+
+### Getting music in and the platform
+
+- [ ] **2L1. Two Retry requests at once start two runners on one job.**
+      *Verified.* `app/main.py:859-882`. `RUNNING` is checked before an
+      await and set after it. The page's Retry button can also be pressed
+      twice, because the track list is rebuilt on every job message
+      (`downloads.js:194-210`). *Fix:* reserve the slot before the await.
+- [ ] **2L2. A cancel just after resolving leaves a job stuck at "queued".**
+      *Verified.* `app/main.py:637-657`. `push_job` is awaited outside any
+      handler. *Fix:* one try/except/finally around `_resolve_job`'s body.
+- [ ] **2L3. A Settings save that fails still changes the live settings.**
+      *Verified.* `app/config.py:204-214`. Invalid TOML or a read-only
+      `/config` gives a 500 with the change in force until restart. A
+      hand-written TOML table is rewritten as a string.
+      *Fix:* write from a copy; apply live only after `os.replace`.
+- [ ] **2L4. The upload size check runs after the body is stored.**
+      `app/main.py:954-958`. Starlette spools the multipart body to `/tmp`
+      first; one request can fill the SD card.
+      *Fix:* refuse on `Content-Length` in the middleware.
+- [ ] **2L5. Some errors give a bare 500.** `resolve_duplicate` and
+      `dismiss_duplicate` (`app/main.py:1332,1358`) do not catch
+      `navidrome.Unavailable`. `Workspace.prepare()` raises when two
+      usernames reduce to one slug (`app/workspace.py:137`) and is called
+      unguarded from `create_job` and `upload_to_inbox`.
+- [ ] **2L6. Sessions outlive a password change, and an open `/ws` outlives
+      sign-out.** A Navidrome password change does not end sessions here
+      (up to 30 days); a socket keeps receiving events until it disconnects.
+- [ ] **2L7. yt-dlp's warnings are discarded and its age is invisible.**
+      *Unverified.* `app/downloader.py:23-37`, `requirements.txt`. Warnings
+      go to `log.debug`; the pin moves only with a commit; the image has no
+      JavaScript runtime, which recent yt-dlp wants for full YouTube
+      support. *Fix:* log warnings at WARNING (deduplicated), show the
+      version in Health, add Dependabot or a scheduled rebuild.
+- [ ] **2L8. A direct-link album splits on guest tracks and loses its
+      order (M22 incomplete).** *Verified on the item shape only.*
+      `app/generic.py:95-122`. `album_artist` is each track's own artist and
+      `track_no` is always `None`; the comment at `:118-119` is stale.
+      *Fix:* first of `artists` (or `album_artist`) for the album artist,
+      `track_number or playlist_index` for the number.
+- [ ] **2L9. A numbered duplicate is renamed on every save of its album.**
+      *Verified.* `app/filer.py:628-642,717-727`. `Same (2).mp3` goes to
+      `(3)`, then back. *Fix:* leave a file that is already one of its
+      target's numbered variants in the same folder.
+- [ ] **2L10. Unbounded dicts.** `_offered` (`app/main.py:2089`) and
+      `_sign_in_failures` (`app/main.py:517`) are never pruned.
+- [ ] **2L11. Transitive dependencies float.** Only top-level requirements
+      are pinned and the base image is not pinned by digest. Dev runs
+      Python 3.14 against 3.13 in the image.
+
+### Library and listening
+
+- [ ] **2L12. Album edit, combine and *Use this* report success when the
+      identity write failed; combine aborts on an `OSError`.**
+      `app/filer.py:499-504`, `app/main.py:1888-1898,2157`,
+      `app/combine.py:93-111`. *Fix:* return `identified` from each and show
+      it; catch `OSError` per album and per track in combine.
+- [ ] **2L13. A quarantined file put back by hand stays invisible to the
+      duplicate finder.** `restored_at` is read in three places and written
+      nowhere (`app/store.py:362-374`, `app/duplicates.py:253-255,700`).
+      *Fix:* filter on whether the quarantined file still exists; stamp
+      `restored_at` when it is found back at its source.
+- [ ] **2L14. `tools/fix_broken_m4a.py --all --mode mp3|flac` can overwrite
+      an existing file of the same stem.** `:216-219`. It also still walks
+      the quarantine (`:88`). *Fix:* refuse or number the name; skip
+      `duplicates-removed/`.
+- [ ] **2L15. Plays on tracks with no UUID are dropped every reading and
+      reported nowhere.** `app/playcounts.py:198-200,344-353`.
+      `without_uuid` appears only in the forced snapshot's JSON. *Fix:*
+      store it in the run log, log it, show it in coverage.
+- [ ] **2L16. `/api/playcounts/top` accepts unpadded dates and returns an
+      empty range.** *Verified.* `app/main.py:2491-2499`. *Fix:* pass the
+      parsed dates on, reformatted.
+- [ ] **2L17. Home shows an all-zero history when the history read fails.**
+      `app/overview.py:522-530`. *Fix:* `"available": false` and a banner.
+- [ ] **2L18. The `duplicate_dismissed` migration is not atomic.**
+      *Verified.* `app/store.py:231-248`. A crash between steps strands the
+      old table, and every "keep both" returns to the review list. *Fix:*
+      explicit `BEGIN`/`COMMIT`; copy from `_old` whenever it exists.
+- [ ] **2L19. Last.fm temporary errors are not retried.** Body errors 8,
+      16 and 29 and HTTP 429 throw away the whole fetch (the rest of 2M16).
+
+### Frontend
+
+- [ ] **2L20. Duplicates shows failures as "nothing there".** *Verified.*
+      `app/static/js/duplicates.js:219-270`. A 503, 401 or 500 on the
+      preview reads "Nothing is confident enough"; a 500 on the set-aside
+      list reads "Nothing has been set aside"; the button re-enables while
+      its operation runs.
+- [ ] **2L21. The Library's caches survive a change of account.**
+      *Verified.* `app/static/js/main.js:90-92,129-136`,
+      `library-shared.js:155-183`. After a 4401, a second person sees the
+      first's Artists list. *Fix:* reload, or reset `libraryState` and
+      `selection` on expiry.
+- [ ] **2L22. The Artists list is refreshed only by Rescan and combine.**
+      `library.js:427,684`, `library-combine.js:390`. *Fix:* drop it in
+      `refreshLibrary()`.
+- [ ] **2L23. Quarantine on an album opened from song search throws.**
+      *Verified.* `library-drawer.js:798-800`. `album.tracks` is undefined
+      until loaded; M8 guarded Edit details only.
+- [ ] **2L24. The selection goes stale after the thing selected moves.**
+      `library-drawer.js:393-401,491-496,811-813`. A renamed or quarantined
+      album stays selected under its old folder; a renamed track keeps its
+      old key.
+- [ ] **2L25. A cover survey in flight can undo an invalidation.**
+      `library-shared.js:192-211`. *Fix:* a generation counter.
+- [ ] **2L26. Silent failures when the server is unreachable.** Sign-in and
+      Settings load and save have no `catch` (`main.js:75-95`,
+      `settings.js:19-21,69`).
+- [ ] **2L27. One hung upload stalls every later drop.** `drop.js:123-133`.
+      `JSON.parse` can throw in `onload`, and there is no `onabort` or
+      `ontimeout`, so `dropChain` never advances.
+
+## Design
+
+- [ ] **2D1. A job's lifetime is its asyncio task, but the work lives in
+      threads and subprocesses nobody tracks.** "Stopped", the gate count
+      and `RUNNING` describe the task. 2H2, 2M2 and 2M3 all follow from
+      this; fixing it is the root fix for them.
+- [ ] **2D2. Three stores of album identity, updated in sequence, with
+      nothing reconciling them.** The registry, the tags on disk and
+      Navidrome's database. When registry and disk disagree, the registry
+      silently wins on the next edit (verified: *Save album* rewrote every
+      file to the registry's UUID). `album_registry` has no uniqueness on
+      `(library_id, album_uuid)`. 2H1, 2M8, 2M9 and 2M10 are forms of this.
+      *Direction:* a registry-against-disk comparison in the disk audit,
+      shown in Health; one "disk wins unless ambiguous" function used by
+      `file_track` and `after_retag`; 2M10's intent record.
+- [ ] **2D3. The folder lock covers where files leave from, never where
+      they arrive.** A rename into an existing album, a combine's target and
+      all inbox filing are unlocked; `inbox.receiving` is checked once, not
+      held.
+- [ ] **2D4. Business logic lives in route handlers.** About two thirds of
+      `main.py`: `library_match_apply.run`, `library_combine`,
+      `library_cover_apply.run`, the quarantine handlers and the job
+      lifecycle. During R1, move the `run()` bodies into the domain
+      modules. There are no import cycles, but `replaygain` imports
+      `operations`, `library`, `inbox` and `folderlock`, and `library`
+      imports `playcounts`. All in-process state assumes one uvicorn
+      worker, and nothing enforces that.
+- [ ] **2D5. The frontend has no shared fetch layer.** 30 raw `fetch` calls
+      against 19 through `getJSON`/`postJSON`, with three error
+      conventions; the root of 2M22, 2L20 and 2L26. `startOperation`
+      returns three shapes that callers decode by hand (2M23). "Latest
+      request wins" is written four times and missing where it matters
+      (2M21). Cache invalidation is spread over four modules (2L22, 2L25).
+      Duplicated helpers have drifted: `plural` three times, two album
+      drawers, four Escape handlers (2M25). `call()` in `core.js` is dead.
+- [ ] **2D6. Three definitions of "a track in the library" already
+      disagree.** `playcounts._current` hard-codes the missing flags,
+      `navidrome.live_clause` probes the schema, and `lastfm.library_index`
+      has no filter (2M17). `UUID_TAG` is defined twice. `history_version`
+      cannot see an in-place `UPDATE`.
+
+### R1 advice
+
+The proposed split is right in outline, with four changes: add `events.py`
+for the broker and the `push_*` functions; make `space_for` a plain async
+helper, not a dependency (callers take `library_id` from four places, and
+some fold checks into one thread hop); add router-level
+`Depends(current_session)` on top of the middleware, not instead of it; and
+do not let other routers import `JOBS` or `RUNNING`.
+
+The hazard is the tests. About 70 `main.X` names are patched across 18 test
+files. Once a function moves, a re-export from `main` keeps the import
+working but not the patch: an ineffective stub of `_run` or `_resolve_job`
+in `test_jobs.py` means real resolving and downloading. Patches of the form
+`main.workspace.for_session` keep working only if the new modules call
+module-qualified (`workspace.for_session(...)`), so make that a rule.
+
+Order:
+
+1. Fix 2L1 and 2L2, which are local to code about to move.
+2. Add a characterisation test of every route's method, path and guard,
+   plus "every route answers 401 without a session".
+3. Extract `events.py`, `jobs.py` and `background.py`, one commit each,
+   moving each test's patch targets with the code.
+4. Add `api/deps.py`.
+5. Move the routers leaf-first, `library_edit` last.
+6. Add the router-level dependencies and re-run the test from step 2.
+7. Only then push the `run()` bodies into the domain modules.
+
+## Round 2 test gaps
+
+- **Still no HTTP-level tests.** Handlers are called as functions, so
+  `Depends`, the middleware and route registration are never exercised; a
+  dropped guard would pass the suite.
+- **The cancellation tests use `asyncio.sleep` for the download**, so they
+  cannot see threads that outlive the task (2M2).
+- **`tests/conftest.py`'s `media_file` has no `updated_at`**, so every
+  track-index test runs on the file-stamp fallback, not the production path.
+- **`tests/test_frontend.py` is regex only.** The Playwright stub-route
+  checks that verified the frontend findings live in scratch folders; they
+  could run in CI as a dev dependency.
