@@ -1058,11 +1058,26 @@ it less likely.
       `api/library_read`, `api/library_edit`, `api/listening`. Give each
       router `dependencies=[Depends(current_session)]`, so auth stops
       depending only on a path prefix.
-- [ ] **R2. Split `app/static/js/library.js` (~2,300 lines)** along its own
+- [x] **R2. Split `app/static/js/library.js` (~2,300 lines)** along its own
       sections: list, attention, drawer and editing, combine. Pass options to
       `showProgress` instead of special-casing the string "ReplayGain"; share
       the duplicated cover-survey fetch; use the existing `button()` helper in
       `renderBar`.
+      **Fixed:** library.js is now five modules: `library-shared.js`
+      (elements, the view state, helpers, cover art, the selection, and the
+      state more than one module replaces, on one `libraryState` object),
+      `library.js` (the list, artists, select mode, controls),
+      `library-attention.js` (Needs attention, bulk actions, ReplayGain),
+      `library-drawer.js` (the album panel, editing, covers, matching,
+      quarantine) and `library-combine.js`. The shared module imports none of
+      the others, so the rest can import each other's functions safely.
+      `showProgress` takes `{label, stopUrl, ordinal}`; the list and Needs
+      attention share one `loadCoverSurvey`; `renderBar` uses the button
+      helper. To avoid clashing with other modules' locals, the shared helpers
+      are `actionButton`, `editField` and `viewing`. Checked in headless
+      Chromium with stubbed APIs: list, progress with Stop, cover flags, the
+      panel and editor, select mode and Combine, Needs attention and Artists
+      all behave the same as the single file did, with no page errors.
 - [x] **R3. Stale text describing the removed staging, ledger, nightly and
       beets-files-everything design.**
       - User-facing: "nightly" at `index.html:130, 148`; the Settings note

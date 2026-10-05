@@ -166,9 +166,9 @@ def test_no_file_uses_another_files_export_without_importing_it():
 
 
 def test_main_js_imports_library_and_health_for_their_registrations():
-    """library.js and health.js each call registerOperation(...) at module
-    top level - a side-effecting import. If main.js stopped importing one of
-    them, its operation (replaygain/import/candidates, or audit) would never
+    """library.js (through the modules it imports) and health.js call
+    registerOperation(...) at module top level - a side-effecting import.
+    If main.js stopped importing one of them, its operation (replaygain/import/candidates, or audit) would never
     be registered, and starting it would silently do nothing."""
     main_js = JS_FILES["main.js"]
     assert 'import "./library.js"' in main_js or "from \"./library.js\"" in main_js
@@ -424,7 +424,7 @@ def test_the_selected_range_is_announced_not_only_coloured():
 
 def test_the_cover_survey_is_fetched_from_one_place():
     """Two callers fetching it at once ran the survey twice (CODE_REVIEW M38)."""
-    assert JS_FILES["library.js"].count('"/api/library/attention/covers"') == 1
+    assert JS.count('"/api/library/attention/covers"') == 1
 
 
 # --- which library new music goes into (L11) ---------------------------------
@@ -470,7 +470,7 @@ def test_the_file_picker_offers_covers_and_every_audio_extension():
 
 def test_an_artist_page_reads_every_record_not_one_page():
     """It asked for one page of 200 and stopped there without a word (L24)."""
-    assert "const want = view.artist ? Infinity" in JS_FILES["library.js"]
+    assert "const want = viewing.artist ? Infinity" in JS_FILES["library.js"]
 
 
 def test_the_year_tile_opens_its_own_calendar_year():

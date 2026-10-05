@@ -72,9 +72,12 @@ browser ──HTTP/WS──▶ companion ──read-only SQLite──▶ navidro
 ```
 
 The front end has no build step and no framework: `app/static/index.html`,
-`style.css`, and sixteen ES modules under `app/static/js/` with `main.js` as
-the only entry. The shell is served `no-store` and stamps `?v=<hash>` onto
-its asset URLs, so a deploy reaches the browser on a normal reload.
+`style.css`, and twenty ES modules under `app/static/js/` with `main.js` as
+the only entry. The Library panel is five of them, `library*.js`;
+`library-shared.js` imports none of the others, which is what keeps their
+imports of one another safe. The shell is served `no-store` and stamps
+`?v=<hash>` onto its asset URLs, so a deploy reaches the browser on a normal
+reload.
 
 ### Where state lives
 

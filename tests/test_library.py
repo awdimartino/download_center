@@ -835,7 +835,7 @@ def test_the_merge_search_asks_for_the_albums_own_library():
     from pathlib import Path
 
     js = (Path(__file__).resolve().parent.parent / "app" / "static" / "js"
-          / "library.js").read_text(encoding="utf-8")
+          / "library-drawer.js").read_text(encoding="utf-8")
     assert "&library_id=${album.library_id}&limit=8" in js
 
 
