@@ -234,9 +234,23 @@ def to_form(rules: dict[str, Any]) -> dict[str, Any]:
         conditions.append({"field": name, "operator": operator,
                            "value": value})
 
+    # Refused rather than dropped: the form cannot show these, and a Save
+    # that quietly lost them changed which tracks the playlist holds.
+    for key in ("offset", "limitPercent"):
+        if rules.get(key):
+            raise Unsupported(f"it sets '{key}', which this editor cannot show")
+
     sort = rules.get("sort") or ""
-    direction = "desc" if sort.startswith("-") else "asc"
+    # Navidrome takes the direction two ways, a leading '-' and a separate
+    # `order`, and the two together cancel out. Reading only the '-' opened
+    # a "most played" list as ascending and saved it as the least played.
+    descending = sort.startswith("-") != (
+        str(rules.get("order") or "").lower() == "desc")
+    direction = "desc" if descending else "asc"
     sort = sort.lstrip("+-")
+    if sort and sort not in _SORT_NAMES:
+        raise Unsupported(f"it is sorted by '{sort}', which this editor "
+                          "cannot show")
 
     return {
         "match": match,

@@ -285,3 +285,26 @@ async def test_updating_a_playlist_with_navidrome_down_is_a_502(monkeypatch):
             "p1", main.PlaylistRequest(name="x", form={}),
             SimpleNamespace(identity=None, id="s"))
     assert refused.value.status_code == 502
+
+
+def test_a_separate_order_is_read_as_the_direction():
+    """The documented way to write it. Read as ascending, a Save turned the
+    fifty most played into the fifty least played."""
+    rules = {"all": [{"gt": {"rating": 3}}], "sort": "playcount",
+             "order": "desc", "limit": 50}
+    form = playlists.to_form(rules)
+    assert form["direction"] == "desc"
+    assert _rules(form)["sort"] == "-playcount"
+
+
+def test_a_sign_and_an_order_together_cancel_out():
+    rules = {"all": [{"gt": {"rating": 3}}], "sort": "-playcount",
+             "order": "desc"}
+    assert playlists.to_form(rules)["direction"] == "asc"
+
+
+@pytest.mark.parametrize("extra", [
+    {"offset": 10}, {"limitPercent": 5}, {"sort": "playcount,-rating"}])
+def test_what_the_form_cannot_show_is_refused_not_dropped(extra):
+    with pytest.raises(playlists.Unsupported):
+        playlists.to_form({"all": [{"gt": {"rating": 3}}], **extra})
