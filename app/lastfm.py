@@ -163,23 +163,42 @@ def scrobbles(username: str, api_key: str,
     rows rather than millions.
     """
     out: list[tuple[str, str, int]] = []
+    seen: set[tuple[str, str, int]] = set()
+    # Everything up to now, and nothing later. Pages run newest first, so a
+    # scrobble landing during the fetch pushed every later page along by one
+    # and the same old play came back twice.
+    until = str(int(time.time()))
     page = 1
     pages = 1
     while page <= pages:
         body = _call("user.getRecentTracks", api_key=api_key, user=username,
-                     limit=str(PAGE), page=str(page))
+                     limit=str(PAGE), page=str(page), to=until)
         recent = body.get("recenttracks", {})
         attr = recent.get("@attr", {})
-        pages = int(attr.get("totalPages", 1))
-        for item in recent.get("track", []):
+        if page == 1:
+            pages = int(attr.get("totalPages", 1))
+        tracks = recent.get("track", [])
+        if isinstance(tracks, dict):
+            tracks = [tracks]
+        # The page count is fixed by the first page. An empty answer part
+        # way through used to reset it to one and end the fetch as if it had
+        # finished, and a short history was then written as the whole one.
+        if not tracks and page < pages:
+            raise LastfmError(
+                f"page {page} of {pages} came back empty; the history is "
+                "incomplete, so nothing was kept")
+        for item in tracks:
             # A track playing right now has no date and has not finished.
             if item.get("@attr", {}).get("nowplaying") == "true":
                 continue
             date = item.get("date", {}).get("uts")
             if not date:
                 continue
-            out.append((item.get("artist", {}).get("#text", ""),
-                        item.get("name", ""), int(date)))
+            scrobble = (item.get("artist", {}).get("#text", ""),
+                        item.get("name", ""), int(date))
+            if scrobble not in seen:
+                seen.add(scrobble)
+                out.append(scrobble)
         if progress and (page % 25 == 0 or page == pages or page == 1):
             progress(page, pages, len(out))
         page += 1

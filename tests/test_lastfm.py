@@ -499,3 +499,53 @@ def test_timed_rows_are_counted_per_person(state_db):
          ("2026-01-02T10:00:00+00:00", "a", "u-kelly")])
 
     assert lastfm.timed_rows("u-alex") == 1
+
+
+# --- fetching the history ----------------------------------------------------
+
+def _page(tracks, pages):
+    return {"recenttracks": {"@attr": {"totalPages": str(pages)},
+                             "track": tracks}}
+
+
+def _scrobble(title, uts):
+    return {"artist": {"#text": "A"}, "name": title, "date": {"uts": str(uts)}}
+
+
+def _fetch(monkeypatch, answers):
+    asked = []
+
+    def call(method, **params):
+        asked.append(params)
+        return answers[int(params["page"]) - 1]
+
+    monkeypatch.setattr(lastfm, "_call", call)
+    monkeypatch.setattr(lastfm.time, "sleep", lambda seconds: None)
+    return asked
+
+
+def test_a_scrobble_pushed_onto_the_next_page_is_counted_once(monkeypatch):
+    """Pages run newest first, so a play landing mid-fetch moves the last row
+    of one page to the top of the next."""
+    asked = _fetch(monkeypatch, [
+        _page([_scrobble("T3", 3), _scrobble("T2", 2)], 2),
+        _page([_scrobble("T2", 2), _scrobble("T1", 1)], 2),
+    ])
+    assert lastfm.scrobbles("u", "k") == [("A", "T3", 3), ("A", "T2", 2),
+                                           ("A", "T1", 1)]
+    assert len({params["to"] for params in asked}) == 1
+
+
+def test_an_empty_page_part_way_through_is_an_error_not_the_end(monkeypatch):
+    _fetch(monkeypatch, [
+        _page([_scrobble("T3", 3)], 3),
+        {"recenttracks": {}},
+        _page([_scrobble("T1", 1)], 3),
+    ])
+    with pytest.raises(lastfm.LastfmError):
+        lastfm.scrobbles("u", "k")
+
+
+def test_a_page_holding_a_single_track_is_read(monkeypatch):
+    _fetch(monkeypatch, [_page(_scrobble("T1", 1), 1)])
+    assert lastfm.scrobbles("u", "k") == [("A", "T1", 1)]
