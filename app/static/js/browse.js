@@ -10,7 +10,7 @@
    it in the library, queued, downloading, failed - painted from the same
    jobs the Downloads panel draws, so nobody has to go and look. */
 
-import { apiFetch, duration, el, libraryPicker, pageEscape, remoteArt, showError, songRow, targetLibrary } from "./core.js";
+import { apiFetch, duration, el, libraryPicker, pageEscape, plural, remoteArt, showError, songRow, targetLibrary } from "./core.js";
 import { jobs, onJobs } from "./ws.js";
 import { MOVING, expectJob, jobGroup, jobProgress, settledCount } from "./downloads.js";
 
@@ -38,9 +38,6 @@ function looksLikeUrl(text) {
     .test(text.trim());
 }
 
-function plural(n, word) {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
 
 /* --- where a result stands ------------------------------------------------
    Read from the jobs on every change. Each node on screen registers how to

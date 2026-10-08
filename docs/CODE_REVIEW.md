@@ -2080,7 +2080,7 @@ R2 split of `library.js` lost nothing.
       `operations`, `library`, `inbox` and `folderlock`, and `library`
       imports `playcounts`. All in-process state assumes one uvicorn
       worker, and nothing enforces that.
-- [ ] **2D5. The frontend has no shared fetch layer.** 30 raw `fetch` calls
+- [x] **2D5. The frontend has no shared fetch layer.** 30 raw `fetch` calls
       against 19 through `getJSON`/`postJSON`, with three error
       conventions; the root of 2M22, 2L20 and 2L26. `startOperation`
       returns three shapes that callers decode by hand (2M23). "Latest
@@ -2088,6 +2088,20 @@ R2 split of `library.js` lost nothing.
       (2M21). Cache invalidation is spread over four modules (2L22, 2L25).
       Duplicated helpers have drifted: `plural` three times, two album
       drawers, four Escape handlers (2M25). `call()` in `core.js` is dead.
+      **Done, mostly.** `core.js` now holds the layer: `apiFetch` (every
+      call outside sign-in goes through it, and a 401 anywhere shows the
+      sign-in form; 2M22), and the checked `getJSON`/`postJSON`, moved from
+      the Library so every panel can use them (2L20, 2L26). `startOperation`
+      answers in one shape, `{started, refused, operation}`, and its four
+      callers ask one question each. One `plural` in `core.js` (the
+      localised one), the dead `call()` removed, Escape handled through one
+      `pageEscape` (2M25), covers invalidated through `forgetCoverSurvey`
+      (2L25), and the latest-load rule shared across the Library's tabs
+      (2M21). **Left as they are:** a dozen calls that read a non-JSON
+      answer or handle `detail` themselves still use `apiFetch` directly,
+      which is the right tool for them. The two album drawers (Browse's
+      Spotify album and the Library's own) show different things from
+      different sources, and merging them would be a redesign, not a fix.
 - [x] **2D6. Three definitions of "a track in the library" already
       disagree.** `playcounts._current` hard-codes the missing flags,
       `navidrome.live_clause` probes the schema, and `lastfm.library_index`

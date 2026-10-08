@@ -74,9 +74,6 @@ export function albumName(album) {
     || album.folder || "this album";
 }
 
-export function plural(n, word) {
-  return `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
-}
 
 export function actionButton(label, className, onClick) {
   const b = el("button", className, label);

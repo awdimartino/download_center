@@ -94,6 +94,11 @@ export function postJSON(path, body) {
   });
 }
 
+// "1 album", "2 albums". One copy for every panel; three had drifted.
+export function plural(n, word) {
+  return `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+}
+
 export function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -133,19 +138,6 @@ export function songRow(tag, art, title, sub, end = []) {
     row.append(tail);
   }
   return row;
-}
-
-async function call(path) {
-  showError("");
-  try {
-    const response = await apiFetch(path, { method: "POST" });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      showError(body.detail || `Request failed (${response.status})`);
-    }
-  } catch {
-    showError("Could not reach the server.");
-  }
 }
 
 export function action(label, className, handler) {

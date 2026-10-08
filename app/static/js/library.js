@@ -23,7 +23,7 @@
    are library-attention.js, library-drawer.js and library-combine.js; what
    they share is library-shared.js. */
 
-import { apiFetch, el, getJSON, pageEscape, setNote, songRow } from "./core.js";
+import { apiFetch, el, getJSON, pageEscape, plural, setNote, songRow } from "./core.js";
 import { barRows } from "./charts.js";
 import { setBadge } from "./nav.js";
 import {
@@ -55,7 +55,6 @@ import {
   libraryView,
   loadCoverSurvey,
   looseTracks,
-  plural,
   remember,
   selection,
   viewing

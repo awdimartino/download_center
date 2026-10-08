@@ -5,7 +5,7 @@
    in place, and everything done to it - renaming and merging, a new cover,
    choosing a MusicBrainz match by hand, setting it aside. */
 
-import { el, getJSON, postJSON, setNote } from "./core.js";
+import { el, getJSON, plural, postJSON, setNote } from "./core.js";
 import { registerOperation, startOperation } from "./operations.js";
 import {
   actionButton,
@@ -21,7 +21,6 @@ import {
   libraryState,
   libraryStatus,
   libraryView,
-  plural,
   RESCAN_WAIT_MS,
   selection
 } from "./library-shared.js";
@@ -796,13 +795,13 @@ async function askForCandidates(album, button) {
     el("p", "candidates-empty",
        `Asking MusicBrainz about ${albumName(album)}…`));
   candidatesEl.hidden = false;
-  const payload = await startOperation(
+  const outcome = await startOperation(
     "candidates", "/api/library/match",
     { library_id: album.library_id, folder: album.folder });
   button.disabled = false;
-  if (!payload || payload.detail) {
+  if (outcome.refused) {
     closeCandidates();
-  } else if (!payload.started && !sameAlbum(payload.operation.target, album)) {
+  } else if (!outcome.started && !sameAlbum(outcome.operation.target, album)) {
     closeCandidates();
     setNote("library-op",
       "MusicBrainz is already being asked about another album; "
@@ -820,19 +819,18 @@ async function useCandidate(album, candidate, button) {
     return;
   }
   button.disabled = true;
-  const payload = await startOperation(
+  const outcome = await startOperation(
     "import", "/api/library/match/apply",
     { library_id: album.library_id, folder: album.folder,
       release_id: candidate.id });
   button.disabled = false;
-  if (!payload || payload.detail || !payload.started) {
+  if (!outcome.started) {
     // Said here, where the person is looking: the panel's status line is
     // behind the drawer. The drawer used to close first, so a retag that
     // was refused, or never started because another was running, looked
     // exactly like one that had begun.
-    const why = !payload ? "Could not start the retag."
-      : payload.detail ? payload.detail
-      : "Another retag is still running, so this one was not started. "
+    const why = outcome.refused
+      || "Another retag is still running, so this one was not started. "
         + "Try again when it finishes.";
     candidatesEl.prepend(el("p", "candidates-empty warn", why));
     return;

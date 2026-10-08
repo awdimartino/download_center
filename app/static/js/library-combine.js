@@ -5,7 +5,7 @@
    rename per album, typed exactly right each time, and a move per loose
    track from behind "More". Nothing changes until Combine is pressed. */
 
-import { el, getJSON, postJSON, setNote } from "./core.js";
+import { el, getJSON, plural, postJSON, setNote } from "./core.js";
 import { registerOperation, startOperation } from "./operations.js";
 import {
   actionButton,
@@ -17,7 +17,6 @@ import {
   libraryDialog,
   libraryState,
   looseTracks,
-  plural,
   selection,
   showProgress
 } from "./library-shared.js";
@@ -419,7 +418,7 @@ async function submitCombine(go) {
   const keepAlbum = c.albums.find((a) => albumKey(a) === c.target);
   c.error = "";
   go.disabled = true;
-  const payload = await startOperation("combine", "/api/library/combine", {
+  const outcome = await startOperation("combine", "/api/library/combine", {
     library_id: c.library_id,
     albumartist: name.albumartist,
     album: name.album,
@@ -430,13 +429,13 @@ async function submitCombine(go) {
     cover_folder: c.cover && c.cover.folder ? c.cover.folder : null,
     cover_url: c.cover && c.cover.url ? c.cover.url : null,
   });
-  if (!payload || payload.detail) {
+  if (outcome.refused) {
     // Said in the dialog: the panel's own status line is behind it.
-    c.error = (payload && payload.detail) || "Could not start the combine.";
+    c.error = outcome.refused;
     renderCombine();
     return;
   }
-  if (!payload.started) {
+  if (!outcome.started) {
     // Another combine is running, and this one was not queued behind it.
     // Closing the dialog and clearing the selection here read as success,
     // and the combine set up so carefully was simply never run.

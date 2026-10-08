@@ -526,8 +526,8 @@ def test_an_operation_that_did_not_start_is_not_treated_as_started():
     """Combine closed its dialog and cleared the selection, and Use this
     closed the drawer, when the server answered started: false (2M23).
     Checked in Chromium; this pins the wiring."""
-    assert "if (!payload.started) {" in JS_FILES["library-combine.js"]
-    assert "if (!payload || payload.detail || !payload.started) {" in JS_FILES["library-drawer.js"]
+    assert "if (!outcome.started) {" in JS_FILES["library-combine.js"]
+    assert "if (!outcome.started) {" in JS_FILES["library-drawer.js"]
 
 
 def test_a_drop_goes_to_the_library_chosen_when_it_was_dropped():
@@ -662,3 +662,21 @@ def test_every_upload_outcome_settles():
     assert "xhr.onabort = () =>" in drop
     assert "setTimeout(() => xhr.abort(), UPLOAD_STALL_MS)" in drop
     assert "resolve(JSON.parse(xhr.responseText))" not in drop
+
+
+def test_starting_an_operation_answers_in_one_shape():
+    """It returned the payload, a payload with only `detail`, or null, and
+    each caller decoded the three by hand (2D5)."""
+    ops = JS_FILES["operations.js"]
+    assert ops.count("return { started:") == 3
+    for name in ("library-combine.js", "library-drawer.js", "duplicates.js"):
+        assert "const outcome = await startOperation(" in JS_FILES[name], name
+        assert "const payload = await startOperation(" not in JS_FILES[name], name
+
+
+def test_one_plural_for_every_panel():
+    """Three copies had drifted: one localised its numbers, two did not."""
+    defined = [name for name, text in JS_FILES.items()
+               if re.search(r"function plural\(", text)]
+    assert defined == ["core.js"]
+    assert "async function call(" not in JS_FILES["core.js"]

@@ -6,7 +6,7 @@
    select mode offers, and ReplayGain, which is started from here and from
    an album's panel. */
 
-import { el, getJSON, postJSON, setNote } from "./core.js";
+import { el, getJSON, plural, postJSON, setNote } from "./core.js";
 import { registerOperation, startOperation } from "./operations.js";
 import {
   actionButton,
@@ -23,7 +23,6 @@ import {
   librarySuggest,
   libraryTodoCount,
   loadCoverSurvey,
-  plural,
   remember,
   RESCAN_WAIT_MS,
   showProgress,

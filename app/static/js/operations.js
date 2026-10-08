@@ -10,7 +10,7 @@
 // module a leaf - it does not import library.js or health.js - while the
 // original single-scope app.js had one hardcoded OPERATION_LABELS table and
 // an if/elseif chain that reached directly into both.
-import { apiFetch, setNote } from "./core.js";
+import { apiFetch, getJSON, setNote } from "./core.js";
 
 const registry = {};
 
@@ -24,30 +24,41 @@ export function registerOperation(name, spec) {
   registry[name] = spec;
 }
 
+// Always one shape, so callers ask one question each:
+//   { started: true,  refused: null, operation }  - it is running now;
+//   { started: false, refused: null, operation }  - one was already running,
+//                                                    and that one is watched;
+//   { started: false, refused: "why", operation: null } - nothing started.
+// It used to return the payload, a payload with only `detail`, or null, and
+// each caller decoded the three by hand - two of them got it wrong (2M23).
 export async function startOperation(name, path, body) {
   const spec = registry[name];
   setNote(spec.note, "");
+  let payload;
   try {
     const request = { method: "POST" };
     if (body) {
       request.headers = { "Content-Type": "application/json" };
       request.body = JSON.stringify(body);
     }
-    const payload = await apiFetch(path, request).then((r) => r.json());
-    if (payload.detail) {
-      setNote(spec.note, payload.detail, "warn");
-      return payload;
-    }
-    if (!payload.started) {
-      setNote(spec.note,
-              "That is already running; watching the one in flight.", "warn");
-    }
-    showOperation(payload.operation);
-    return payload;
+    payload = await apiFetch(path, request).then((r) => r.json());
   } catch (err) {
-    setNote(spec.note, `Could not start: ${err.message}`, "warn");
-    return null;
+    const refused = `Could not start: ${err.message}`;
+    setNote(spec.note, refused, "warn");
+    return { started: false, refused, operation: null };
   }
+  if (payload.detail || !payload.operation) {
+    const refused = payload.detail || "Could not start.";
+    setNote(spec.note, refused, "warn");
+    return { started: false, refused, operation: null };
+  }
+  if (!payload.started) {
+    setNote(spec.note,
+            "That is already running; watching the one in flight.", "warn");
+  }
+  showOperation(payload.operation);
+  return { started: Boolean(payload.started), refused: null,
+           operation: payload.operation };
 }
 
 // Asked on every socket open: the first shows what is already running (a
@@ -56,7 +67,7 @@ export async function startOperation(name, path, body) {
 export async function catchUpOperations(owner) {
   let data;
   try {
-    data = await apiFetch("/api/operations").then((r) => r.json());
+    data = await getJSON("/api/operations");
   } catch {
     return;  // The socket reports the next change anyway.
   }

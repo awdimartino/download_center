@@ -283,9 +283,9 @@ document.getElementById("dupe-auto").addEventListener("click", async (event) => 
   // Exactly the groups just previewed: anything that has appeared since
   // is left for the next look rather than resolved unseen. From here the
   // button follows the operation, so it stays disabled while it runs.
-  const payload = await startOperation("dupes-auto", "/api/duplicates/auto/apply",
+  const outcome = await startOperation("dupes-auto", "/api/duplicates/auto/apply",
                                        { groups: preview.groups });
-  if (!payload || payload.detail) button.disabled = false;
+  if (outcome.refused) button.disabled = false;
 });
 
 // The result arrives over the socket. Reported rather than discarded: a run

@@ -11,7 +11,7 @@
    anything anywhere. On a phone the whole thing folds into a pill at the
    bottom of the screen and opens as a sheet. */
 
-import { apiFetch, el, pageEscape, remoteArt, showError } from "./core.js";
+import { apiFetch, el, pageEscape, plural, remoteArt, showError } from "./core.js";
 import { jobs, onJobs } from "./ws.js";
 
 const view = document.getElementById("view-browse");
@@ -82,9 +82,6 @@ function ago(iso) {
   return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
 }
 
-function plural(n, word) {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
 
 function describe(job) {
   const n = job.items.length;
