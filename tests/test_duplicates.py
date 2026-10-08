@@ -797,3 +797,41 @@ async def test_an_album_still_arriving_is_not_quarantined(monkeypatch, tmp_path)
 
     assert refused.value.status_code == 409
     assert moved == []
+
+
+# --- a resolve waits its turn like every other change (2M14) --------------------
+
+def test_a_resolve_does_not_move_a_file_out_of_a_folder_being_changed(
+        tmp_path, state_db, identity):
+    """A ReplayGain run or a rename holding the folder had the file moved out
+    from under it, and failed part way."""
+    from app import folderlock
+
+    root = tmp_path / "music"
+    source = root / "Artist" / "Album" / "01 Song.mp3"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"audio")
+    keeper = _copy("keep", "Artist/Album/01 Song.flac", suffix="flac")
+    loser = _copy("drop", "Artist/Album/01 Song.mp3")
+
+    with folderlock.holding(source.parent):
+        with pytest.raises(ValueError, match="being changed"):
+            duplicates.resolve(_group([keeper, loser]), "keep", identity)
+
+    assert source.exists()
+
+
+def test_a_resolve_waits_for_an_album_still_arriving(tmp_path, state_db,
+                                                     identity, monkeypatch):
+    root = tmp_path / "music"
+    source = root / "Artist" / "Album" / "01 Song.mp3"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"audio")
+    monkeypatch.setattr("app.inbox.receiving", lambda folder: True)
+
+    with pytest.raises(ValueError, match="still arriving"):
+        duplicates.resolve(_group([_copy("keep", "Artist/Album/01 Song.flac",
+                                         suffix="flac"),
+                                   _copy("drop", "Artist/Album/01 Song.mp3")]),
+                           "keep", identity)
+    assert source.exists()

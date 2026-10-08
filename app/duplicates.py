@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import filer, navidrome, store
+from . import filer, folderlock, inbox, navidrome, store
 from .matcher import FEATURING
 from .walk import NDIGNORE, QUARANTINE_NAME
 from .config import settings
@@ -561,12 +561,32 @@ def quarantine_many(copies: list[Copy],
 
 def resolve(group: Group, keeper_id: str,
             identity: navidrome.Identity) -> dict[str, Any]:
-    """Keep one copy, set the others aside, and move annotations across."""
+    """Keep one copy, set the others aside, and move annotations across.
+
+    Holding the folders the copies leave, like every other change to an
+    album. Without it, a resolve moved a file out of a folder a ReplayGain
+    run or a rename was working through, and that one failed part way.
+    """
     keeper = next((c for c in group.copies if c.id == keeper_id), None)
     if keeper is None:
         raise ValueError("that copy is not in this group")
 
     losers = [c for c in group.copies if c.id != keeper_id]
+    folders = sorted({(_library_root(c, identity) / c.path).parent
+                      for c in losers})
+    arriving = [folder.name for folder in folders if inbox.receiving(folder)]
+    if arriving:
+        raise ValueError(f"{', '.join(arriving)} is still arriving; try again "
+                         "shortly.")
+    try:
+        with folderlock.holding(*folders):
+            return _resolve(group, keeper, losers, identity)
+    except folderlock.Busy as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _resolve(group: Group, keeper: Copy, losers: list[Copy],
+             identity: navidrome.Identity) -> dict[str, Any]:
 
     # Refuse before touching anything. Checking as we went meant the first
     # loser's star was already written to the keeper by the time a later one

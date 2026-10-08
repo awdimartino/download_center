@@ -1497,7 +1497,7 @@ R2 split of `library.js` lost nothing.
       are now listed in `retired`. New test fails on the old code; the
       existing unfuse tests still pass.
 
-- [ ] **2M14. Resolving duplicates takes no folder lock.** *By reading.*
+- [x] **2M14. Resolving duplicates takes no folder lock.** *By reading.*
       `app/main.py:1327-1348,1429-1437`, `app/duplicates.py:566-633`. A
       resolve can move a file out of a folder that ReplayGain or a rename
       holds, leaving 2M10's state. The single resolve also skips the "still
@@ -1505,6 +1505,14 @@ R2 split of `library.js` lost nothing.
       destination either; see 2D3.)
       *Fix:* wrap each set-aside in `folderlock.holding(source.parent)` and
       report Busy per file; add `_not_arriving` to the single resolve.
+      **Fixed** inside `duplicates.resolve`, so the single resolve and
+      auto-resolve both get it: before anything is touched it refuses when
+      a loser's folder is still arriving, then holds every loser's folder
+      for the whole resolve, annotations included. Busy becomes a
+      ValueError, which the single route reports as a 400 and auto-resolve
+      as that group's failure. Nothing moves and no star is migrated when
+      it refuses. New tests fail on the old code. The destination side of
+      renames and combines (2D3) is still open.
 
 ### Listening
 
