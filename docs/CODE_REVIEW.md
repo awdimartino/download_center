@@ -1679,11 +1679,14 @@ R2 split of `library.js` lost nothing.
       the old code); a static test pins the wiring. Changing what
       `startOperation` returns is left to 2D5.
 
-- [ ] **2M24. A drop is split across two libraries if the Into picker
+- [x] **2M24. A drop is split across two libraries if the Into picker
       changes mid-upload.** *Verified.* A gap in L11.
       `app/static/js/drop.js:116-117,140-143`. `targetLibrary()` is read per
       file and again at finish.
       *Fix:* capture it once per batch.
+      **Fixed** as suggested: `dropQueueBatch` reads the picker once, when
+      the drop is queued, and every upload and the finish of that drop use
+      it. Verified in Chromium: S10 now sends `1, 1, 1, finish:1`.
 
 - [ ] **2M25. Escape in a text box discards the selection or closes the
       album panel.** *Verified.* `app/static/js/library.js:628-633`. Escape

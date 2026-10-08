@@ -528,3 +528,12 @@ def test_an_operation_that_did_not_start_is_not_treated_as_started():
     Checked in Chromium; this pins the wiring."""
     assert "if (!payload.started) {" in JS_FILES["library-combine.js"]
     assert "if (!payload || payload.detail || !payload.started) {" in JS_FILES["library-drawer.js"]
+
+
+def test_a_drop_goes_to_the_library_chosen_when_it_was_dropped():
+    """targetLibrary() was read per file and again at finish, so switching
+    the picker mid-upload split one drop across two libraries (2M24).
+    Checked in Chromium; this pins the wiring."""
+    drop = JS_FILES["drop.js"]
+    assert drop.count("targetLibrary()") == 1
+    assert "dropRunBatch(items, rows, card, skipped, library)" in drop

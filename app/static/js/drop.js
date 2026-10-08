@@ -107,13 +107,12 @@ function dropBuildRow(name) {
   return { row, label, status, fill };
 }
 
-function dropUpload(file, relpath, batch, onProgress) {
+function dropUpload(file, relpath, batch, library, onProgress) {
   return new Promise((resolve, reject) => {
     const body = new FormData();
     body.append("file", file, file.name);
     body.append("relpath", relpath);
     if (batch) body.append("batch", batch);
-    const library = targetLibrary();
     if (library !== null) body.append("library_id", String(library));
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/inbox/upload");
@@ -136,8 +135,7 @@ function dropUpload(file, relpath, batch, onProgress) {
 
 // Names the drop, so the server files all of it at once now that every file
 // has arrived - not track by track while the cover is still uploading.
-async function dropFinish(batch) {
-  const library = targetLibrary();
+async function dropFinish(batch, library) {
   const response = await apiFetch(
     `/api/inbox/upload/finish?batch=${encodeURIComponent(batch)}`
       + (library !== null ? `&library_id=${library}` : ""),
@@ -171,10 +169,15 @@ function dropQueueBatch(pairs) {
     return built;
   });
 
-  dropChain = dropChain.then(() => dropRunBatch(items, rows, card, skipped));
+  // Which library this drop is for, decided when it was dropped. Read per
+  // file instead, switching the picker for the next drop while this one
+  // was still uploading sent the rest of it, and its finish, to the other
+  // library - and the files already sent waited for the poller.
+  const library = targetLibrary();
+  dropChain = dropChain.then(() => dropRunBatch(items, rows, card, skipped, library));
 }
 
-async function dropRunBatch(items, rows, card, skipped) {
+async function dropRunBatch(items, rows, card, skipped, library) {
   let batch = null;
   let failed = 0;
   for (let i = 0; i < items.length; i++) {
@@ -184,7 +187,7 @@ async function dropRunBatch(items, rows, card, skipped) {
     parts.status.textContent = "uploading";
     parts.status.className = "track-status uploading";
     try {
-      const result = await dropUpload(file, relpath, batch, (fraction) => {
+      const result = await dropUpload(file, relpath, batch, library, (fraction) => {
         parts.fill.style.width = `${Math.round(fraction * 100)}%`;
       });
       batch = result.batch;
@@ -211,7 +214,7 @@ async function dropRunBatch(items, rows, card, skipped) {
 
   card.meta.textContent = "filing…";
   try {
-    const summary = await dropFinish(batch);
+    const summary = await dropFinish(batch, library);
     const parts = [];
     if (summary.filed.length) parts.push(`${summary.filed.length} filed`);
     if (failed) parts.push(`${failed} upload${failed === 1 ? "" : "s"} failed`);
