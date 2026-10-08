@@ -420,3 +420,19 @@ def test_an_offered_host_is_held_to_its_list(monkeypatch):
                         lambda *h: opened.append(1))
     assert covers.fetch("https://example.com/x.jpg", covers.CHOOSABLE_HOSTS) is None
     assert opened == []
+
+
+# --- covers whatever their case (2M12) ------------------------------------------
+
+def test_folder_covers_are_found_whatever_their_case(tmp_path):
+    """A rip made on Windows says Folder.jpg or cover.JPG. On the Pi a
+    lower-case lookup missed it: Fetch cover embedded new art and reported
+    success while Navidrome kept showing the file it never saw."""
+    (tmp_path / "Folder.JPG").write_bytes(b"art")
+    (tmp_path / "Front.png").write_bytes(b"art")
+    shutil.copy(SILENCE, tmp_path / "01.mp3")
+
+    assert [p.name for p in covers.folder_covers(tmp_path)] == ["Folder.JPG",
+                                                                "Front.png"]
+    _, found = covers._look(tmp_path)
+    assert [entry.name for entry in found] == ["Folder.JPG", "Front.png"]

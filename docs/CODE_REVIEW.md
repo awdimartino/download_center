@@ -1464,7 +1464,7 @@ R2 split of `library.js` lost nothing.
       split are re-read, so the cost is small. An unreadable file still
       counts. New test fails on the old code; a real split is still caught.
 
-- [ ] **2M12. Folder covers are recognised only in lower case.** *Verified
+- [x] **2M12. Folder covers are recognised only in lower case.** *Verified
       for `covers._look`; the rest by reading.*
       `app/filer.py:512-540,325-327`,
       `app/covers.py:308-329,461-466,504-511`. On the Pi, `Folder.jpg` or
@@ -1473,6 +1473,14 @@ R2 split of `library.js` lost nothing.
       wrong picture; a dropped album's `Folder.jpg` is not carried.
       *Fix:* one helper that matches names and suffixes case-insensitively,
       used everywhere a folder cover is looked for.
+      **Fixed** as suggested: `filer.folder_covers()` lists the folder once
+      and matches by lower-cased name, in Navidrome's order. It now backs
+      `filer.folder_cover`, `_carry_cover` (2M7), `leave_folder`,
+      `covers.folder_covers` (so *Fetch cover*, *Square* and the survey see
+      `Folder.jpg`) and `duplicates._leave`; the survey's `_look` matches its
+      one listing the same way. New test fails on the old code even on
+      Windows, which hides the bug in `is_file()` (it checks the names
+      returned).
 
 - [ ] **2M13. `unfuse` gives the shared UUID to the keeper even when only a
       stray file carries it.** *Verified.* `app/unfuse.py:124-137,211-233`.

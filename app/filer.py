@@ -375,16 +375,12 @@ def leave_folder(folder: Path, went_to: set[Path], stop_at: Path) -> None:
     try:
         if not folder.is_dir() or audio_in(folder):
             return
-        for name in COVER_NAMES:
-            for suffix in COVER_SUFFIXES:
-                cover = folder / f"{name}{suffix}"
-                if not cover.is_file():
-                    continue
-                data = cover.read_bytes()
-                if any((there / cover.name).is_file()
-                       and (there / cover.name).read_bytes() == data
-                       for there in went_to if there != folder):
-                    cover.unlink()
+        for cover in folder_covers(folder):
+            data = cover.read_bytes()
+            if any((there / cover.name).is_file()
+                   and (there / cover.name).read_bytes() == data
+                   for there in went_to if there != folder):
+                cover.unlink()
     except OSError:
         log.debug("could not tidy %s", folder, exc_info=True)
     _prune_upwards(folder, stop_at)
@@ -594,23 +590,26 @@ COVER_NAMES = ("cover", "folder", "front", "album", "albumart")
 COVER_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
 
 
-def folder_cover(folder: Path) -> Path | None:
-    """The folder cover Navidrome would show for this folder, if any.
+def folder_covers(folder: Path) -> list[Path]:
+    """Every folder cover in this folder, in Navidrome's order of preference.
 
     Matched without regard to case: a rip made on Windows says Folder.jpg
-    or cover.JPG, and on the Pi's filesystem a lower-case lookup missed it.
-    In Navidrome's order of preference.
+    or cover.JPG, and on the Pi's filesystem a lower-case lookup missed it -
+    Fetch cover embedded new art and reported success while the file it
+    never saw went on being the picture Navidrome showed.
     """
     try:
         files = {p.name.lower(): p for p in folder.iterdir() if p.is_file()}
     except OSError:
-        return None
-    for name in COVER_NAMES:
-        for suffix in COVER_SUFFIXES:
-            found = files.get(f"{name}{suffix}")
-            if found is not None:
-                return found
-    return None
+        return []
+    return [files[f"{name}{suffix}"] for name in COVER_NAMES
+            for suffix in COVER_SUFFIXES if f"{name}{suffix}" in files]
+
+
+def folder_cover(folder: Path) -> Path | None:
+    """The folder cover Navidrome would show for this folder, if any."""
+    found = folder_covers(folder)
+    return found[0] if found else None
 
 
 def _folder_is_one_album(folder: Path, track: Path, key: str) -> bool:

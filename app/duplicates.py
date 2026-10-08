@@ -499,16 +499,12 @@ def _leave(folder: Path, root: Path) -> None:
             continue
         if filer.audio_in(here):
             return
-        for name in filer.COVER_NAMES:
-            for suffix in filer.COVER_SUFFIXES:
-                cover = here / f"{name}{suffix}"
-                if not cover.is_file():
-                    continue
-                target = aside / here.relative_to(root) / cover.name
-                if target.exists():
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(cover), str(target))
+        for cover in filer.folder_covers(here):
+            target = aside / here.relative_to(root) / cover.name
+            if target.exists():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(cover), str(target))
         try:
             here.rmdir()
         except OSError:

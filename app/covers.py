@@ -319,10 +319,13 @@ def _look(folder: Path) -> tuple[list[os.DirEntry], list[os.DirEntry]]:
             entries = {entry.name: entry for entry in listing}
     except OSError:
         return [], []
-    covers = [entries[name + suffix] for name in COVER_NAMES
+    # By lower-cased name: Folder.jpg and cover.JPG are covers too, and
+    # Navidrome shows them.
+    lowered = {name.lower(): entry for name, entry in entries.items()}
+    covers = [lowered[name + suffix] for name in COVER_NAMES
               for suffix in COVER_SUFFIXES
-              if name + suffix in entries
-              and entries[name + suffix].is_file()]
+              if name + suffix in lowered
+              and lowered[name + suffix].is_file()]
     tracks = sorted((e for e in entries.values()
                      if e.is_file() and uuidtags.is_audio(Path(e.name))),
                     key=lambda e: e.name)
@@ -459,11 +462,9 @@ def embed(path: Path, data: bytes, mime: str = JPEG) -> None:
 
 
 def folder_covers(folder: Path) -> list[Path]:
-    from .filer import COVER_NAMES, COVER_SUFFIXES
+    from .filer import folder_covers as found
 
-    return [folder / f"{name}{suffix}"
-            for name in COVER_NAMES for suffix in COVER_SUFFIXES
-            if (folder / f"{name}{suffix}").is_file()]
+    return found(folder)
 
 
 def current(folder: Path, tracks: list[Path],
