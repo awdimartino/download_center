@@ -13,8 +13,8 @@ import {
   albumKey,
   albumName,
   artStamps,
-  RESCAN_WAIT_MS,
   editField,
+  forgetCoverSurvey,
   isBarred,
   isPicked,
   libraryDrawer,
@@ -22,6 +22,7 @@ import {
   libraryStatus,
   libraryView,
   plural,
+  RESCAN_WAIT_MS,
   selection
 } from "./library-shared.js";
 import {
@@ -657,7 +658,7 @@ async function applyCover(album, candidate, button, picker) {
         if (img.closest(".lib-hero") && openAlbum && albumKey(openAlbum) !== key) return;
         img.src = candidate.preview;
       });
-    libraryState.coverSurvey = null;
+    forgetCoverSurvey();
     setTimeout(() => {
       artStamps.set(key, Date.now());
       refreshLibrary(album);

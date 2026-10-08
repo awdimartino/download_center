@@ -12,6 +12,7 @@ import {
   albumArt,
   albumKey,
   editField,
+  forgetCoverSurvey,
   isBarred,
   libraryDialog,
   libraryState,
@@ -462,7 +463,7 @@ registerOperation("combine", {
       + " Navidrome shows it as one album after its rescan.",
       failed.length ? "warn" : "notice");
     libraryState.artistsCache = null;
-    libraryState.coverSurvey = null;
+    forgetCoverSurvey();
     refreshLibrary();
   },
 });

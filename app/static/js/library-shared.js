@@ -172,6 +172,9 @@ export const libraryState = {
   // since: a slow albums answer used to land under the Artists tab, and the
   // reverse.
   load: 0,
+  // Bumped by forgetCoverSurvey(), so a survey in flight can tell it is
+  // out of date.
+  surveyGeneration: 0,
 };
 
 export function isBarred(album) {
@@ -195,11 +198,24 @@ function fetchCoverSurvey() {
 // fetch it and fill in the barred set themselves.
 export async function loadCoverSurvey() {
   if (!libraryState.coverSurvey) {
+    const asked = libraryState.surveyGeneration;
     const survey = await fetchCoverSurvey();
+    // Kept only if nothing changed a cover while it was being read. A
+    // survey started before a cover was squared answered after it, and was
+    // stored over the invalidation: the Cover flag came back on the album
+    // just fixed, until the next change.
+    if (asked !== libraryState.surveyGeneration) return survey;
     libraryState.coverSurvey = survey;
     libraryState.barredKeys = new Set(survey.albums.map(albumKey));
   }
   return libraryState.coverSurvey;
+}
+
+// After any change to a cover: the survey is read again when next wanted,
+// and one already on its way is not kept.
+export function forgetCoverSurvey() {
+  libraryState.coverSurvey = null;
+  libraryState.surveyGeneration += 1;
 }
 
 // A running operation's progress line. `ordinal` counts the album being

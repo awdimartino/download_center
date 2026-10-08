@@ -13,7 +13,7 @@ import {
   albumArt,
   albumKey,
   artStamps,
-  RESCAN_WAIT_MS,
+  forgetCoverSurvey,
   libraryCount,
   libraryEl,
   libraryEmpty,
@@ -25,6 +25,7 @@ import {
   loadCoverSurvey,
   plural,
   remember,
+  RESCAN_WAIT_MS,
   showProgress,
   viewing
 } from "./library-shared.js";
@@ -370,7 +371,7 @@ export async function squareCovers(albums, button) {
     + (failed.length ? ` Could not: ${failed.join("; ")}` : "")
     + (changed ? " Navidrome shows them after its rescan." : ""),
     failed.length ? "warn" : "notice");
-  libraryState.coverSurvey = null;
+  forgetCoverSurvey();
   refreshLibrary();
 }
 

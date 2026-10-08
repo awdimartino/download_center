@@ -1996,8 +1996,12 @@ R2 split of `library.js` lost nothing.
       dropped when it moved to another album. The bar is redrawn each time.
       Pinned by a static test; all 21 Chromium scenarios still pass, but
       these flows are not driven there.
-- [ ] **2L25. A cover survey in flight can undo an invalidation.**
+- [x] **2L25. A cover survey in flight can undo an invalidation.**
       `library-shared.js:192-211`. *Fix:* a generation counter.
+      **Fixed** as suggested: every invalidation goes through
+      `forgetCoverSurvey()`, which bumps `libraryState.surveyGeneration`,
+      and a survey that answers after a bump is used for that call but not
+      stored. All Chromium scenarios still pass.
 - [ ] **2L26. Silent failures when the server is unreachable.** Sign-in and
       Settings load and save have no `catch` (`main.js:75-95`,
       `settings.js:19-21,69`).

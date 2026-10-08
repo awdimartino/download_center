@@ -633,3 +633,13 @@ def test_the_selection_follows_what_moved():
     assert "function forgetPicks(album, renamed = null)" in drawer
     assert drawer.count("forgetPicks(album") >= 2
     assert "selection.tracks.set(track.path, picked);" in drawer
+
+
+def test_a_survey_in_flight_cannot_undo_an_invalidation():
+    """A survey that answered after a cover was squared was stored over the
+    invalidation, and the Cover flag came back on the album just fixed
+    (2L25)."""
+    shared = JS_FILES["library-shared.js"]
+    assert "if (asked !== libraryState.surveyGeneration) return survey;" in shared
+    assert "libraryState.coverSurvey = null;" not in JS.replace(
+        shared[shared.index("export function forgetCoverSurvey"):], "")
