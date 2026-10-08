@@ -823,6 +823,16 @@ async def _run(job: dict[str, Any], space: workspace.Workspace) -> None:
         RUNNING.pop(job_id, None)
 
 
+async def _prepare(space: workspace.Workspace) -> None:
+    """Make a workspace's folders, or say why not. Two usernames that reduce
+    to one folder name make the second person's prepare refuse, and that
+    reached them as a bare 500."""
+    try:
+        await asyncio.to_thread(space.prepare)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 def _check_room(owner: str) -> None:
     """Refuse a sixth job running at once for one person."""
     active = sum(1 for job in JOBS.values()
@@ -859,7 +869,7 @@ async def create_job(
 
     # The inbox and scratch space, not beets: a download never touches it,
     # and Find matches writes its config on first use.
-    await asyncio.to_thread(space.prepare)
+    await _prepare(space)
 
     # From the count to the new job with no await between them, so two
     # requests at once cannot both see room for one more.
@@ -1106,7 +1116,7 @@ async def upload_to_inbox(
         await file.close()
         raise too_big
 
-    await asyncio.to_thread(space.prepare)
+    await _prepare(space)
 
     # Server-generated on the first file of a drop and echoed back by every
     # later one in the same drop, rather than trusted from the browser - it
@@ -1463,6 +1473,15 @@ def _duplicate_groups(identity: navidrome.Identity) -> list[duplicates.Group]:
         return duplicates.find(connection, identity)
 
 
+async def _groups_for(identity: navidrome.Identity) -> list[duplicates.Group]:
+    """The duplicate groups, or a 503 saying Navidrome's database cannot be
+    read. Resolve and dismiss let that through as a bare 500."""
+    try:
+        return await asyncio.to_thread(_duplicate_groups, identity)
+    except navidrome.Unavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @app.get("/api/duplicates")
 async def list_duplicates(
     session: auth.Session = Depends(current_session),
@@ -1482,7 +1501,7 @@ async def resolve_duplicate(
     request: ResolveRequest,
     session: auth.Session = Depends(current_session),
 ) -> dict[str, Any]:
-    groups = await asyncio.to_thread(_duplicate_groups, session.identity)
+    groups = await _groups_for(session.identity)
     # Matched on what the browser was shown, which is the file-derived key.
     group = next((g for g in groups if g.dismiss_key == request.key), None)
     if group is None:
@@ -1508,7 +1527,7 @@ async def dismiss_duplicate(
 ) -> dict[str, Any]:
     # Only a group this person can see: any key at all used to be accepted,
     # from anyone, with a note of any size.
-    groups = await asyncio.to_thread(_duplicate_groups, session.identity)
+    groups = await _groups_for(session.identity)
     if not any(g.dismiss_key == request.key for g in groups):
         raise HTTPException(status_code=404, detail="No such duplicate group.")
     await asyncio.to_thread(store.dismiss_duplicate, request.key, request.note,

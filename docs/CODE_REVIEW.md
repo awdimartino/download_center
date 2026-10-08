@@ -1808,11 +1808,16 @@ R2 split of `library.js` lost nothing.
       413 above the limit plus 1 MB of form framing, 411 with no length (a
       browser always sends one for a form). The handler's own checks stay
       as a second line. New tests fail on the old code.
-- [ ] **2L5. Some errors give a bare 500.** `resolve_duplicate` and
+- [x] **2L5. Some errors give a bare 500.** `resolve_duplicate` and
       `dismiss_duplicate` (`app/main.py:1332,1358`) do not catch
       `navidrome.Unavailable`. `Workspace.prepare()` raises when two
       usernames reduce to one slug (`app/workspace.py:137`) and is called
       unguarded from `create_job` and `upload_to_inbox`.
+      **Fixed:** resolve and dismiss read the groups through `_groups_for`,
+      which turns `Unavailable` into a 503 with its message, as the list
+      route already did; both callers prepare the workspace through
+      `_prepare`, which turns the refusal into a 409 with its message. New
+      tests fail on the old code.
 - [ ] **2L6. Sessions outlive a password change, and an open `/ws` outlives
       sign-out.** A Navidrome password change does not end sessions here
       (up to 30 days); a socket keeps receiving events until it disconnects.

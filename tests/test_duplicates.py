@@ -835,3 +835,29 @@ def test_a_resolve_waits_for_an_album_still_arriving(tmp_path, state_db,
                                    _copy("drop", "Artist/Album/01 Song.mp3")]),
                            "keep", identity)
     assert source.exists()
+
+
+# --- errors that reached the person as a bare 500 (2L5) ---------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route, body", [
+    ("resolve_duplicate", {"key": "k", "keeper": "x"}),
+    ("dismiss_duplicate", {"key": "k", "note": ""}),
+])
+async def test_resolve_and_dismiss_say_navidrome_is_unreadable(monkeypatch, route, body):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app import main
+
+    def unavailable(identity):
+        raise main.navidrome.Unavailable("Navidrome's database is not mounted")
+
+    monkeypatch.setattr(main, "_duplicate_groups", unavailable)
+    model = main.ResolveRequest if route == "resolve_duplicate" else main.DismissRequest
+    session = SimpleNamespace(identity=SimpleNamespace(user_id="u", username="alex"))
+
+    with pytest.raises(HTTPException) as refused:
+        await getattr(main, route)(model(**body), session)
+    assert refused.value.status_code == 503

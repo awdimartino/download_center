@@ -525,3 +525,16 @@ async def test_too_many_tracks_is_refused_and_not_left_running(monkeypatch):
 
     assert job["status"] == "failed"
     assert job["id"] not in main.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_a_workspace_that_cannot_be_made_is_a_clear_refusal(queueing, monkeypatch):
+    """Two usernames reducing to one folder name made the second person's
+    prepare refuse, and that reached them as a bare 500 (2L5)."""
+    def clash():
+        raise ValueError("That folder already belongs to another account.")
+
+    monkeypatch.setattr(queueing, "prepare", clash)
+    with pytest.raises(HTTPException) as refused:
+        await main.create_job(main.JobRequest(url=LINK), SESSION)
+    assert refused.value.status_code == 409
