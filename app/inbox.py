@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import filer, uuidtags, workspace
+from . import filer, folderlock, uuidtags, workspace
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.inbox")
@@ -179,6 +179,35 @@ def clear_scratch() -> int:
     return cleared
 
 
+def _file_holding(space: workspace.Workspace, path: Path) -> filer.Filed:
+    """File a track while holding the folder it goes to.
+
+    The lock covered only where files left from. A download or a drop
+    arriving in an album that a rename, a combine or a ReplayGain run was
+    working through landed in the middle of it - the rename then refused
+    the folder as two albums, or rsgain measured an album short a track.
+    Raises folderlock.Busy when something else holds it.
+    """
+    with folderlock.holding(filer.destination_of(space, path).parent):
+        return filer.file_track(space, path)
+
+
+# How long a finished download waits for its album to be free before it is
+# left in the inbox for the poller to file later.
+DELIVER_WAIT = 60
+
+
+def _file_when_free(space: workspace.Workspace, path: Path) -> filer.Filed:
+    deadline = time.monotonic() + DELIVER_WAIT
+    while True:
+        try:
+            return _file_holding(space, path)
+        except folderlock.Busy:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(1)
+
+
 def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
     """Put a finished download into the inbox, and file it straight away.
 
@@ -204,7 +233,7 @@ def deliver(space: workspace.Workspace, source: Path) -> filer.Filed:
         _delivering.add(arrived)
     try:
         shutil.move(str(source), str(arrived))
-        filed = filer.file_track(space, arrived)
+        filed = _file_when_free(space, arrived)
     except Exception:
         if arrived.exists():
             try:
@@ -459,7 +488,13 @@ def _drain(space: workspace.Workspace) -> Result:
             result.failures.append(remembered[1])
             continue
         try:
-            filed = filer.file_track(space, path)
+            filed = _file_holding(space, path)
+        except folderlock.Busy:
+            # The album it goes to is being renamed, combined or measured.
+            # Filed into it now, it would land in the middle of that change;
+            # it waits for the next pass instead.
+            result.waiting += 1
+            continue
         except Exception as exc:
             message = f"{path.name}: {type(exc).__name__}: {exc}"
             _unfilable[path] = (_size_of(path), message)

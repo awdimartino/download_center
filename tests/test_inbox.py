@@ -1094,3 +1094,35 @@ def test_the_middleware_asks_before_the_body_is_read():
 
     source = inspect.getsource(main.require_session)
     assert source.index("_upload_refusal") < source.index("call_next(request)")
+
+
+# --- filing waits for the album it goes into (2D3) ---------------------------------
+
+def test_a_drop_waits_while_its_album_is_being_changed(space):
+    """The lock covered where files left from, never where they arrived: a
+    drop landed in the middle of a rename or a ReplayGain run."""
+    from app import folderlock
+
+    drop(space, albumartist="Artist", album="Album", title="Song", tracknumber="1")
+    going = space.library_path / "Artist" / "Album"
+
+    with folderlock.holding(going):
+        held = inbox.drain(space)
+    assert held.filed == [] and held.waiting == 1 and held.failures == []
+
+    assert len(inbox.drain(space).filed) == 1
+
+
+def test_a_download_waits_for_its_album_then_gives_up_cleanly(space, monkeypatch, tmp_path):
+    from app import folderlock
+
+    monkeypatch.setattr(inbox, "DELIVER_WAIT", 0)
+    built = space.incomplete_dir / "job" / "item.mp3"
+    built.parent.mkdir(parents=True)
+    tagged(built, albumartist="Artist", album="Album", title="Song", tracknumber="1")
+
+    with folderlock.holding(space.library_path / "Artist" / "Album"):
+        with pytest.raises(folderlock.Busy):
+            inbox.deliver(space, built)
+
+    assert built.exists(), "it went back where it was built, to be retried"

@@ -2064,6 +2064,10 @@ async def library_album_edit(
 
     space, folder = await asyncio.to_thread(check)
 
+    # Where it is going as well as where it is: a rename into an album that
+    # something else is changing would land in the middle of that change.
+    going = filer.album_folder(space, body.album_artist, body.album)
+
     def run() -> dict[str, Any]:
         ids = _before_edit(session.identity, body.library_id, body.folder)
         filed = filer.retag_album(space, folder,
@@ -2077,7 +2081,7 @@ async def library_album_edit(
                 "album_uuid": filed[0].album_uuid if filed else None,
                 "failed": filer.unidentified(filed)}
 
-    return await _locked_request([folder], run)
+    return await _locked_request(list({folder, going}), run)
 
 
 @app.post("/api/library/track/edit")
@@ -2543,7 +2547,10 @@ async def library_combine(
     operation, started = operations.start(
         "combine", identity.username,
         functools.partial(_locked, [*folders.values(),
-                                    *(files[name].parent for name in body.tracks)],
+                                    *(files[name].parent for name in body.tracks),
+                                    # And the album they are going into.
+                                    filer.album_folder(space, body.albumartist.strip(),
+                                                       body.album.strip())],
                           run))
     return {"started": started, "operation": operation.as_dict()}
 

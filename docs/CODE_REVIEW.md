@@ -2059,10 +2059,19 @@ R2 split of `library.js` lost nothing.
       Not done: a UNIQUE constraint on `(library_id, album_uuid)`. Existing
       databases may already break it, so it would fail to apply; Health now
       counts those instead, and `unfuse --apply` settles them.
-- [ ] **2D3. The folder lock covers where files leave from, never where
+- [x] **2D3. The folder lock covers where files leave from, never where
       they arrive.** A rename into an existing album, a combine's target and
       all inbox filing are unlocked; `inbox.receiving` is checked once, not
       held.
+      **Fixed:** an album rename now also holds the folder it is going to,
+      and a combine holds the album the tracks are going into
+      (`filer.album_folder`). Every inbox filing, poller and download alike,
+      holds its destination folder for the move (`inbox._file_holding`).
+      When that folder is held, a drop counts as still arriving and is
+      filed on a later pass; a finished download waits up to a minute, then
+      fails cleanly back to scratch for Retry. Two new tests fail on the old
+      code. `inbox.receiving` stays a one-time check: it is about the inbox's
+      own recent arrivals, and the lock now covers the race it could not.
 - [ ] **2D4. Business logic lives in route handlers.** About two thirds of
       `main.py`: `library_match_apply.run`, `library_combine`,
       `library_cover_apply.run`, the quarantine handlers and the job

@@ -194,10 +194,20 @@ def track_filename(meta: Meta, suffix: str) -> str:
     return f"{sanitize(f'{number} - {meta.title}')}{suffix}"
 
 
+def album_folder(space: workspace.Workspace, albumartist: str, album: str) -> Path:
+    """The folder an album of this name lives in."""
+    return space.library_path / sanitize(albumartist) / sanitize(album)
+
+
 def destination(space: workspace.Workspace, meta: Meta, suffix: str) -> Path:
     """Where this file lives, from now on."""
-    return (space.library_path / sanitize(meta.albumartist)
-            / sanitize(meta.album) / track_filename(meta, suffix))
+    return (album_folder(space, meta.albumartist, meta.album)
+            / track_filename(meta, suffix))
+
+
+def destination_of(space: workspace.Workspace, path: Path) -> Path:
+    """Where filing this file would put it, as its tags stand now."""
+    return destination(space, read_meta(path), path.suffix.lower())
 
 
 # --- retagging --------------------------------------------------------------
