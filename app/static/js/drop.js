@@ -35,7 +35,8 @@ function dropExt(name) {
 function dropUploadable(relpath) {
   const name = relpath.split("/").pop();
   // A dotfile - macOS's ._ companions above all - is refused by the server.
-  if (name.startsWith(".")) return false;
+  // Two or more dots are a title ("...", "... (Continued)"), which it takes.
+  if (name.startsWith(".") && !name.startsWith("..")) return false;
   const ext = dropExt(name);
   return DROP_AUDIO_EXT.has(ext) || DROP_COVER_EXT.has(ext);
 }
@@ -107,6 +108,10 @@ function dropBuildRow(name) {
   return { row, label, status, fill };
 }
 
+// How long an upload may go without moving before it is given up on, so a
+// connection that has died does not hold every drop queued behind it.
+const UPLOAD_STALL_MS = 120000;
+
 function dropUpload(file, relpath, batch, library, onProgress) {
   return new Promise((resolve, reject) => {
     const body = new FormData();
@@ -116,20 +121,38 @@ function dropUpload(file, relpath, batch, library, onProgress) {
     if (library !== null) body.append("library_id", String(library));
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/inbox/upload");
+    // Every way this can end settles the promise. It used to be possible
+    // for none to: a 2xx answer that was not JSON threw inside onload, and
+    // an upload that simply stopped moving never finished at all. Either
+    // way the promise never settled and every later drop queued behind it
+    // for good.
+    let quiet = null;
+    const stalled = () => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => xhr.abort(), UPLOAD_STALL_MS);
+    };
     xhr.upload.addEventListener("progress", (event) => {
+      stalled();
       if (event.lengthComputable) onProgress(event.loaded / event.total);
     });
     xhr.onload = () => {
+      clearTimeout(quiet);
+      let answer = null;
+      try { answer = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(JSON.parse(xhr.responseText));
+        if (answer) resolve(answer);
+        else reject(new Error("The server's answer could not be read."));
         return;
       }
-      let detail = `Upload failed (${xhr.status})`;
-      try { detail = JSON.parse(xhr.responseText).detail || detail; } catch { /* not JSON */ }
-      reject(new Error(detail));
+      reject(new Error((answer && answer.detail) || `Upload failed (${xhr.status})`));
     };
-    xhr.onerror = () => reject(new Error("Could not reach the server."));
+    xhr.onerror = () => { clearTimeout(quiet); reject(new Error("Could not reach the server.")); };
+    xhr.onabort = () => {
+      clearTimeout(quiet);
+      reject(new Error(`Nothing moved for ${UPLOAD_STALL_MS / 1000} seconds; gave up.`));
+    };
     xhr.send(body);
+    stalled();
   });
 }
 

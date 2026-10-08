@@ -2009,9 +2009,16 @@ R2 split of `library.js` lost nothing.
       reads through `getJSON` and says why it could not; a save disables its
       button while it runs, shows "Saving…", and says when nothing was
       saved. Verified in Chromium with a new S18 (silent on the old code).
-- [ ] **2L27. One hung upload stalls every later drop.** `drop.js:123-133`.
+- [x] **2L27. One hung upload stalls every later drop.** `drop.js:123-133`.
       `JSON.parse` can throw in `onload`, and there is no `onabort` or
       `ontimeout`, so `dropChain` never advances.
+      **Fixed:** every way an upload ends now settles its promise. An answer
+      that is not JSON is a failure, not a throw; an upload that goes two
+      minutes without progress is aborted; and the abort rejects. Found
+      alongside: the page refused any file starting with a dot, including
+      `...` titles the server accepts since 2H4; it now refuses a single
+      leading dot only. Verified in Chromium with a new S19 (the second drop
+      never started on the old code).
 
 ## Design
 

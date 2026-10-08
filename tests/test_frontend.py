@@ -652,3 +652,13 @@ def test_an_unreachable_server_is_said_at_sign_in_and_in_settings():
     settings = JS_FILES["settings.js"]
     assert "Could not read the settings:" in settings
     assert "Could not reach the server; nothing was saved." in settings
+
+
+def test_every_upload_outcome_settles():
+    """A 2xx answer that was not JSON threw inside onload, and a stalled
+    upload never ended; either left every later drop queued for good
+    (2L27). Checked in Chromium; this pins the wiring."""
+    drop = JS_FILES["drop.js"]
+    assert "xhr.onabort = () =>" in drop
+    assert "setTimeout(() => xhr.abort(), UPLOAD_STALL_MS)" in drop
+    assert "resolve(JSON.parse(xhr.responseText))" not in drop
