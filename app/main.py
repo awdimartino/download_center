@@ -968,15 +968,21 @@ async def retry_job(
             workspace.for_session, session.identity, job.get("library_id"))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Asked again after the wait: two presses (a double-click, two tabs)
+    # both passed the check above while this one was off the loop, and both
+    # started a runner on the same job - every failed track downloaded and
+    # filed twice.
+    if job_id in RUNNING:
+        raise HTTPException(status_code=409, detail="That job is still running.")
     _check_room(session.identity.username)
 
     for item in retryable:
         item.update(status="pending", error=None, progress=0, attempts=0)
     job.update(status="queued", error=None)
-    await push_job(job)
-    # Tracked now, not when _run first runs, so a cancel pressed straight
-    # away finds it.
+    # Tracked before anything else is awaited, so neither a second retry nor
+    # a cancel pressed straight away can miss it.
     RUNNING[job_id] = asyncio.create_task(_run(job, space))
+    await push_job(job)
     return {"retrying": len(retryable)}
 
 

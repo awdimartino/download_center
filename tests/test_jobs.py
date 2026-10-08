@@ -429,6 +429,37 @@ async def test_a_retry_with_room_starts(queueing):
     assert job["items"][0]["status"] == "pending"
 
 
+@pytest.mark.asyncio
+async def test_two_retries_at_once_start_one_runner(queueing, monkeypatch):
+    """Both passed the "still running" check while the first was off the
+    loop finding the workspace, and two runners drove one job: every failed
+    track downloaded and filed twice (2L1)."""
+    import time
+
+    runs = []
+
+    async def ran(job, space):
+        runs.append(job["id"])
+        await asyncio.sleep(0.2)
+
+    def slow_workspace(identity, lid):
+        time.sleep(0.05)
+        return queueing
+
+    monkeypatch.setattr(main, "_run", ran)
+    monkeypatch.setattr(main.workspace, "for_session", slow_workspace)
+    _failed_job()
+
+    outcomes = await asyncio.gather(main.retry_job("old", SESSION),
+                                    main.retry_job("old", SESSION),
+                                    return_exceptions=True)
+    await asyncio.sleep(0.05)
+
+    refused = [o for o in outcomes if isinstance(o, HTTPException)]
+    assert len(refused) == 1 and refused[0].status_code == 409
+    assert runs == ["old"]
+
+
 # --- cancel, not delete (L13) --------------------------------------------------
 
 @pytest.mark.asyncio

@@ -204,6 +204,10 @@ function updateJob(job) {
     if (group === "attention" && job.items.some((i) => ["failed", "cancelled"].includes(i.status))) {
       const retry = el("button", "ghost dl-retry", "Retry failed");
       retry.type = "button";
+      // The rows are rebuilt on every message about this job, which used to
+      // hand back a fresh, enabled button while the first press was still
+      // on its way.
+      retry.disabled = retrying.has(job.id);
       retry.addEventListener("click", () => retryJob(job.id, retry));
       rows.push(retry);
     }
@@ -239,7 +243,12 @@ async function cancelJob(id, button) {
   }
 }
 
+// Jobs whose Retry has been pressed and not yet answered.
+const retrying = new Set();
+
 async function retryJob(id, button) {
+  if (retrying.has(id)) return;
+  retrying.add(id);
   button.disabled = true;
   try {
     const response = await apiFetch(`/api/jobs/${id}/retry`, { method: "POST" });
@@ -251,6 +260,8 @@ async function retryJob(id, button) {
   } catch {
     showError("Could not reach the server.");
     button.disabled = false;
+  } finally {
+    retrying.delete(id);
   }
 }
 

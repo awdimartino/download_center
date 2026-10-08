@@ -577,3 +577,11 @@ def test_the_combine_dialog_keeps_its_focus_across_rebuilds():
     assert "restoreFocus(sheet, held, caret);" in combine
     assert "up.dataset.focus = `up:${item.track.path}`;" in combine
     assert 'libraryDialog.addEventListener("keydown"' in combine
+
+
+def test_a_rebuilt_retry_button_stays_pressed():
+    """The job's rows are rebuilt on every message, which handed back a
+    fresh, enabled Retry while the first press was in flight (2L1)."""
+    downloads = JS_FILES["downloads.js"]
+    assert "retry.disabled = retrying.has(job.id);" in downloads
+    assert "if (retrying.has(id)) return;" in downloads

@@ -1770,11 +1770,16 @@ R2 split of `library.js` lost nothing.
 
 ### Getting music in and the platform
 
-- [ ] **2L1. Two Retry requests at once start two runners on one job.**
+- [x] **2L1. Two Retry requests at once start two runners on one job.**
       *Verified.* `app/main.py:859-882`. `RUNNING` is checked before an
       await and set after it. The page's Retry button can also be pressed
       twice, because the track list is rebuilt on every job message
       (`downloads.js:194-210`). *Fix:* reserve the slot before the await.
+      **Fixed, both sides.** `retry_job` checks `RUNNING` again after its
+      one await, and takes the slot before the next one (`push_job`). The
+      page keeps a set of jobs whose Retry is in flight, so a rebuilt button
+      comes back disabled and a second press is ignored. New server test
+      fails on the old code.
 - [ ] **2L2. A cancel just after resolving leaves a job stuck at "queued".**
       *Verified.* `app/main.py:637-657`. `push_job` is awaited outside any
       handler. *Fix:* one try/except/finally around `_resolve_job`'s body.
