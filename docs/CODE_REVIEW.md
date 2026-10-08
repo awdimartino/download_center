@@ -1866,8 +1866,12 @@ R2 split of `library.js` lost nothing.
       **Fixed** as suggested (`filer._already_there`), and the file's own
       path is what `file_track` reports when it stays. New test fails on
       the old code.
-- [ ] **2L10. Unbounded dicts.** `_offered` (`app/main.py:2089`) and
+- [x] **2L10. Unbounded dicts.** `_offered` (`app/main.py:2089`) and
       `_sign_in_failures` (`app/main.py:517`) are never pruned.
+      **Fixed:** each sign-in check now drops every address's failures
+      older than the window, not only the asking address's. Offered matches
+      are recorded through `_offer`, which keeps when each list was made and
+      drops lists older than a day. New tests fail on the old code.
 - [ ] **2L11. Transitive dependencies float.** Only top-level requirements
       are pinned and the base image is not pinned by digest. Dev runs
       Python 3.14 against 3.13 in the image.

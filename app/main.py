@@ -648,13 +648,17 @@ _sign_in_failures: dict[str, list[float]] = {}
 
 
 def _recent_failures(address: str) -> list[float]:
+    """This address's failed sign-ins inside the window. Every address's
+    old ones are dropped on the way: only the address asking was ever
+    tidied, so each address that failed once stayed for good."""
     cutoff = time.time() - SIGN_IN_WINDOW
-    kept = [t for t in _sign_in_failures.get(address, []) if t > cutoff]
-    if kept:
-        _sign_in_failures[address] = kept
-    else:
-        _sign_in_failures.pop(address, None)
-    return kept
+    for who in list(_sign_in_failures):
+        kept = [t for t in _sign_in_failures[who] if t > cutoff]
+        if kept:
+            _sign_in_failures[who] = kept
+        else:
+            del _sign_in_failures[who]
+    return _sign_in_failures.get(address, [])
 
 
 @app.post("/api/auth/login")
@@ -2247,8 +2251,8 @@ async def library_match(
         # long after the request: the page drops a list that is not about
         # the album it is showing, and applying checks the same record.
         result.update(target)
-        _offered[(session.identity.username, body.library_id, str(path))] = {
-            c["id"] for c in result.get("candidates", []) if c.get("id")}
+        _offer((session.identity.username, body.library_id, str(path)),
+               {c["id"] for c in result.get("candidates", []) if c.get("id")})
         return result
 
     operation, started = operations.start(
@@ -2262,6 +2266,20 @@ async def library_match(
 # and *Use this* then retagged one album as another's release - fusing them.
 # In memory: after a restart, finding matches again is the cost.
 _offered: dict[tuple[str, int, str], set[str]] = {}
+_offered_at: dict[tuple[str, int, str], float] = {}
+# How long a list of matches can be applied from. Kept for ever, every Find
+# matches on every album added a set that was never removed.
+OFFER_SECONDS = 24 * 60 * 60
+
+
+def _offer(key: tuple[str, int, str], ids: set[str]) -> None:
+    now = time.time()
+    for old, when in list(_offered_at.items()):
+        if now - when > OFFER_SECONDS:
+            _offered.pop(old, None)
+            del _offered_at[old]
+    _offered[key] = ids
+    _offered_at[key] = now
 
 
 class AlbumChoice(BaseModel):

@@ -687,3 +687,18 @@ def test_the_password_mark_is_a_hash_of_what_navidrome_stores(navidrome_db, monk
         connection.execute('UPDATE "user" SET password = \'secret-2\' WHERE id = \'u-alex\'')
     connection.close()
     assert navidrome.password_mark(_identity("alex")) != first
+
+
+def test_failed_sign_ins_from_every_address_age_out(monkeypatch):
+    """Only the address asking was tidied, so every address that failed once
+    stayed in memory for good (2L10)."""
+    from app import main
+
+    clock = [1000.0]
+    monkeypatch.setattr(main.time, "time", lambda: clock[0])
+    monkeypatch.setattr(main, "_sign_in_failures", {"1.2.3.4": [1000.0]})
+    clock[0] += main.SIGN_IN_WINDOW + 1
+
+    main._recent_failures("5.6.7.8")
+
+    assert main._sign_in_failures == {}

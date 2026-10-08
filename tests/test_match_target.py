@@ -128,3 +128,17 @@ async def test_a_release_offered_for_this_album_is_applied(monkeypatch):
 
     assert answer["started"] is True
     assert applied == [("A", "mb-a")]
+
+
+def test_offered_matches_do_not_pile_up_for_ever(monkeypatch):
+    """Every Find matches added a set that was never removed (2L10)."""
+    clock = [1000.0]
+    monkeypatch.setattr(main.time, "time", lambda: clock[0])
+    main._offered.clear()
+    main._offered_at.clear()
+
+    main._offer(("alex", 1, "/music/A"), {"r1"})
+    clock[0] += main.OFFER_SECONDS + 1
+    main._offer(("alex", 1, "/music/B"), {"r2"})
+
+    assert list(main._offered) == [("alex", 1, "/music/B")]
