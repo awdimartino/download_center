@@ -224,3 +224,30 @@ def test_a_reader_waits_for_a_write_in_flight(tmp_path):
         assert seen == [0]
     finally:
         _close()
+
+
+# --- a set-aside file put back by hand (2L13) ----------------------------------
+
+def test_a_file_put_back_by_hand_is_seen_again(tmp_path):
+    """Nothing wrote restored_at, so a file moved back out of the quarantine
+    stayed hidden from the duplicate finder for good."""
+    from types import SimpleNamespace
+
+    store.connect(tmp_path / "state.db")
+    try:
+        copy = SimpleNamespace(id="t1", library_id=1, title="T", artist="A", album="B")
+        source, target = tmp_path / "A" / "01.mp3", tmp_path / "aside" / "01.mp3"
+        for track_id in ("t1", "t2"):
+            store.record_quarantine("g", SimpleNamespace(**{**copy.__dict__, "id": track_id}),
+                                    None, str(source), str(target), "alex")
+        target.parent.mkdir()
+        target.write_bytes(b"audio")
+        assert store.quarantined_track_ids() == {"t1", "t2"}
+
+        source.parent.mkdir()
+        target.rename(source)                  # put back by hand
+
+        assert store.quarantined_track_ids() == set()
+        assert all(row["restored_at"] for row in store.quarantined(include_restored=True))
+    finally:
+        _close()

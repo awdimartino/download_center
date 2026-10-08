@@ -459,12 +459,41 @@ def quarantined_track_ids() -> set[str]:
     Navidrome does not know a file has moved until it rescans, so without
     this the group it was just asked to resolve comes straight back - which
     reads, from the outside, as the button not working.
+
+    A file put back by hand counts as back: its row is stamped restored
+    then. Nothing wrote `restored_at` before, so a restored file - with the
+    same Navidrome id, since ids follow the track UUID - stayed hidden from
+    the duplicate finder for good, and its group never came back.
     """
     assert _conn is not None, "state.db not connected"
-    with _lock:
-        return {row[0] for row in _conn.execute(
-            "SELECT track_id FROM duplicate_quarantined"
-            "  WHERE restored_at IS NULL")}
+    with transaction() as conn:
+        rows = conn.execute(
+            "SELECT id, track_id, source_path, target_path"
+            "  FROM duplicate_quarantined WHERE restored_at IS NULL").fetchall()
+        hidden, back = set(), []
+        for row_id, track_id, source, target in rows:
+            if _put_back(source, target):
+                back.append(row_id)
+            else:
+                hidden.add(track_id)
+        if back:
+            stamp = datetime.now(UTC).isoformat(timespec="seconds")
+            conn.executemany(
+                "UPDATE duplicate_quarantined SET restored_at = ? WHERE id = ?",
+                [(stamp, row_id) for row_id in back])
+        return hidden
+
+
+def _put_back(source: str | None, target: str | None) -> bool:
+    """Whether a set-aside file is back where it came from and gone from the
+    quarantine. Both are asked: a file merely deleted from the quarantine is
+    not "back"."""
+    if not source or not target:
+        return False
+    try:
+        return Path(source).is_file() and not Path(target).exists()
+    except OSError:
+        return False
 
 
 def quarantined(limit: int | None = 200,

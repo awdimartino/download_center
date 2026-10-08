@@ -1903,11 +1903,16 @@ R2 split of `library.js` lost nothing.
       `OSError` around every album and track it moves, so one full disk no
       longer ends the whole combine before the scan and the summary. Both
       new tests fail on the old code.
-- [ ] **2L13. A quarantined file put back by hand stays invisible to the
+- [x] **2L13. A quarantined file put back by hand stays invisible to the
       duplicate finder.** `restored_at` is read in three places and written
       nowhere (`app/store.py:362-374`, `app/duplicates.py:253-255,700`).
       *Fix:* filter on whether the quarantined file still exists; stamp
       `restored_at` when it is found back at its source.
+      **Fixed** as suggested: `store.quarantined_track_ids()` treats a row
+      whose file is back at its source and gone from the quarantine as put
+      back, stamps its `restored_at` in the same transaction, and stops
+      hiding it. A file merely deleted from the quarantine is not "back".
+      New test fails on the old code.
 - [ ] **2L14. `tools/fix_broken_m4a.py --all --mode mp3|flac` can overwrite
       an existing file of the same stem.** `:216-219`. It also still walks
       the quarantine (`:88`). *Fix:* refuse or number the name; skip
