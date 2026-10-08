@@ -175,7 +175,7 @@ def uuid_for_key(library_id: int, key: str, on_miss: str | None = None) -> str:
     which is exactly the split this table exists to prevent.
     """
     store_ = _store()
-    with _lock:
+    with store.transaction():
         row = store_.execute(
             "SELECT album_uuid FROM album_registry"
             " WHERE library_id = ? AND album_key = ?",
@@ -198,7 +198,6 @@ def uuid_for_key(library_id: int, key: str, on_miss: str | None = None) -> str:
             " (library_id, album_key, album_uuid, created_at)"
             " VALUES (?, ?, ?, ?)",
             (library_id, key, settled, time.time()))
-        store_.commit()
         return settled
 
 
@@ -239,7 +238,7 @@ def repoint(library_id: int, old_key: str, new_key: str) -> str:
         return uuid_for_key(library_id, new_key)
 
     store_ = _store()
-    with _lock:
+    with store.transaction():
         incumbent = store_.execute(
             "SELECT album_uuid FROM album_registry"
             " WHERE library_id = ? AND album_key = ?",
@@ -273,7 +272,6 @@ def repoint(library_id: int, old_key: str, new_key: str) -> str:
                 " VALUES (?, ?, ?, ?)",
                 (library_id, new_key, settled, time.time()))
 
-        store_.commit()
         return settled
 
 
@@ -292,7 +290,7 @@ def reassign(library_id: int, key: str, album_uuid: str) -> str:
     once the ambiguity is resolved.
     """
     store_ = _store()
-    with _lock:
+    with store.transaction():
         store_.execute(
             "INSERT INTO album_registry"
             " (library_id, album_key, album_uuid, created_at)"
@@ -300,18 +298,16 @@ def reassign(library_id: int, key: str, album_uuid: str) -> str:
             " ON CONFLICT(library_id, album_key) DO UPDATE SET"
             "   album_uuid = excluded.album_uuid",
             (library_id, key, album_uuid, time.time()))
-        store_.commit()
     return album_uuid
 
 
 def forget(library_id: int, key: str) -> bool:
     """Drop one mapping. The next track of that album mints a fresh UUID."""
     store_ = _store()
-    with _lock:
+    with store.transaction():
         cursor = store_.execute(
             "DELETE FROM album_registry WHERE library_id = ? AND album_key = ?",
             (library_id, key))
-        store_.commit()
         return cursor.rowcount > 0
 
 

@@ -30,14 +30,22 @@ somebody's rows on an upgrade is not this code's decision to make.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import threading
+from collections.abc import Iterator
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
-_lock = threading.Lock()
+# Re-entrant, so a locked read inside a locked write - a helper called from
+# inside a transaction - cannot deadlock the thread against itself.
+_lock = threading.RLock()
+_depth = 0
 _conn: sqlite3.Connection | None = None
+# The one wrapper for _conn, so callers comparing connections by identity
+# see the same object until a reconnect.
+_wrapped: _Locked | None = None
 # Bumped by every connect(), so anything cached against this database's
 # contents can tell a different database with the same row counts apart.
 generation = 0
@@ -187,9 +195,10 @@ CREATE TABLE IF NOT EXISTS play_anomaly (
 
 
 def connect(path: Path) -> None:
-    global _conn, generation
+    global _conn, _wrapped, generation
     path.parent.mkdir(parents=True, exist_ok=True)
     _conn = sqlite3.connect(path, check_same_thread=False)
+    _wrapped = _Locked(_conn)
     generation += 1
     _migrate(_conn)
     _conn.executescript(SCHEMA)
@@ -248,19 +257,107 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("DROP TABLE duplicate_dismissed_old")
 
 
-def connection() -> sqlite3.Connection:
+class _Rows:
+    """A statement's results, read in full while the lock was held."""
+
+    def __init__(self, cursor: sqlite3.Cursor) -> None:
+        self._rows = cursor.fetchall()
+        self.rowcount = cursor.rowcount
+        self.lastrowid = cursor.lastrowid
+        self.description = cursor.description
+
+    def fetchone(self) -> Any:
+        return self._rows.pop(0) if self._rows else None
+
+    def fetchall(self) -> list[Any]:
+        rows, self._rows = self._rows, []
+        return rows
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self.fetchall())
+
+
+class _Locked:
+    """The shared connection, with every statement run under the lock.
+
+    One sqlite connection serves every thread, and sqlite runs one
+    transaction per connection. Reads used to be taken without the lock, so
+    they could land inside another thread's transaction and see its
+    uncommitted rows - and step a cursor while that thread wrote. Taking the
+    lock here, once, covers every reader, including the next one written.
+    Results are fetched before the lock is let go.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, parameters: Any = ()) -> _Rows:
+        with _lock:
+            return _Rows(self._conn.execute(sql, parameters))
+
+    def executemany(self, sql: str, parameters: Any) -> _Rows:
+        with _lock:
+            return _Rows(self._conn.executemany(sql, parameters))
+
+    def executescript(self, script: str) -> None:
+        with _lock:
+            self._conn.executescript(script)
+
+    def commit(self) -> None:
+        with _lock:
+            self._conn.commit()
+
+    def rollback(self) -> None:
+        with _lock:
+            self._conn.rollback()
+
+    @property
+    def in_transaction(self) -> bool:
+        return self._conn.in_transaction
+
+
+def connection() -> _Locked:
     """The open state.db handle, for modules that own their own tables.
 
     Exposed rather than reached for privately: the album registry and the
     play-count snapshots both live in this database, but their SQL belongs
     with the code that understands them.
 
-    Every writer must take `_lock` around a read-then-write, and must not
-    commit inside somebody else's transaction - sqlite runs one transaction
-    per connection, so an unrelated commit ends whatever is in flight.
+    Each statement runs under the lock. A write of more than one statement
+    belongs in `transaction()`, which also holds it between them.
     """
+    global _wrapped
     assert _conn is not None, "state.db not connected"
-    return _conn
+    if _wrapped is None or _wrapped._conn is not _conn:
+        _wrapped = _Locked(_conn)
+    return _wrapped
+
+
+@contextlib.contextmanager
+def transaction() -> Iterator[_Locked]:
+    """Hold the lock for a write, and end it either way.
+
+    Committed when the block finishes, rolled back when it raises. No writer
+    rolled back before: a statement failing part way left the connection
+    inside a transaction, unlocked readers were served its uncommitted rows,
+    and the next unrelated commit - marking an album reviewed - wrote the
+    half-done change to disk. Nested blocks join the outermost one.
+    """
+    global _depth
+    conn = connection()
+    with _lock:
+        _depth += 1
+        try:
+            yield conn
+        except BaseException:
+            if _depth == 1:
+                conn.rollback()
+            raise
+        else:
+            if _depth == 1:
+                conn.commit()
+        finally:
+            _depth -= 1
 
 
 # --- duplicate review decisions -------------------------------------------
@@ -270,12 +367,11 @@ def dismiss_duplicate(group_key: str, note: str = "",
     """Remember that a duplicate group was looked at and left alone, by whom."""
     assert _conn is not None, "state.db not connected"
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
-    with _lock:
-        _conn.execute(
+    with transaction() as conn:
+        conn.execute(
             "INSERT OR REPLACE INTO duplicate_dismissed"
             " (group_key, decided_by, note, decided_at) VALUES (?, ?, ?, ?)",
             (group_key, decided_by, note, stamp))
-        _conn.commit()
 
 
 def dismissed_duplicates(user_id: str | None = None) -> set[str]:
@@ -299,22 +395,20 @@ def mark_reviewed(library_id: int, album_ids: set[str], how: str,
     """Record that these albums have been looked at. Later marks win."""
     assert _conn is not None, "state.db not connected"
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
-    with _lock:
-        _conn.executemany(
+    with transaction() as conn:
+        conn.executemany(
             "INSERT OR REPLACE INTO album_reviewed"
             " (library_id, album_id, how, reviewed_by, reviewed_at)"
             " VALUES (?, ?, ?, ?, ?)",
             [(library_id, one, how, by, stamp) for one in album_ids])
-        _conn.commit()
 
 
 def unmark_reviewed(library_id: int, album_ids: set[str]) -> None:
     assert _conn is not None, "state.db not connected"
-    with _lock:
-        _conn.executemany(
+    with transaction() as conn:
+        conn.executemany(
             "DELETE FROM album_reviewed WHERE library_id = ? AND album_id = ?",
             [(library_id, one) for one in album_ids])
-        _conn.commit()
 
 
 def reviewed_albums(library_ids: list[int]) -> set[tuple[int, str]]:
@@ -345,8 +439,8 @@ def record_quarantine(group_key: str, copy: Any, keeper: Any | None,
     """
     assert _conn is not None, "state.db not connected"
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
-    with _lock:
-        _conn.execute(
+    with transaction() as conn:
+        conn.execute(
             "INSERT INTO duplicate_quarantined"
             " (group_key, track_id, library_id, title, artist, album,"
             "  source_path, target_path, keeper_id, keeper_path, decided_by,"
@@ -356,7 +450,6 @@ def record_quarantine(group_key: str, copy: Any, keeper: Any | None,
              copy.album, source, target,
              keeper.id if keeper is not None else None,
              keeper.path if keeper is not None else None, decided_by, stamp))
-        _conn.commit()
 
 
 def quarantined_track_ids() -> set[str]:

@@ -626,7 +626,7 @@ it less likely.
       **Fixed** as suggested. Reproduced first with `_library_roots`
       raising `sqlite3.OperationalError` once.
 
-- [ ] **M29. `state.db`'s shared connection is read without the lock.**
+- [x] **M29. `state.db`'s shared connection is read without the lock.**
       *Effect unverified.* `app/store.py:177`; unlocked reads across
       `playcounts.py`, `overview.py`, `lastfm.py`. Readers in other threads
       can see `take()`'s uncommitted writes; a manual snapshot and the timer
@@ -1594,7 +1594,7 @@ R2 split of `library.js` lost nothing.
       out); `offset`, `limitPercent` and an unknown sort raise
       `Unsupported`. Such playlists now open as not editable here.
 
-- [ ] **2M20. M29's remainder: no writer rolls back, so a failed write is
+- [x] **2M20. M29's remainder: no writer rolls back, so a failed write is
       committed half-done by the next one.** *Verified.* `app/store.py`.
       Still unlocked on the shared connection: `playcounts.baseline_stamp`,
       `_last_known`, `last_reading`, `status`, `history_version`,
@@ -1610,6 +1610,19 @@ R2 split of `library.js` lost nothing.
       *Fix:* one `store.transaction()` context manager that takes the lock
       and rolls back on exception, used by every writer; take the lock in
       the reads above.
+      **Fixed.** `store.transaction()` holds the lock for a write, commits
+      when the block ends and rolls back when it raises; nested blocks join
+      the outermost. Every writer uses it: store's four, the registry's four,
+      a play-count reading and the Last.fm import (`write_times` already
+      managed its own). The reads are covered in one place:
+      `store.connection()` now returns a wrapper that runs each statement
+      and fetches its rows under the lock, so every reader, including any
+      written later, waits for a write in flight. The lock is now an
+      `RLock`, so a locked read inside a transaction cannot deadlock.
+      Reproduced first with the run-log table dropped mid-reading; the new
+      test fails on the old code. Still open from M29: the CLI tools are
+      separate processes the lock cannot cover (they get `database is
+      locked` and a 5 s wait, which is logged).
 
 ### Frontend
 

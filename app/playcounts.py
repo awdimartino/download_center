@@ -310,8 +310,7 @@ def _take(when: str | None = None) -> dict[str, Any]:
         changed.append((at, key[0], key[1], row["username"],
                         row["play_count"], row["play_date"]))
 
-    db = store.connection()
-    with store._lock:
+    with store.transaction() as db:
         # Only the first reading ever lands; every later one is ignored.
         db.execute("INSERT OR IGNORE INTO play_collection (id, began)"
                    " VALUES (1, ?)", (at,))
@@ -341,7 +340,6 @@ def _take(when: str | None = None) -> dict[str, Any]:
             "   anomalies = anomalies + excluded.anomalies",
             (run_day, datetime.now(UTC).isoformat(timespec="seconds"),
              len(current), len(changed), len(anomalies)))
-        db.commit()
 
     result = {
         "taken": True,

@@ -805,3 +805,24 @@ def test_a_track_hidden_at_the_first_reading_does_not_count_its_lifetime(wired):
 
     plays = playcounts.plays_between("2000-01-01", "2026-12-31", user_id=ALEX)
     assert {row["track_uuid"]: row["plays"] for row in plays} == {"uuid-b": 1}
+
+
+# --- a reading that fails part way (2M20) ----------------------------------------
+
+def test_a_reading_that_fails_part_way_is_not_committed_by_the_next_write(wired):
+    """The snapshot rows went in, the run-log insert failed, nothing rolled
+    back - and the next unrelated commit wrote the half-reading to disk."""
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 3)
+    store.connection().execute("DROP TABLE play_snapshot_run")
+
+    with pytest.raises(sqlite3.Error):
+        playcounts.take("2026-03-01T10:00:00+00:00")
+    store.mark_reviewed(1, {"album"}, "by hand")
+
+    path = store._conn.execute("PRAGMA database_list").fetchone()[2]
+    other = sqlite3.connect(path)
+    try:
+        assert other.execute("SELECT COUNT(*) FROM play_snapshot").fetchone() == (0,)
+    finally:
+        other.close()

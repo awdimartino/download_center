@@ -172,3 +172,55 @@ def test_decisions_from_before_anyone_was_recorded_apply_to_everyone(tmp_path):
     finally:
         store._conn.close()
         store._conn = None
+
+
+# --- a write that fails part way (2M20) ------------------------------------------
+
+def test_a_write_that_fails_part_way_leaves_nothing_for_the_next_commit(tmp_path):
+    """No writer rolled back. A statement failing part way left the shared
+    connection inside a transaction, and the next unrelated commit - marking
+    an album reviewed - wrote the half-done change to disk."""
+    import pytest
+
+    path = tmp_path / "state.db"
+    store.connect(path)
+    try:
+        with pytest.raises(sqlite3.Error):
+            with store.transaction() as db:
+                db.execute("INSERT INTO play_collection (id, began) VALUES (1, 'x')")
+                db.execute("INSERT INTO no_such_table VALUES (1)")
+
+        assert not store.connection().in_transaction
+        store.mark_reviewed(1, {"album"}, "by hand")
+
+        other = sqlite3.connect(path)
+        try:
+            assert other.execute("SELECT COUNT(*) FROM play_collection").fetchone() == (0,)
+            assert other.execute("SELECT COUNT(*) FROM album_reviewed").fetchone() == (1,)
+        finally:
+            other.close()
+    finally:
+        _close()
+
+
+def test_a_reader_waits_for_a_write_in_flight(tmp_path):
+    """Readers took no lock, so a reader in another thread was served rows a
+    transaction had not committed and might yet roll back."""
+    import threading
+
+    store.connect(tmp_path / "state.db")
+    seen = []
+    try:
+        with store.transaction() as db:
+            db.execute("INSERT INTO play_collection (id, began) VALUES (1, 'x')")
+            reader = threading.Thread(target=lambda: seen.append(
+                store.connection().execute(
+                    "SELECT COUNT(*) FROM play_collection").fetchone()[0]))
+            reader.start()
+            reader.join(0.3)
+            assert seen == []          # still waiting for the lock
+            db.rollback()
+        reader.join(2)
+        assert seen == [0]
+    finally:
+        _close()

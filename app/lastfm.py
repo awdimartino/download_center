@@ -393,30 +393,25 @@ def write(planned: dict[str, Any], replace: bool = False) -> int:
              plays, SOURCE)
             for when, track_uuid, plays in planned["rows"]]
     wanted = {(when, track_uuid) for when, track_uuid, *_ in rows}
-    with store._lock:
-        try:
-            # Day rows only: --times rows carry a time and are refused
-            # wholesale by the caller.
-            stale = [key for key in db.execute(
-                "SELECT played_at, track_uuid FROM play_imported"
-                " WHERE user_id = ? AND source = ? AND played_at NOT LIKE '%T%'",
-                (planned["user_id"], SOURCE)).fetchall()
-                if tuple(key) not in wanted]
-            if stale and not replace:
-                raise StaleRows(len(stale))
-            db.executemany(
-                "DELETE FROM play_imported WHERE played_at = ? AND track_uuid = ?"
-                " AND user_id = ? AND source = ?",
-                [(when, track_uuid, planned["user_id"], SOURCE)
-                 for when, track_uuid in stale])
-            db.executemany(
-                "INSERT OR REPLACE INTO play_imported"
-                " (played_at, track_uuid, user_id, username, plays, source)"
-                " VALUES (?, ?, ?, ?, ?, ?)", rows)
-            db.commit()
-        except BaseException:
-            db.rollback()
-            raise
+    with store.transaction():
+        # Day rows only: --times rows carry a time and are refused
+        # wholesale by the caller.
+        stale = [key for key in db.execute(
+            "SELECT played_at, track_uuid FROM play_imported"
+            " WHERE user_id = ? AND source = ? AND played_at NOT LIKE '%T%'",
+            (planned["user_id"], SOURCE)).fetchall()
+            if tuple(key) not in wanted]
+        if stale and not replace:
+            raise StaleRows(len(stale))
+        db.executemany(
+            "DELETE FROM play_imported WHERE played_at = ? AND track_uuid = ?"
+            " AND user_id = ? AND source = ?",
+            [(when, track_uuid, planned["user_id"], SOURCE)
+             for when, track_uuid in stale])
+        db.executemany(
+            "INSERT OR REPLACE INTO play_imported"
+            " (played_at, track_uuid, user_id, username, plays, source)"
+            " VALUES (?, ?, ?, ?, ?, ?)", rows)
     return len(rows)
 
 
