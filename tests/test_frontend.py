@@ -600,3 +600,11 @@ def test_duplicates_says_a_failure_is_a_failure():
     assert 'await getJSON("/api/duplicates/quarantined")' in dupes
     assert 'await postJSON("/api/duplicates/auto", {})' in dupes
     assert "export async function getJSON" in JS_FILES["core.js"]
+
+
+def test_signing_in_again_on_the_same_page_starts_clean():
+    """After a session ended, the next person to sign in on that page saw
+    the first account's cached Artists list (2L21). Checked in Chromium."""
+    main = JS_FILES["main.js"]
+    assert "signedOutHere = true;" in main
+    assert "if (signedOutHere) {" in main and "location.reload();" in main

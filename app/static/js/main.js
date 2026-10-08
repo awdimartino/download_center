@@ -88,6 +88,14 @@ signinForm.addEventListener("submit", async (event) => {
       return;
     }
     signinForm.reset();
+    if (signedOutHere) {
+      // Somebody was signed in on this page before, maybe somebody else.
+      // Every panel kept what it had read for them - the Artists list, the
+      // attention list, the selection, the cover survey - and showed it to
+      // whoever signed in next. A reload starts every one of them clean.
+      location.reload();
+      return;
+    }
     applySession({ signed_in: true, ...body });
     start();
   } finally {
@@ -126,9 +134,13 @@ let healthTimer = null;
 // The four side effects the websocket's 4401 (session gone) close code used
 // to perform inline. Owned here rather than in ws.js, which only knows "the
 // server says the session is gone" and calls this back.
+// Set once a session has ended on this page; see the sign-in handler.
+let signedOutHere = false;
+
 function handleSessionExpired() {
   if (!started) return;     // several requests can say so at once
   started = false;
+  signedOutHere = true;
   disconnect();
   if (healthTimer) clearInterval(healthTimer);
   healthTimer = null;

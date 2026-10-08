@@ -1969,11 +1969,14 @@ R2 split of `library.js` lost nothing.
       The auto-resolve button is re-enabled only on the paths that never
       start the operation; once it starts, the button follows it. Verified
       in Chromium (S8, S8b); every other scenario still passes.
-- [ ] **2L21. The Library's caches survive a change of account.**
+- [x] **2L21. The Library's caches survive a change of account.**
       *Verified.* `app/static/js/main.js:90-92,129-136`,
       `library-shared.js:155-183`. After a 4401, a second person sees the
       first's Artists list. *Fix:* reload, or reset `libraryState` and
       `selection` on expiry.
+      **Fixed** with the reload: once a session has ended on a page, the
+      next successful sign-in there reloads it, so every module's state
+      (not only the Library's) starts clean. Verified in Chromium (S13).
 - [ ] **2L22. The Artists list is refreshed only by Rescan and combine.**
       `library.js:427,684`, `library-combine.js:390`. *Fix:* drop it in
       `refreshLibrary()`.
