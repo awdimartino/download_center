@@ -14,7 +14,7 @@ mutagen==1.47.0
 # side - and that frame is what every YouTube download used to carry as art.
 Pillow==12.3.0
 rapidfuzz==3.14.6
-beets==2.13.1
+beets==2.14.1
 requests==2.34.2
 
 # Imported directly by app/workspace.py to read a beets config back. It also
