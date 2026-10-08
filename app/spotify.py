@@ -15,6 +15,7 @@ import requests
 import spotipy
 from spotipy.cache_handler import CacheFileHandler
 from spotipy.oauth2 import SpotifyClientCredentials
+from urllib3.util.retry import Retry
 
 from .config import CONFIG_DIR, settings
 
@@ -41,6 +42,28 @@ _client: spotipy.Spotify | None = None
 _client_lock = threading.Lock()
 
 
+def _session() -> requests.Session:
+    """A session whose retries do not wait for Spotify's Retry-After.
+
+    spotipy's own retries honour the header, and urllib3 caps it at six
+    hours per retry: one long rate limit held a thread for the whole wait,
+    per search and per resolve, and cancelling the job did not free it. A
+    short backoff then a clear failure is better; the caller says Spotify is
+    busy, and the person tries again.
+    """
+    retry = Retry(
+        total=3, connect=None, read=False, status=3,
+        allowed_methods=frozenset(["GET", "POST", "PUT", "DELETE"]),
+        backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        respect_retry_after_header=False)
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
 def client() -> spotipy.Spotify:
     global _client
     with _client_lock:
@@ -61,7 +84,7 @@ def client() -> spotipy.Spotify:
                     ),
                 ),
                 requests_timeout=15,
-                retries=3,
+                requests_session=_session(),
             )
         return _client
 

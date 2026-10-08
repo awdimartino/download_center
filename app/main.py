@@ -28,7 +28,7 @@ from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
 from . import filer, inbox, library, netguard, overview, registry, replaygain, spotify
 from . import folderlock, uuidtags
-from . import worker, workspace
+from . import threads, worker, workspace
 from . import config
 from . import health as health_checks
 from .config import settings
@@ -229,7 +229,7 @@ async def lifespan(app: FastAPI):
     if not settings.spotify_configured:
         log.warning("Spotify credentials missing - add them to config/config.toml")
     try:
-        await asyncio.to_thread(inbox.clear_scratch)
+        await threads.run(inbox.clear_scratch)
     except Exception:
         log.exception("clearing unfinished downloads failed")
 
@@ -257,11 +257,11 @@ async def _inbox_loop() -> None:
     """
     while True:
         try:
-            results = await asyncio.to_thread(inbox.drain_all)
+            results = await threads.run(inbox.drain_all)
             # A download asks Navidrome to scan when it finishes; a drop
             # used to wait for Navidrome's own schedule instead.
             if any(result.changed for result in results.values()):
-                await asyncio.to_thread(navidrome.notify)
+                await threads.run(navidrome.notify)
         except Exception:
             log.exception("draining the inbox failed")
         await asyncio.sleep(inbox.POLL_SECONDS)
@@ -300,9 +300,9 @@ async def _snapshot_loop() -> None:
     first = True
     while True:
         try:
-            taken = await asyncio.to_thread(playcounts.take)
+            taken = await threads.run(playcounts.take)
             if first or taken.get("users"):
-                await asyncio.to_thread(
+                await threads.run(
                     overview.warm, None if first else taken["users"])
             first = False
         except Exception:
@@ -323,10 +323,10 @@ async def _audit_loop() -> None:
         # fail too (a locked database), and an exception escaping here ended
         # the task for the life of the process while Health's audit aged.
         try:
-            for root in await asyncio.to_thread(_library_roots):
-                if await asyncio.to_thread(diskaudit.stale, root):
+            for root in await threads.run(_library_roots):
+                if await threads.run(diskaudit.stale, root):
                     try:
-                        await asyncio.to_thread(diskaudit.refresh, root)
+                        await threads.run(diskaudit.refresh, root)
                     except Exception:
                         log.exception("disk audit failed for %s", root)
         except Exception:
@@ -481,7 +481,10 @@ async def require_session(request: Request, call_next):
     # In a thread: every few minutes per session it re-reads the account
     # from Navidrome's database, and that read sat on the event loop,
     # holding every other request while it ran.
-    session = await asyncio.to_thread(auth.get, request.cookies.get(auth.COOKIE))
+    # No cookie, nothing to look up: /healthz and the sign-in page should not
+    # wait for a thread to learn that.
+    cookie = request.cookies.get(auth.COOKIE)
+    session = await asyncio.to_thread(auth.get, cookie) if cookie else None
     request.state.session = session
     path = request.url.path
     if request.method in CHANGING and not same_origin(request.headers):
@@ -619,7 +622,7 @@ async def _resolve_job(job: dict[str, Any], url: str,
                        space: workspace.Workspace) -> None:
     """Resolve a link off the event loop, then announce the result."""
     try:
-        kind, title, tracks = await asyncio.to_thread(_resolve, url)
+        kind, title, tracks = await threads.run(_resolve, url)
     except asyncio.CancelledError:
         # Cancelled while resolving. Without this the job sat at "resolving"
         # for the life of the process, with no task behind it and no way to
@@ -1022,7 +1025,7 @@ async def finish_upload(
         # Every file of this drop has arrived, so it can be filed now, all
         # together, rather than after the quiet period.
         await asyncio.to_thread(inbox.release, space, filer.sanitize(batch))
-    result = await asyncio.to_thread(inbox.drain, space)
+    result = await threads.run(inbox.drain, space)
     if result.changed:
         await asyncio.to_thread(navidrome.notify)
     return {
@@ -2212,7 +2215,7 @@ async def library_cover_candidates(
         album = meta.album if meta.names_album else meta.title
         return covers.candidates(path, tracks, meta.albumartist, album)
 
-    return {"candidates": await asyncio.to_thread(run)}
+    return {"candidates": await threads.run(run)}
 
 
 @app.post("/api/library/cover/apply")
@@ -2543,9 +2546,9 @@ async def playcount_snapshot(
     does - otherwise their next visit pays for the statistics this just
     made stale.
     """
-    taken = await asyncio.to_thread(playcounts.take)
+    taken = await threads.run(playcounts.take)
     if taken.get("users"):
-        await asyncio.to_thread(overview.warm, taken["users"])
+        await threads.run(overview.warm, taken["users"])
     return taken
 
 

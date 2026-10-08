@@ -5,10 +5,11 @@ The first two used to run inside their request handler. A retag through
 beets can take minutes, and auditing reads the tags of every file in the
 library. A browser gives up long before either finishes, so the button looked broken while the work carried on invisibly -
 and because both held a process-wide lock from inside a threadpool worker, a
-second click did not queue politely behind the first. It occupied another of
-the forty threads FastAPI has, blocking on a lock, for as long as the first
-one took. Enough clicks and every `to_thread` call in the application - the
-health panel, playlists, queueing a download - had nowhere to run.
+second click did not queue politely behind the first. It occupied another
+thread, blocking on a lock, for as long as the first one took. Enough clicks
+and every `to_thread` call in the application - the health panel,
+playlists, queueing a download - had nowhere to run. The work itself now
+runs on `threads`' pool, apart from the one requests use.
 
 So they run here instead: one at a time per person and name, off the
 request, with a status its owner can ask for. Starting one that is already
@@ -32,6 +33,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Awaitable, Callable
+
+from . import threads
 
 log = logging.getLogger("navidrome_companion.operations")
 
@@ -139,7 +142,7 @@ def start(name: str, owner: str | None,
 
     async def run() -> None:
         try:
-            operation.result = await asyncio.to_thread(work)
+            operation.result = await threads.run(work)
             operation.status = DONE
         except Exception as exc:
             operation.status = FAILED

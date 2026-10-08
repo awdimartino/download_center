@@ -1191,7 +1191,7 @@ R2 split of `library.js` lost nothing.
       that library already holds the UUID; otherwise a fresh one is minted.
       The check is inside the same lock. New test fails on the old code.
 
-- [ ] **2H2. Every request competes with long work for one 8-thread pool.**
+- [x] **2H2. Every request competes with long work for one 8-thread pool.**
       *Verified locally, not on the Pi.* `app/main.py:484` (middleware),
       `app/worker.py:126,142,216,234`, `app/operations.py:142`,
       `app/spotify.py:53-65`. Every blocking call uses `asyncio.to_thread`,
@@ -1209,6 +1209,17 @@ R2 split of `library.js` lost nothing.
       default pool for the request path; skip the thread hop when there is
       no cookie; build the Spotify client so it does not sleep on
       `Retry-After`.
+      **Fixed:** new `app/threads.py` runs long work on a pool of its own
+      (32 threads; the download gate and per-person operations still bound
+      it). Moved onto it: everything in `worker.py`, every operation, the
+      three background loops, startup's scratch clear, resolving a job, an
+      upload's drain, cover candidates and the forced snapshot. The
+      middleware skips the thread hop when there is no cookie. The Spotify
+      client gets its own session: three retries with a short backoff,
+      `Retry-After` ignored, and then the existing 502 "Spotify error".
+      Reproduced first with the default pool shrunk to one thread; new
+      tests fail on the old code. Cancelling still does not stop the
+      thread: that is 2M2.
 
 - [ ] **2H3. An operation that finishes while the socket is down is never
       reported.** *Verified in Chromium.* `app/static/js/ws.js:39-58,71-75`,

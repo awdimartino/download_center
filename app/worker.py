@@ -19,7 +19,7 @@ import logging
 from typing import Any
 from collections.abc import Awaitable, Callable
 
-from . import downloader, inbox, matcher, navidrome, tagger
+from . import downloader, inbox, matcher, navidrome, tagger, threads
 from . import workspace
 from .config import settings
 
@@ -123,7 +123,7 @@ async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
     async def attempt(n: int) -> Any:
         item["attempts"] = n
         _mark(item, "downloading")
-        return await asyncio.to_thread(downloader.download, url, temp, progress)
+        return await threads.run(downloader.download, url, temp, progress)
 
     return await _retrying(item, "download", downloader.DownloadError, attempt)
 
@@ -139,7 +139,7 @@ async def _match_with_retries(item: dict[str, Any]) -> Any:
     YouTube's catalogue for a problem with the connection.
     """
     async def attempt(n: int) -> Any:
-        return await asyncio.to_thread(matcher.find, item)
+        return await threads.run(matcher.find, item)
 
     return await _retrying(item, "search", matcher.SearchUnavailable, attempt)
 
@@ -213,7 +213,7 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
 
         _mark(item, "tagging", progress=1.0)
         try:
-            await asyncio.to_thread(tagger.tag, path, item)
+            await threads.run(tagger.tag, path, item)
         except Exception as exc:
             # Fatal. These tags are what the file is filed by and what
             # Navidrome shows, so an untagged download went in as
@@ -231,7 +231,7 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
         # Its own status, which Browse and Downloads show as Filing.
         _mark(item, "filing")
         try:
-            filed = await asyncio.to_thread(inbox.deliver, space, path)
+            filed = await threads.run(inbox.deliver, space, path)
         except Exception as exc:
             log.exception("could not file %s", item["title"])
             _mark(item, "failed", error=f"Could not file the download: {exc}"[:200])
@@ -325,7 +325,7 @@ async def run_job(job: dict[str, Any], push: Push,
     # for review until someone confirms what they are.
     filed = [item for item in items if item["status"] == "complete"]
 
-    await asyncio.to_thread(inbox.discard, space, job["id"])
+    await threads.run(inbox.discard, space, job["id"])
 
     failed = sum(1 for item in items if item["status"] == "failed")
     job["status"] = ("complete" if not failed
@@ -337,4 +337,4 @@ async def run_job(job: dict[str, Any], push: Push,
     # its own schedule; this only makes it sooner. Failing it is not worth
     # failing the job over.
     if filed:
-        await asyncio.to_thread(navidrome.notify)
+        await threads.run(navidrome.notify)
