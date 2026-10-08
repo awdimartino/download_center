@@ -14,6 +14,12 @@ import { setNote } from "./core.js";
 
 const registry = {};
 
+// Operations this page has shown as running, by name. An outcome is
+// announced once, over the socket; one that finished while the socket was
+// down was never heard, and the page kept its progress line and its
+// disabled buttons until a reload.
+const watching = new Set();
+
 export function registerOperation(name, spec) {
   registry[name] = spec;
 }
@@ -44,6 +50,22 @@ export async function startOperation(name, path, body) {
   }
 }
 
+// Asked on every socket open: the first shows what is already running (a
+// ReplayGain run outlasts the page that started it), and each one after a
+// drop delivers the outcomes missed while it was down.
+export async function catchUpOperations(owner) {
+  let data;
+  try {
+    data = await fetch("/api/operations").then((r) => r.json());
+  } catch {
+    return;  // The socket reports the next change anyway.
+  }
+  (data.operations || [])
+    .filter((op) => op.owner === owner
+                    && (op.status === "running" || watching.has(op.name)))
+    .forEach(showOperation);
+}
+
 export function showOperation(operation) {
   const spec = registry[operation.name];
   if (!spec) return;
@@ -57,7 +79,11 @@ export function showOperation(operation) {
   // display needs `operation.progress` too, the same way the original
   // showOperation's replaygain branch did.
   spec.onButtonState?.(running, operation);
-  if (running) return;
+  if (running) {
+    watching.add(operation.name);
+    return;
+  }
+  watching.delete(operation.name);
 
   if (operation.status === "failed") {
     spec.onFailed?.(operation.error);

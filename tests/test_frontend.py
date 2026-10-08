@@ -490,3 +490,13 @@ def test_focus_shows_in_forced_colours():
     """Every focus ring is a box-shadow, which forced colours drops (L45)."""
     assert "@media (forced-colors: active)" in CSS
     assert re.search(r"forced-colors: active\) \{\s*:focus-visible \{ outline: 2px solid CanvasText", CSS)
+
+
+def test_operations_are_caught_up_on_every_socket_open():
+    """An outcome is announced once; one that finished while the socket was
+    down left a progress line and disabled buttons until a reload (2H3).
+    Checked in Chromium with a stubbed socket; this pins the wiring."""
+    assert "onOpen?.();" in JS_FILES["ws.js"]
+    assert "connect(onSessionExpired, onOpen)" in JS_FILES["ws.js"]
+    assert "connect(handleSessionExpired, resumeOperations)" in JS_FILES["main.js"]
+    assert "watching.has(op.name)" in JS_FILES["operations.js"]

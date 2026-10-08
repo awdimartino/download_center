@@ -7,7 +7,7 @@
 import { setBanner, setLibraries, showError, warnEl } from "./core.js";
 import { connect, disconnect } from "./ws.js";
 import { viewHandlers, closeMenu } from "./nav.js";
-import { showOperation } from "./operations.js";
+import { catchUpOperations } from "./operations.js";
 import { loadHome } from "./home.js";
 import { loadListening } from "./listening.js";
 import { loadLibrary } from "./library.js";
@@ -138,13 +138,12 @@ function handleSessionExpired() {
 function start() {
   if (started) return;
   started = true;
-  connect(handleSessionExpired);
+  connect(handleSessionExpired, resumeOperations);
   // The panel the page opens on, so it is not blank until somebody
   // navigates away and back. Everything else waits for it: the Pi works
   // through requests one at a time near enough, and the health checks and
   // the library listing sent alongside Home used to be answered first while
   // the page somebody was actually looking at sat empty.
-  resumeOperations();
   Promise.allSettled([loadHome(), loadListening()]).then(() => {
     loadHealth();
     loadLibrary();
@@ -153,18 +152,11 @@ function start() {
   healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
 }
 
-// A ReplayGain run can outlast the page that started it. Without this a
-// reload shows no progress and no Stop until the next album reports in.
-async function resumeOperations() {
-  try {
-    const data = await fetch("/api/operations").then((r) => r.json());
-    (data.operations || [])
-      .filter((op) => op.status === "running" && session
-                      && op.owner === session.username)
-      .forEach(showOperation);
-  } catch (err) {
-    // Only a head start on what the socket reports anyway.
-  }
+// On every socket open. A ReplayGain run can outlast the page that started
+// it, and an operation can finish while the socket is down; either way the
+// page would otherwise show the wrong buttons until something else changed.
+function resumeOperations() {
+  if (session) catchUpOperations(session.username);
 }
 
 checkSession().then((signedIn) => {

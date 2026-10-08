@@ -1221,7 +1221,7 @@ R2 split of `library.js` lost nothing.
       tests fail on the old code. Cancelling still does not stop the
       thread: that is 2M2.
 
-- [ ] **2H3. An operation that finishes while the socket is down is never
+- [x] **2H3. An operation that finishes while the socket is down is never
       reported.** *Verified in Chromium.* `app/static/js/ws.js:39-58,71-75`,
       `app/static/js/main.js:147,158-168`, `app/main.py:2577`. Operations
       are announced once over the socket. On reconnect the server sends a
@@ -1232,6 +1232,14 @@ R2 split of `library.js` lost nothing.
       *Fix:* on every reconnect after the first, re-fetch `/api/operations`
       and pass each through `showOperation`; or put operations in the
       snapshot.
+      **Fixed:** `operations.js` remembers which operations the page has
+      shown as running, and `catchUpOperations` runs on every socket open
+      (ws.js's new `onOpen`), not only at start-up. It shows anything
+      running, plus the outcome of anything the page was watching, so a
+      missed finish is delivered once. Reproduced first in Chromium with a
+      stubbed socket (the progress line and the disabled audit button
+      stayed); the same scenario is clean after. A static test pins the
+      wiring.
 
 - [ ] **2H4. A name starting with a dot may be filed where Navidrome never
       scans.** *Our side verified; Navidrome's side unverified.*

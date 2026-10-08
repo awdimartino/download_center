@@ -64,7 +64,10 @@ let retryDelay = 1000;
 // sign-in/bootstrap state directly - main.js owns started/healthTimer/the
 // sign-in form, this module only knows "the server says the session is
 // gone".
-export function connect(onSessionExpired) {
+//
+// `onOpen` runs on every open, the first and each reconnect: what the socket
+// missed while it was down is the caller's to catch up on.
+export function connect(onSessionExpired, onOpen) {
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(`${scheme}://${location.host}/ws`);
 
@@ -72,6 +75,7 @@ export function connect(onSessionExpired) {
     retryDelay = 1000;
     connEl.textContent = "live";
     connEl.className = "conn online";
+    onOpen?.();
   });
 
   socket.addEventListener("message", (event) => {
@@ -90,7 +94,7 @@ export function connect(onSessionExpired) {
     }
     // Back off to at most 15s so a restarting server is picked up quickly
     // without hammering it while it is down.
-    setTimeout(() => connect(onSessionExpired), retryDelay);
+    setTimeout(() => connect(onSessionExpired, onOpen), retryDelay);
     retryDelay = Math.min(retryDelay * 2, 15000);
   });
 }
