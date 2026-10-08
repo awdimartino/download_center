@@ -92,6 +92,12 @@ class LastfmError(RuntimeError):
 
 # --- talking to Last.fm -----------------------------------------------------
 
+# Errors Last.fm documents as passing: 8 "operation failed - try again",
+# 16 "temporarily unavailable", 29 "rate limit exceeded". Each threw the
+# whole fetch away - a quarter of an hour of pages - for a moment's trouble.
+TEMPORARY_ERRORS = {8, 16, 29}
+
+
 def _call(method: str, secret: str | None = None, **params: str) -> dict:
     """One request, retried while the failure looks temporary.
 
@@ -101,9 +107,10 @@ def _call(method: str, secret: str | None = None, **params: str) -> dict:
     more expensive here because a full history is a quarter of an hour of
     requests.
 
-    A 5xx, a timeout or a dropped connection is worth another go. An error
-    *in the response body* is Last.fm telling us the request was wrong, and
-    repeating it will not help.
+    A 5xx, a 429, a timeout or a dropped connection is worth another go, and
+    so are the errors Last.fm itself calls temporary (`TEMPORARY_ERRORS`).
+    Any other error *in the response body* is Last.fm telling us the request
+    was wrong, and repeating it will not help.
     """
     query = {"method": method, "api_key": params.pop("api_key"), **params}
     if secret:
@@ -124,15 +131,18 @@ def _call(method: str, secret: str | None = None, **params: str) -> dict:
             with urllib.request.urlopen(request, timeout=30) as response:
                 body = json.load(response)
         except urllib.error.HTTPError as exc:
-            if exc.code < 500:
+            if exc.code < 500 and exc.code != 429:
                 raise LastfmError(f"HTTP {exc.code}") from exc
             last = f"HTTP {exc.code}"
         except Exception as exc:
             last = f"{type(exc).__name__}: {exc}"[:120]
         else:
-            if "error" in body:
-                raise LastfmError(f"{body.get('message', 'unknown error')}")
-            return body
+            if "error" not in body:
+                return body
+            message = body.get("message", "unknown error")
+            if body.get("error") not in TEMPORARY_ERRORS:
+                raise LastfmError(message)
+            last = f"error {body.get('error')}: {message}"
 
         if delay:
             log.warning("last.fm %s (attempt %d), retrying in %ds",

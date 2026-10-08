@@ -1949,8 +1949,12 @@ R2 split of `library.js` lost nothing.
       an older version stopped mid-way) is copied across without
       overwriting newer decisions, then dropped. New test fails on the old
       code.
-- [ ] **2L19. Last.fm temporary errors are not retried.** Body errors 8,
+- [x] **2L19. Last.fm temporary errors are not retried.** Body errors 8,
       16 and 29 and HTTP 429 throw away the whole fetch (the rest of 2M16).
+      **Fixed:** `_call` retries an HTTP 429 like a 5xx, and an error in the
+      body whose code Last.fm documents as temporary (8, 16, 29), with the
+      existing backoff. Other body errors still fail at once. New tests fail
+      on the old code.
 
 ### Frontend
 

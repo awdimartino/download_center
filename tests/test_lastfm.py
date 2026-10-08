@@ -615,3 +615,40 @@ def test_the_same_import_twice_is_still_idempotent(state_db):
     lastfm.write(_planned(rows))
     lastfm.write(_planned(rows))
     assert _imported() == sorted(rows)
+
+
+# --- what Last.fm calls temporary is tried again (2L19) ---------------------------
+
+class _Answer:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+@pytest.mark.parametrize("first", [
+    {"error": 29, "message": "Rate limit exceeded"},
+    {"error": 16, "message": "There was a temporary error processing your request"},
+    "HTTP 429",
+])
+def test_a_temporary_last_fm_error_is_retried(monkeypatch, first):
+    """Errors 8, 16 and 29, and HTTP 429, threw the whole fetch away."""
+    import urllib.error
+
+    answers = [first, {"ok": True}]
+    calls = {"n": 0}
+
+    def answer(request, timeout=None):
+        calls["n"] += 1
+        if answers[0] == "HTTP 429":
+            answers.pop(0)
+            raise urllib.error.HTTPError("u", 429, "Too Many Requests", {}, None)
+        return _Answer()
+
+    monkeypatch.setattr(lastfm.urllib.request, "urlopen", answer)
+    monkeypatch.setattr(lastfm.time, "sleep", lambda s: None)
+    monkeypatch.setattr(lastfm.json, "load", lambda r: answers.pop(0))
+
+    assert lastfm._call("user.getRecentTracks", api_key="k") == {"ok": True}
+    assert calls["n"] == 2
