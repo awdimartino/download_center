@@ -608,3 +608,11 @@ def test_signing_in_again_on_the_same_page_starts_clean():
     main = JS_FILES["main.js"]
     assert "signedOutHere = true;" in main
     assert "if (signedOutHere) {" in main and "location.reload();" in main
+
+
+def test_any_library_change_drops_the_artists_list():
+    """Only Rescan and a combine dropped it, so a renamed artist or a new
+    download stayed out of the Artists tab for the life of the page (2L22)."""
+    library = JS_FILES["library.js"]
+    refresh = library[library.index("export function refreshLibrary"):]
+    assert "libraryState.artistsCache = null;" in refresh[:refresh.index("\n}\n")]

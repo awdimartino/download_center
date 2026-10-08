@@ -1977,9 +1977,10 @@ R2 split of `library.js` lost nothing.
       **Fixed** with the reload: once a session has ended on a page, the
       next successful sign-in there reloads it, so every module's state
       (not only the Library's) starts clean. Verified in Chromium (S13).
-- [ ] **2L22. The Artists list is refreshed only by Rescan and combine.**
+- [x] **2L22. The Artists list is refreshed only by Rescan and combine.**
       `library.js:427,684`, `library-combine.js:390`. *Fix:* drop it in
       `refreshLibrary()`.
+      **Fixed** as suggested; a static test pins it.
 - [ ] **2L23. Quarantine on an album opened from song search throws.**
       *Verified.* `library-drawer.js:798-800`. `album.tracks` is undefined
       until loaded; M8 guarded Edit details only.

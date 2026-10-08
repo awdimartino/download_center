@@ -410,9 +410,12 @@ async function loadAlbums(mode, anchor) {
 
 // After a change to one album: re-read what is on screen, keep that album
 // where it was. Needs attention is re-read too, since the change was most
-// likely the fix for something on it.
+// likely the fix for something on it, and so is the Artists list: renaming
+// an album's artist, moving a track or a new download changes it, and only
+// a Rescan or a combine used to drop it.
 export function refreshLibrary(album) {
   libraryState.attention = null;
+  libraryState.artistsCache = null;
   return loadLibrary("refresh", album ? albumKey(album) : null);
 }
 
