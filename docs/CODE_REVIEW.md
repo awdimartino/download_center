@@ -1799,10 +1799,15 @@ R2 split of `library.js` lost nothing.
       `os.replace`. The serialiser now writes tables (inline), arrays and
       dates, and quotes keys that need it, so a hand-written table comes
       back as a table. Both new tests fail on the old code.
-- [ ] **2L4. The upload size check runs after the body is stored.**
+- [x] **2L4. The upload size check runs after the body is stored.**
       `app/main.py:954-958`. Starlette spools the multipart body to `/tmp`
       first; one request can fill the SD card.
       *Fix:* refuse on `Content-Length` in the middleware.
+      **Fixed** as suggested: the middleware checks an upload's declared
+      length before the handler, and so before any of the body is read:
+      413 above the limit plus 1 MB of form framing, 411 with no length (a
+      browser always sends one for a form). The handler's own checks stay
+      as a second line. New tests fail on the old code.
 - [ ] **2L5. Some errors give a bare 500.** `resolve_duplicate` and
       `dismiss_duplicate` (`app/main.py:1332,1358`) do not catch
       `navidrome.Unavailable`. `Workspace.prepare()` raises when two

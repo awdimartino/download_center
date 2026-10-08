@@ -1072,3 +1072,25 @@ def test_the_last_pass_is_kept_for_its_owner_alone(space, monkeypatch):
     assert any("read-only filesystem" in line for line in entry["failures"])
     assert entry["overlooked"] == ["Other.wma: a format this cannot tag, so cannot file"]
     assert inbox.status_for("kelly") == []
+
+
+# --- an upload too big is refused before it is stored (2L4) ----------------------
+
+def test_an_oversized_upload_is_refused_from_its_declared_length():
+    """The handler's check came after Starlette had spooled the whole body
+    to /tmp, so any size was stored first."""
+    from app import main
+
+    big = str(main.MAX_UPLOAD_BYTES + main.UPLOAD_OVERHEAD + 1)
+    assert main._upload_refusal({"content-length": big}).status_code == 413
+    assert main._upload_refusal({}).status_code == 411
+    assert main._upload_refusal({"content-length": "12345"}) is None
+
+
+def test_the_middleware_asks_before_the_body_is_read():
+    import inspect
+
+    from app import main
+
+    source = inspect.getsource(main.require_session)
+    assert source.index("_upload_refusal") < source.index("call_next(request)")

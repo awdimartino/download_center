@@ -565,6 +565,35 @@ def same_origin(headers: Any) -> bool:
     return urllib.parse.urlsplit(origin).netloc in asked
 
 
+UPLOAD_PATH = "/api/inbox/upload"
+# A form's own framing on top of the file: boundaries, part headers, the
+# path and batch fields.
+UPLOAD_OVERHEAD = 1024 * 1024
+
+
+def _upload_refusal(headers) -> JSONResponse | None:
+    """Refuse an upload too big to take, before any of it is read.
+
+    The handler's own check came after Starlette had already spooled the
+    whole multipart body to the container's /tmp, so one request of any
+    size was stored first - on a Pi, on an SD card. Decided here from the
+    declared length instead, which a browser always sends for a form.
+    """
+    length = headers.get("content-length")
+    if length is None:
+        return JSONResponse({"detail": "An upload has to say how big it is."},
+                            status_code=411)
+    try:
+        size = int(length)
+    except ValueError:
+        return JSONResponse({"detail": "That upload's length is not a number."},
+                            status_code=400)
+    if size > MAX_UPLOAD_BYTES + UPLOAD_OVERHEAD:
+        return JSONResponse({"detail": "That file is larger than this accepts."},
+                            status_code=413)
+    return None
+
+
 @app.middleware("http")
 async def require_session(request: Request, call_next):
     # Looked up once and kept on the request, because the handler needs the
@@ -584,6 +613,10 @@ async def require_session(request: Request, call_next):
     gated = (path.startswith("/api/") and path not in OPEN_PATHS) or path in DOC_PATHS
     if gated and session is None:
         return JSONResponse({"detail": "Please sign in."}, status_code=401)
+    if path == UPLOAD_PATH and request.method == "POST":
+        refused = _upload_refusal(request.headers)
+        if refused is not None:
+            return refused
     response = await call_next(request)
     if session is not None and auth.cookie_due(session) and path != "/api/auth/logout":
         _send_cookie(response, request, session)
