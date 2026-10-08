@@ -331,15 +331,16 @@ def _take(when: str | None = None) -> dict[str, Any]:
         # days; two hundred rows a day would answer it no better.
         db.execute(
             "INSERT INTO play_snapshot_run"
-            " (day, taken_at, tracked, changed, anomalies)"
-            " VALUES (?, ?, ?, ?, ?)"
+            " (day, taken_at, tracked, changed, anomalies, without_uuid)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(day) DO UPDATE SET"
             "   taken_at = excluded.taken_at,"
             "   tracked = excluded.tracked,"
             "   changed = changed + excluded.changed,"
-            "   anomalies = anomalies + excluded.anomalies",
+            "   anomalies = anomalies + excluded.anomalies,"
+            "   without_uuid = excluded.without_uuid",
             (run_day, datetime.now(UTC).isoformat(timespec="seconds"),
-             len(current), len(changed), len(anomalies)))
+             len(current), len(changed), len(anomalies), unidentifiable))
 
     result = {
         "taken": True,
@@ -361,7 +362,19 @@ def _take(when: str | None = None) -> dict[str, Any]:
              " (baseline)" if baseline else "",
              f", {len(anomalies)} anomal{'y' if len(anomalies) == 1 else 'ies'}"
              if anomalies else "")
+    global _last_without_uuid
+    if unidentifiable and unidentifiable != _last_without_uuid:
+        # Said once per change, not every five minutes. These plays are
+        # dropped at every reading, and it used to be said nowhere but in
+        # the forced reading's own answer.
+        log.warning("%d played track(s) have no UUID, so their plays are not "
+                    "being recorded; Health lists the tracks with none",
+                    unidentifiable)
+    _last_without_uuid = unidentifiable
     return result
+
+
+_last_without_uuid = 0
 
 
 
@@ -817,6 +830,8 @@ def coverage(user_id: str) -> dict[str, Any]:
     collection.
     """
     db = store.connection()
+    latest = db.execute("SELECT without_uuid FROM play_snapshot_run"
+                        " ORDER BY day DESC LIMIT 1").fetchone()
     return {
         **memo.cached(("coverage", user_id), history_version(),
                       lambda: _person_coverage(user_id)),
@@ -829,6 +844,9 @@ def coverage(user_id: str) -> dict[str, Any]:
             "SELECT MAX(day) FROM play_snapshot_run").fetchone()[0],
         "up_to_date": read_recently(),
         "last_reading": last_reading(),
+        # Played tracks whose plays the last reading had to drop. A count of
+        # tracks, never names, so it is the same for everyone.
+        "without_uuid": latest[0] if latest else 0,
     }
 
 

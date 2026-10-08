@@ -826,3 +826,20 @@ def test_a_reading_that_fails_part_way_is_not_committed_by_the_next_write(wired)
         assert other.execute("SELECT COUNT(*) FROM play_snapshot").fetchone() == (0,)
     finally:
         other.close()
+
+
+# --- plays the collector has to drop (2L15) -----------------------------------------
+
+def test_plays_on_tracks_without_a_uuid_are_counted_where_people_look(wired, caplog):
+    """Dropped at every reading and said only in a forced reading's own
+    answer: not in the log, the status or the Listening panel."""
+    import logging
+
+    add_track(wired, "t1", tags=None)
+    played(wired, "t1", ALEX, 4)
+
+    with caplog.at_level(logging.WARNING):
+        playcounts.take("2026-03-01T10:00:00+00:00")
+
+    assert playcounts.coverage(ALEX)["without_uuid"] == 1
+    assert any("no UUID" in r.getMessage() for r in caplog.records)

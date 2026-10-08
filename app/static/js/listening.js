@@ -76,6 +76,14 @@ function coverage(cover, window) {
       ? `last read ${cover.last_reading.replace("T", " ")}`
       : "never read"));
 
+  // Plays the collector is dropping, because the track has no UUID to
+  // follow. Said here, where the missing plays would be noticed.
+  if (cover.without_uuid) {
+    boxes.push(stat(
+      "Not being recorded", cover.without_uuid.toLocaleString(),
+      "played tracks with no UUID; Health lists them"));
+  }
+
   listeningCoverage.replaceChildren(...boxes);
 }
 

@@ -251,3 +251,22 @@ def test_a_file_put_back_by_hand_is_seen_again(tmp_path):
         assert all(row["restored_at"] for row in store.quarantined(include_restored=True))
     finally:
         _close()
+
+
+def test_an_existing_run_log_gains_the_without_uuid_column(tmp_path):
+    """The Pi's state.db already has play_snapshot_run without it (2L15)."""
+    path = tmp_path / "state.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE play_snapshot_run (day TEXT PRIMARY KEY,"
+                " taken_at TEXT NOT NULL, tracked INTEGER NOT NULL,"
+                " changed INTEGER NOT NULL, anomalies INTEGER NOT NULL)")
+    old.execute("INSERT INTO play_snapshot_run VALUES ('2026-01-01', 'x', 1, 0, 0)")
+    old.commit()
+    old.close()
+
+    store.connect(path)
+    try:
+        assert store.connection().execute(
+            "SELECT without_uuid FROM play_snapshot_run").fetchone() == (0,)
+    finally:
+        _close()

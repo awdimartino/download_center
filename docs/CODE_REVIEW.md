@@ -1920,10 +1920,16 @@ R2 split of `library.js` lost nothing.
       **Fixed** as suggested: the repaired file takes the next free numbered
       name when another file has the one it wants (`free_name`), and the
       walk skips `duplicates-removed/`. New tests fail on the old code.
-- [ ] **2L15. Plays on tracks with no UUID are dropped every reading and
+- [x] **2L15. Plays on tracks with no UUID are dropped every reading and
       reported nowhere.** `app/playcounts.py:198-200,344-353`.
       `without_uuid` appears only in the forced snapshot's JSON. *Fix:*
       store it in the run log, log it, show it in coverage.
+      **Fixed** as suggested: `play_snapshot_run` has a `without_uuid`
+      column (added to existing databases by `_migrate`), each reading
+      records it, a non-zero count is logged as a warning once per change,
+      and `coverage()` returns it. The Listening panel shows a "Not being
+      recorded" box when it is above zero. It is a count, never names. New
+      tests fail on the old code, including the migration.
 - [ ] **2L16. `/api/playcounts/top` accepts unpadded dates and returns an
       empty range.** *Verified.* `app/main.py:2491-2499`. *Fix:* pass the
       parsed dates on, reformatted.

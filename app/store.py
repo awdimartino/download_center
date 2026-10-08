@@ -156,7 +156,10 @@ CREATE TABLE IF NOT EXISTS play_snapshot_run (
     taken_at   TEXT NOT NULL,
     tracked    INTEGER NOT NULL,
     changed    INTEGER NOT NULL,
-    anomalies  INTEGER NOT NULL
+    anomalies  INTEGER NOT NULL,
+    -- Played tracks the reading had to drop for having no UUID, as of the
+    -- day's latest reading.
+    without_uuid INTEGER NOT NULL DEFAULT 0
 );
 
 -- Albums a person has dealt with, whether or not MusicBrainz knows them. A
@@ -232,6 +235,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if "day" in columns and "played_at" not in columns:
             conn.execute(
                 "ALTER TABLE play_imported RENAME COLUMN day TO played_at")
+
+    # play_snapshot_run gains `without_uuid`.
+    if "play_snapshot_run" in tables:
+        columns = {row[1] for row in
+                   conn.execute("PRAGMA table_info(play_snapshot_run)")}
+        if "without_uuid" not in columns:
+            conn.execute("ALTER TABLE play_snapshot_run ADD COLUMN"
+                         " without_uuid INTEGER NOT NULL DEFAULT 0")
 
     # duplicate_dismissed gains `decided_by`, which is part of its key, so
     # the table is rebuilt rather than altered. Existing decisions keep an
