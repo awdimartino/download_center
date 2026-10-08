@@ -567,3 +567,13 @@ def test_a_squared_cover_is_stamped_after_the_rescan_not_before():
     square = square[:square.index("\n}\n")]
     assert "RESCAN_WAIT_MS" in square
     assert "album.art_version" in JS_FILES["library-shared.js"]
+
+
+def test_the_combine_dialog_keeps_its_focus_across_rebuilds():
+    """Spotify's guess arriving mid-word took the rest of the typing with it,
+    a keyboard move threw focus to the page, and the dialog neither took
+    focus nor held it (2M29). Checked in Chromium; this pins the wiring."""
+    combine = JS_FILES["library-combine.js"]
+    assert "restoreFocus(sheet, held, caret);" in combine
+    assert "up.dataset.focus = `up:${item.track.path}`;" in combine
+    assert 'libraryDialog.addEventListener("keydown"' in combine

@@ -147,11 +147,12 @@ function dialogShell(message) {
   return sheet;
 }
 
-function targetOption(checked, art, title, detail, onPick) {
+function targetOption(checked, art, title, detail, onPick, focusKey) {
   const option = el("label", `lib-target${checked ? " on" : ""}`);
   const radio = el("input");
   radio.type = "radio";
   radio.name = "combine-target";
+  radio.dataset.focus = focusKey;
   radio.checked = checked;
   radio.addEventListener("change", onPick);
   const words = el("span", "lib-target-text", title);
@@ -183,20 +184,22 @@ function renderCombine() {
         c.target = albumKey(album);
         c.cover = { folder: album.folder, art_id: album.art_id };
         renderCombine();
-      }));
+      }, `target:${albumKey(album)}`));
   }
   step1.append(targetOption(c.target === "new", el("span", "lib-plus", "+"),
     "A new album", "Or type the name of one you already have, and they join it", () => {
       c.target = "new";
       renderCombine();
-    }));
+    }, "target:new"));
   if (c.target === "new") {
     const fields = el("div", "lib-fields");
     const artist = editField("Album artist", c.various ? "Various Artists" : c.newArtist, { wide: true });
     artist.input.disabled = c.various;
+    artist.input.dataset.focus = "artist";
     artist.input.addEventListener("input", () => { c.newArtist = artist.input.value; updateSummary(); });
     const name = editField("Album", c.newTitle, { wide: true });
     name.input.placeholder = "The album's name";
+    name.input.dataset.focus = "name";
     name.input.addEventListener("input", () => { c.newTitle = name.input.value; updateSummary(); });
     fields.append(artist, name);
     step1.append(fields);
@@ -205,10 +208,12 @@ function renderCombine() {
         `Spotify has ${plural(c.guess.votes, "of these song")} on `
         + `“${c.guess.album}”${c.guess.year ? ` (${c.guess.year})` : ""}.`);
       if (c.newTitle !== c.guess.album) {
-        hint.append(" ", actionButton("Use that name", "ghost", () => {
+        const use = actionButton("Use that name", "ghost", () => {
           c.newTitle = c.guess.album;
           renderCombine();
-        }));
+        });
+        use.dataset.focus = "use-guess";
+        hint.append(" ", use);
       }
       step1.append(hint);
     }
@@ -216,6 +221,7 @@ function renderCombine() {
       const various = el("label", "lib-option");
       const box = el("input");
       box.type = "checkbox";
+      box.dataset.focus = "various";
       box.checked = c.various;
       box.addEventListener("change", () => { c.various = box.checked; renderCombine(); });
       various.append(box, `These come from ${c.albumArtists} artists — file them as `
@@ -244,9 +250,13 @@ function renderCombine() {
     words.append(el("small", "", `from ${item.album.album}`));
     const up = actionButton("↑", "ghost lib-move", () => move(index, index - 1));
     up.setAttribute("aria-label", `Move ${item.track.title} up`);
+    // Keyed by the track, not its place: after a move the same button is
+    // found in the row's new place and keeps the focus.
+    up.dataset.focus = `up:${item.track.path}`;
     up.disabled = index === 0;
     const down = actionButton("↓", "ghost lib-move", () => move(index, index + 1));
     down.setAttribute("aria-label", `Move ${item.track.title} down`);
+    down.dataset.focus = `down:${item.track.path}`;
     down.disabled = index === c.items.length - 1;
     row.append(el("span", "lib-grip", "⋮⋮"),
                el("span", "lib-ord-no", String(c.renumber ? index + 1 : item.track.track_no || "")),
@@ -270,6 +280,7 @@ function renderCombine() {
   const renumber = el("label", "lib-option");
   const box = el("input");
   box.type = "checkbox";
+  box.dataset.focus = "renumber";
   box.checked = c.renumber;
   box.addEventListener("change", () => { c.renumber = box.checked; renderCombine(); });
   renumber.append(box, `Number them 1–${c.items.length} in this order`);
@@ -284,12 +295,13 @@ function renderCombine() {
   const step3 = el("section", "lib-step");
   step3.append(el("h3", "", "3 · Cover"));
   const covers = el("div", "lib-cover-pick");
-  const coverChoice = (checked, art, label, choose) => {
+  const coverChoice = (checked, art, label, choose, focusKey) => {
     const option = el("label", "lib-cover-option");
     option.title = label;
     const radio = el("input");
     radio.type = "radio";
     radio.name = "combine-cover";
+    radio.dataset.focus = focusKey;
     radio.checked = checked;
     radio.addEventListener("change", choose);
     option.append(radio, art);
@@ -298,7 +310,8 @@ function renderCombine() {
   for (const album of c.albums) {
     covers.append(coverChoice(
       !!c.cover && c.cover.folder === album.folder, albumArt(album, 150), album.album,
-      () => { c.cover = { folder: album.folder, art_id: album.art_id }; }));
+      () => { c.cover = { folder: album.folder, art_id: album.art_id }; },
+      `cover:${album.folder}`));
   }
   if (c.guess && c.guess.cover) {
     const img = el("div", "art");
@@ -307,7 +320,8 @@ function renderCombine() {
     pic.src = c.guess.cover;
     img.append(pic);
     covers.append(coverChoice(!!c.cover && c.cover.url === c.guess.cover, img,
-      `Spotify: ${c.guess.album}`, () => { c.cover = { url: c.guess.cover }; }));
+      `Spotify: ${c.guess.album}`, () => { c.cover = { url: c.guess.cover }; },
+      "cover:spotify"));
   }
   step3.append(covers, el("p", "lib-note",
     "Whichever you pick goes on every track. A YouTube cover is squared first, "
@@ -317,6 +331,7 @@ function renderCombine() {
   const foot = el("div", "lib-sheet-foot");
   const summary = el("span", "lib-sheet-summary");
   const go = actionButton("", "", () => submitCombine(go));
+  go.dataset.focus = "go";
   function updateSummary() {
     const name = destination();
     summary.classList.toggle("tone-warn", !!c.error);
@@ -325,17 +340,69 @@ function renderCombine() {
     go.textContent = `Combine ${plural(c.items.length, "track")}`;
     go.disabled = !name.album || !name.albumartist;
   }
-  foot.append(summary, actionButton("Cancel", "ghost", () => closeCombine()), go);
+  const cancel = actionButton("Cancel", "ghost", () => closeCombine());
+  cancel.dataset.focus = "cancel";
+  foot.append(summary, cancel, go);
   updateSummary();
 
   const body = el("div", "lib-sheet-body");
   body.append(step1, step2, step3);
   sheet.append(head, body, foot);
+  sheet.tabIndex = -1;
   const scroll = libraryDialog.querySelector(".lib-sheet-body");
   const top = scroll ? scroll.scrollTop : 0;
+  // The whole sheet is rebuilt on every change, which used to throw the
+  // focus to the page behind: Spotify's guess arriving mid-word took the
+  // rest of the typing with it, and each keyboard move of a track meant
+  // tabbing back in from the top. The same control gets it back, caret and
+  // all; the first time, the sheet itself takes it.
+  const active = document.activeElement;
+  const held = active && libraryDialog.contains(active) ? active.dataset.focus : null;
+  const caret = held && typeof active.selectionStart === "number"
+    ? [active.selectionStart, active.selectionEnd] : null;
   libraryDialog.replaceChildren(sheet);
   body.scrollTop = top;
+  restoreFocus(sheet, held, caret);
 }
+
+function restoreFocus(sheet, held, caret) {
+  const find = (key) => key && sheet.querySelector(`[data-focus="${CSS.escape(key)}"]`);
+  let again = find(held);
+  if (again && again.disabled && held) {
+    // Moved to the end it was heading for: its other button.
+    const [way, path] = [held.slice(0, held.indexOf(":")), held.slice(held.indexOf(":") + 1)];
+    again = find(`${way === "up" ? "down" : "up"}:${path}`) || again;
+  }
+  if (again && !again.disabled) {
+    again.focus();
+    if (caret && again.setSelectionRange) {
+      try { again.setSelectionRange(caret[0], caret[1]); } catch { /* not a text box */ }
+    }
+  } else if (!held) {
+    sheet.focus();
+  }
+}
+
+// Tab stays inside the dialog while it is open; behind it is a page that
+// cannot be seen properly and should not be acted on.
+libraryDialog.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab" || libraryDialog.hidden) return;
+  const focusable = [...libraryDialog.querySelectorAll(
+    "button:not([disabled]), input:not([disabled]), [tabindex='0']")]
+    .filter((node) => node.offsetParent !== null);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && (document.activeElement === first
+                         || !libraryDialog.contains(document.activeElement)
+                         || document.activeElement === libraryDialog.querySelector(".lib-sheet"))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
 
 function destination() {
   const c = combining;

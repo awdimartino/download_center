@@ -1750,13 +1750,21 @@ R2 split of `library.js` lost nothing.
       test fails on the old code; in Chromium, S11 no longer sees a stamped
       fetch straight after squaring.
 
-- [ ] **2M29. The Combine dialog rebuilds itself under the user.**
+- [x] **2M29. The Combine dialog rebuilds itself under the user.**
       *Verified.* `app/static/js/library-combine.js:120-129,264-269,336`.
       Spotify's guess arriving mid-typing replaces the input and loses
       keystrokes; every keyboard ↑/↓ drops focus to the page; the dialog
       takes no focus on open and has no trap.
       *Fix:* update the hint and summary in place; re-focus the moved row's
       button; focus the sheet on open.
+      **Fixed** by making the rebuild keep focus, rather than splitting the
+      render: every control in the sheet carries a stable `data-focus` key
+      (the move buttons keyed by track path, not position), and after a
+      rebuild the same control gets the focus and its caret back. A track
+      moved to the end falls back to its other button. The sheet takes
+      focus when it opens, and Tab is kept inside the dialog. Verified in
+      Chromium: S5, S5b and a new S17 (focus on open, Tab trap), all BUG on
+      the old code.
 
 ## Low
 
