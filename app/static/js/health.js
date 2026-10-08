@@ -4,7 +4,7 @@
 // point: problems should be visible without anyone going looking, because
 // everything this catches is the kind of thing that stays quiet for months.
 
-import { el, setBanner, setNote } from "./core.js";
+import { apiFetch, el, setBanner, setNote } from "./core.js";
 import { setBadge } from "./nav.js";
 import { registerOperation, startOperation } from "./operations.js";
 
@@ -52,7 +52,7 @@ function renderHealth(report) {
 
 export async function loadHealth() {
   try {
-    const response = await fetch("/api/health");
+    const response = await apiFetch("/api/health");
     if (!response.ok) throw new Error(await response.text());
     renderHealth(await response.json());
   } catch (err) {

@@ -11,7 +11,7 @@
    anything anywhere. On a phone the whole thing folds into a pill at the
    bottom of the screen and opens as a sheet. */
 
-import { el, remoteArt, showError } from "./core.js";
+import { apiFetch, el, remoteArt, showError } from "./core.js";
 import { jobs, onJobs } from "./ws.js";
 
 const view = document.getElementById("view-browse");
@@ -214,7 +214,7 @@ function updateJob(job) {
 
 async function deleteJob(id) {
   try {
-    const response = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+    const response = await apiFetch(`/api/jobs/${id}`, { method: "DELETE" });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       showError(body.detail || "Could not remove that download.");
@@ -227,7 +227,7 @@ async function deleteJob(id) {
 async function cancelJob(id, button) {
   button.disabled = true;     // until the job's next message repaints it
   try {
-    const response = await fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
+    const response = await apiFetch(`/api/jobs/${id}/cancel`, { method: "POST" });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       showError(body.detail || "Could not cancel that download.");
@@ -242,7 +242,7 @@ async function cancelJob(id, button) {
 async function retryJob(id, button) {
   button.disabled = true;
   try {
-    const response = await fetch(`/api/jobs/${id}/retry`, { method: "POST" });
+    const response = await apiFetch(`/api/jobs/${id}/retry`, { method: "POST" });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       showError(body.detail || "Could not retry that.");

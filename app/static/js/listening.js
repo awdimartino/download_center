@@ -6,7 +6,7 @@
    captured - because the number that matters most is still "is this
    collecting or not". */
 
-import { el, setBanner } from "./core.js";
+import { apiFetch, el, setBanner } from "./core.js";
 import { stat, hourlyBars, albumBars, genreBars, sessionStats } from "./charts.js";
 
 const listeningEl = document.getElementById("listening");
@@ -112,7 +112,7 @@ export async function loadListening() {
     const query = listeningDates
       ? `start=${listeningDates.start}&end=${listeningDates.end}`
       : `days=${listeningDays}`;
-    const data = await fetch(
+    const data = await apiFetch(
       `/api/playcounts/top?${query}&limit=50`
     ).then((r) => r.json());
     if (mine !== listeningRequest) return;

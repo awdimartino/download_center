@@ -6,7 +6,7 @@
    get the bytes to /api/inbox/upload - the filing is the inbox's, the same
    as it is for the other two roads in. */
 
-import { el, libraryPicker, showError, targetLibrary } from "./core.js";
+import { apiFetch, el, libraryPicker, showError, targetLibrary } from "./core.js";
 
 const dropZone = document.getElementById("drop-zone");
 const dropInput = document.getElementById("drop-input");
@@ -138,7 +138,7 @@ function dropUpload(file, relpath, batch, onProgress) {
 // has arrived - not track by track while the cover is still uploading.
 async function dropFinish(batch) {
   const library = targetLibrary();
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/inbox/upload/finish?batch=${encodeURIComponent(batch)}`
       + (library !== null ? `&library_id=${library}` : ""),
     { method: "POST" });

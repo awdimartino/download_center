@@ -10,7 +10,7 @@
    it in the library, queued, downloading, failed - painted from the same
    jobs the Downloads panel draws, so nobody has to go and look. */
 
-import { el, duration, libraryPicker, remoteArt, showError, songRow, targetLibrary } from "./core.js";
+import { apiFetch, duration, el, libraryPicker, remoteArt, showError, songRow, targetLibrary } from "./core.js";
 import { jobs, onJobs } from "./ws.js";
 import { MOVING, expectJob, jobGroup, jobProgress, settledCount } from "./downloads.js";
 
@@ -136,7 +136,7 @@ async function queue(url, title, cover) {
   asked.add(url);
   repaint();
   try {
-    const response = await fetch("/api/jobs", {
+    const response = await apiFetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, library_id: targetLibrary() }),
@@ -377,7 +377,7 @@ async function runSearch() {
   resultsEl.classList.add("br-loading");
   try {
     const limit = kind === "all" ? 10 : 24;
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/search?q=${encodeURIComponent(q)}&type=${kind}&limit=${limit}`);
     const data = await response.json();
     if (token !== searchToken) return;
@@ -416,7 +416,7 @@ async function openArtist(id) {
   kindsEl.hidden = true;
   window.scrollTo({ top: 0 });
   try {
-    const response = await fetch(`/api/artists/${encodeURIComponent(id)}/albums`);
+    const response = await apiFetch(`/api/artists/${encodeURIComponent(id)}/albums`);
     const data = await response.json();
     if (token !== searchToken) return;
     if (!response.ok) return setMessage(data.detail || "Could not load that artist.");
@@ -536,7 +536,7 @@ async function openAlbum(id) {
 
   let album;
   try {
-    const response = await fetch(`/api/albums/${encodeURIComponent(id)}`);
+    const response = await apiFetch(`/api/albums/${encodeURIComponent(id)}`);
     album = await response.json();
     if (openAlbumId !== id) return;
     if (!response.ok) {

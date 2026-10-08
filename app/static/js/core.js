@@ -37,6 +37,25 @@ export function showError(message) {
   setBanner(errorEl, message, "error");
 }
 
+// Called when the server says the session has gone. Set by main.js, which
+// owns the sign-in form; nothing else needs to know how signing out works.
+let signedOut = null;
+
+export function whenSignedOut(callback) {
+  signedOut = callback;
+}
+
+// Every API call goes through here, so a 401 from any of them shows the
+// sign-in form. Only the socket's close code used to: a session that ended
+// while the socket stayed open - the 30-day cap, a removed account, a
+// sign-out in another tab - left every panel saying "Please sign in."
+// with no way to, until a reload.
+export async function apiFetch(path, options) {
+  const response = await fetch(path, options);
+  if (response.status === 401 && signedOut) signedOut();
+  return response;
+}
+
 export function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -81,7 +100,7 @@ export function songRow(tag, art, title, sub, end = []) {
 async function call(path) {
   showError("");
   try {
-    const response = await fetch(path, { method: "POST" });
+    const response = await apiFetch(path, { method: "POST" });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       showError(body.detail || `Request failed (${response.status})`);

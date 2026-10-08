@@ -59,6 +59,9 @@ function handleMessage(message) {
 
 let socket = null;
 let retryDelay = 1000;
+// Set by disconnect(): a close asked for is not a dropped connection to
+// reconnect.
+let closing = false;
 
 // `onSessionExpired` is called instead of this module reaching into
 // sign-in/bootstrap state directly - main.js owns started/healthTimer/the
@@ -68,6 +71,7 @@ let retryDelay = 1000;
 // `onOpen` runs on every open, the first and each reconnect: what the socket
 // missed while it was down is the caller's to catch up on.
 export function connect(onSessionExpired, onOpen) {
+  closing = false;
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(`${scheme}://${location.host}/ws`);
 
@@ -85,6 +89,7 @@ export function connect(onSessionExpired, onOpen) {
   socket.addEventListener("close", (event) => {
     connEl.textContent = "offline";
     connEl.className = "conn offline";
+    if (closing) return;
     // 4401 is this server saying the session has gone - a restart signs
     // everyone out. Reconnecting cannot fix that, and doing so forever
     // leaves the page looking merely offline when it needs a sign-in.
@@ -102,5 +107,6 @@ export function connect(onSessionExpired, onOpen) {
 // Called on sign-out, so the server sees a clean close rather than the
 // connection just dropping when the page reloads.
 export function disconnect() {
+  closing = true;
   if (socket) socket.close();
 }

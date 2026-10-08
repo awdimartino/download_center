@@ -23,7 +23,7 @@
    are library-attention.js, library-drawer.js and library-combine.js; what
    they share is library-shared.js. */
 
-import { el, setNote, songRow } from "./core.js";
+import { apiFetch, el, setNote, songRow } from "./core.js";
 import { barRows } from "./charts.js";
 import { setBadge } from "./nav.js";
 import {
@@ -676,7 +676,7 @@ document.getElementById("library-rescan").addEventListener("click", async () => 
   rescan.disabled = true;
   rescan.textContent = "Scanning…";
   try {
-    const payload = await fetch("/api/library/rescan", { method: "POST" })
+    const payload = await apiFetch("/api/library/rescan", { method: "POST" })
       .then((r) => r.json());
     setNote("library-op", payload.detail || "", payload.detail ? "warn" : "");
   } catch (err) {

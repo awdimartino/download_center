@@ -4,7 +4,7 @@
 // quality alone, because stars are migrated onto it rather than protected in
 // place - so the better file wins even when the worse one is the starred one.
 
-import { el, action, setBanner, showError } from "./core.js";
+import { action, apiFetch, el, setBanner, showError } from "./core.js";
 import { registerOperation, startOperation } from "./operations.js";
 import { setBadge } from "./nav.js";
 
@@ -142,7 +142,7 @@ function reportResolution(payload) {
 async function postDupe(path, body) {
   showError("");
   try {
-    const response = await fetch(path, {
+    const response = await apiFetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -218,7 +218,7 @@ function quarantineRow(entry) {
 
 async function loadQuarantine() {
   try {
-    const data = await fetch("/api/duplicates/quarantined").then((r) => r.json());
+    const data = await apiFetch("/api/duplicates/quarantined").then((r) => r.json());
     const entries = data.entries || [];
     quarantineList.replaceChildren(...entries.map(quarantineRow));
 
@@ -249,7 +249,7 @@ quarantineEl.addEventListener("toggle", () => {
 
 export async function loadDupes() {
   try {
-    const response = await fetch("/api/duplicates");
+    const response = await apiFetch("/api/duplicates");
     if (!response.ok) throw new Error((await response.json()).detail || response.status);
     renderDupes(await response.json());
   } catch (err) {
@@ -262,7 +262,7 @@ document.getElementById("dupe-auto").addEventListener("click", async (event) => 
   const button = event.currentTarget;
   button.disabled = true;
   try {
-    const preview = await fetch("/api/duplicates/auto", { method: "POST" })
+    const preview = await apiFetch("/api/duplicates/auto", { method: "POST" })
       .then((r) => r.json());
     if (!preview.eligible) {
       showError("Nothing is confident enough to resolve unattended.");

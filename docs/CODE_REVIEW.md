@@ -1641,7 +1641,7 @@ R2 split of `library.js` lost nothing.
       same four scenarios that showed the bug (all four BUG on the old code,
       all four clean now); a static test pins the wiring.
 
-- [ ] **2M22. A session that ends while the socket stays open never shows
+- [x] **2M22. A session that ends while the socket stays open never shows
       the sign-in form.** *Verified.* `app/static/js/main.js:129-136`,
       `app/static/js/ws.js:87`. Only socket close 4401 leads to sign-in; no
       JS looks at HTTP 401. After the 30-day cap, a removed account or a
@@ -1649,6 +1649,16 @@ R2 split of `library.js` lost nothing.
       reload.
       *Fix:* a shared fetch wrapper that handles 401 (see 2D5); close that
       user's sockets with 4401 in `auth.sign_out`.
+      **Fixed, both halves.** `core.js` has `apiFetch`, which calls the
+      handler main.js registers (`whenSignedOut`) on any 401; every API call
+      outside the sign-in flow now goes through it (30 call sites in 12
+      modules). The handler runs once however many requests fail at once,
+      and closes the socket; `ws.js`'s `disconnect()` no longer triggers a
+      reconnect. Server side, the broker records which session opened each
+      socket, and signing out closes that session's sockets, and only that
+      session's, with 4401. Verified in Chromium (S7 now shows the sign-in
+      form); new tests fail on the old code. This is the first piece of
+      2D5's shared fetch layer.
 
 - [ ] **2M23. Combine and *Use this* treat "not started" as success.**
       *Verified for combine; Use this by reading.*

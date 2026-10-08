@@ -509,3 +509,14 @@ def test_every_library_loader_shares_one_latest_load():
     assert "albumsRequest" not in JS
     assert JS_FILES["library.js"].count("const mine = ++libraryState.load;") == 2
     assert "const mine = ++libraryState.load;" in JS_FILES["library-attention.js"]
+
+
+def test_a_401_from_any_api_call_shows_the_sign_in_form():
+    """Only the socket's 4401 led to sign-in; a session that ended while the
+    socket stayed open left every panel saying "Please sign in." (2M22).
+    Checked in Chromium; this pins the wiring."""
+    raw = [name for name, text in JS_FILES.items()
+           if re.search(r"(?<![\w.])fetch\(", text) and name not in ("core.js", "main.js")]
+    assert raw == []
+    assert "if (response.status === 401 && signedOut) signedOut();" in JS_FILES["core.js"]
+    assert "whenSignedOut(handleSessionExpired);" in JS_FILES["main.js"]

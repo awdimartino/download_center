@@ -10,7 +10,7 @@
 // module a leaf - it does not import library.js or health.js - while the
 // original single-scope app.js had one hardcoded OPERATION_LABELS table and
 // an if/elseif chain that reached directly into both.
-import { setNote } from "./core.js";
+import { apiFetch, setNote } from "./core.js";
 
 const registry = {};
 
@@ -33,7 +33,7 @@ export async function startOperation(name, path, body) {
       request.headers = { "Content-Type": "application/json" };
       request.body = JSON.stringify(body);
     }
-    const payload = await fetch(path, request).then((r) => r.json());
+    const payload = await apiFetch(path, request).then((r) => r.json());
     if (payload.detail) {
       setNote(spec.note, payload.detail, "warn");
       return payload;
@@ -56,7 +56,7 @@ export async function startOperation(name, path, body) {
 export async function catchUpOperations(owner) {
   let data;
   try {
-    data = await fetch("/api/operations").then((r) => r.json());
+    data = await apiFetch("/api/operations").then((r) => r.json());
   } catch {
     return;  // The socket reports the next change anyway.
   }

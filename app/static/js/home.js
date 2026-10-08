@@ -11,7 +11,7 @@
    the Listening panel used to hold on its own. Nothing on this page is a
    control, and nothing is edited here. */
 
-import { setBanner } from "./core.js";
+import { apiFetch, setBanner } from "./core.js";
 import { monthlyChart, artistBars, stat } from "./charts.js";
 import { showView } from "./nav.js";
 import { selectDates } from "./listening.js";
@@ -250,7 +250,7 @@ function homeTiles(data) {
 
 export async function loadHome() {
   try {
-    const data = await fetch("/api/overview").then((r) => r.json());
+    const data = await apiFetch("/api/overview").then((r) => r.json());
     if (data.detail) {
       homeEmpty.hidden = false;
       homeEmpty.textContent = data.detail;

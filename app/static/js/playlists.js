@@ -6,7 +6,7 @@
    cannot offer a field the server would then refuse - add one in
    app/playlists.py and it appears here without touching this file. */
 
-import { el, setBanner } from "./core.js";
+import { apiFetch, el, setBanner } from "./core.js";
 
 // The date operators whose value is a number of days rather than a date.
 // Named in full: a substring test for "InTheLast" missed "inTheLast", so "in
@@ -259,7 +259,7 @@ function playlistCard(playlist) {
 
 export async function loadPlaylists() {
   try {
-    const response = await fetch("/api/playlists");
+    const response = await apiFetch("/api/playlists");
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not load playlists.");
     vocabulary = data.vocabulary;
@@ -314,7 +314,7 @@ playlistEditor.addEventListener("submit", async (event) => {
   }
 
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       editingId ? `/api/playlists/${editingId}` : "/api/playlists",
       {
         method: editingId ? "PUT" : "POST",
@@ -348,7 +348,7 @@ plDelete.addEventListener("click", async () => {
   const name = playlistEditor.elements.name.value || "this playlist";
   if (!confirm(`Delete ${name}? No tracks are touched — only the rules.`)) return;
   try {
-    const response = await fetch(`/api/playlists/${editingId}`, { method: "DELETE" });
+    const response = await apiFetch(`/api/playlists/${editingId}`, { method: "DELETE" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not delete.");
     closeEditor();

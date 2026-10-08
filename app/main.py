@@ -148,16 +148,40 @@ class Broker:
 
     def __init__(self) -> None:
         self._clients: dict[WebSocket, str] = {}
+        # Which session opened each socket, so signing out can close it.
+        self._sessions: dict[WebSocket, str] = {}
         self._lock = asyncio.Lock()
 
-    async def register(self, ws: WebSocket, username: str) -> None:
+    async def register(self, ws: WebSocket, username: str,
+                       session_id: str | None = None) -> None:
         await ws.accept()
         async with self._lock:
             self._clients[ws] = username
+            if session_id:
+                self._sessions[ws] = session_id
 
     async def unregister(self, ws: WebSocket) -> None:
         async with self._lock:
             self._clients.pop(ws, None)
+            self._sessions.pop(ws, None)
+
+    async def close_session(self, session_id: str) -> None:
+        """Close every socket a session opened, saying it has ended.
+
+        An open socket outlived its sign-out and went on receiving that
+        person's events, and the page behind it never learned it was signed
+        out. 4401 is what the page reads as "show the sign-in form".
+        """
+        async with self._lock:
+            sockets = [ws for ws, sid in self._sessions.items()
+                       if sid == session_id]
+            for ws in sockets:
+                self._clients.pop(ws, None)
+                self._sessions.pop(ws, None)
+        for ws in sockets:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(ws.close(code=4401),
+                                       timeout=self.SEND_TIMEOUT)
 
     # A client that has stopped reading must not hold up the others. Sends
     # were sequential and unbounded, so one phone on bad wifi with a full TCP
@@ -616,7 +640,10 @@ async def sign_in(request: Request, body: LoginRequest,
 
 @app.post("/api/auth/logout")
 async def sign_out(request: Request, response: Response) -> dict[str, bool]:
-    auth.sign_out(request.cookies.get(auth.COOKIE) or "")
+    session_id = request.cookies.get(auth.COOKIE) or ""
+    auth.sign_out(session_id)
+    if session_id:
+        await broker.close_session(session_id)
     response.delete_cookie(auth.COOKIE)
     return {"signed_out": True}
 
@@ -2634,7 +2661,8 @@ async def websocket(ws: WebSocket) -> None:
         await ws.accept()
         await ws.close(code=4401)
         return
-    await broker.register(ws, session.identity.username)
+    await broker.register(ws, session.identity.username,
+                          ws.cookies.get(auth.COOKIE))
     try:
         await ws.send_json({"type": "snapshot", "jobs": _visible_jobs(session)})
         while True:

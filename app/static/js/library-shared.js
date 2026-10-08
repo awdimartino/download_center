@@ -12,7 +12,7 @@
    runs; nothing at a module's top level may use another library module's
    `const` or `let`. */
 
-import { el, setNote } from "./core.js";
+import { apiFetch, el, setNote } from "./core.js";
 
 export const libraryView = document.getElementById("view-library");
 export const libraryEl = document.getElementById("library");
@@ -79,7 +79,7 @@ export function plural(n, word) {
 }
 
 export async function getJSON(path, options) {
-  const response = await fetch(path, options);
+  const response = await apiFetch(path, options);
   const data = await response.json().catch(() => ({}));
   // fetch does not throw on 4xx or 5xx, and an error body is a {detail}
   // with nothing else - which used to fall through to "your library is
@@ -235,7 +235,7 @@ export function showProgress(operation, { label, stopUrl = null, ordinal = false
     stop.addEventListener("click", async () => {
       stop.disabled = true;
       stop.textContent = "Stopping…";
-      const response = await fetch(stopUrl, { method: "POST" })
+      const response = await apiFetch(stopUrl, { method: "POST" })
         .catch(() => null);
       if (!response || !response.ok) {
         const data = response ? await response.json().catch(() => ({})) : {};

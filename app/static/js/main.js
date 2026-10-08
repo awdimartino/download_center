@@ -4,7 +4,7 @@
 // is reached through imports, which is also what wires the view registry
 // (nav.js) and settles module evaluation order before anything runs.
 
-import { setBanner, setLibraries, showError, warnEl } from "./core.js";
+import { setBanner, setLibraries, showError, warnEl, whenSignedOut } from "./core.js";
 import { connect, disconnect } from "./ws.js";
 import { viewHandlers, closeMenu } from "./nav.js";
 import { catchUpOperations } from "./operations.js";
@@ -127,7 +127,9 @@ let healthTimer = null;
 // to perform inline. Owned here rather than in ws.js, which only knows "the
 // server says the session is gone" and calls this back.
 function handleSessionExpired() {
+  if (!started) return;     // several requests can say so at once
   started = false;
+  disconnect();
   if (healthTimer) clearInterval(healthTimer);
   healthTimer = null;
   setBanner(warnEl, "");
@@ -138,6 +140,7 @@ function handleSessionExpired() {
 function start() {
   if (started) return;
   started = true;
+  whenSignedOut(handleSessionExpired);
   connect(handleSessionExpired, resumeOperations);
   // The panel the page opens on, so it is not blank until somebody
   // navigates away and back. Everything else waits for it: the Pi works

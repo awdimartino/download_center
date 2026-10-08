@@ -1,6 +1,6 @@
 "use strict";
 
-import { setBanner, warnEl } from "./core.js";
+import { apiFetch, setBanner, warnEl } from "./core.js";
 
 const settingsForm = document.getElementById("settings");
 const settingsNote = document.getElementById("settings-note");
@@ -18,7 +18,7 @@ const NUMBERS = { concurrency: parseInt, max_attempts: parseInt,
 // appeared above a list of duplicates and left you with no clear way back.
 export async function loadSettings() {
   settingsNote.textContent = "";
-  const values = await fetch("/api/settings").then((r) => r.json());
+  const values = await apiFetch("/api/settings").then((r) => r.json());
   const secrets = ["spotify_client_secret", "navidrome_password", "acoustid_key"];
   // A non-admin is sent nothing but `editable: false` - these settings hold
   // the service credentials and decide where every library lives, so there
@@ -66,7 +66,7 @@ settingsForm.addEventListener("submit", async (event) => {
   settingsForm.querySelectorAll('input[type="checkbox"]').forEach((box) => {
     if (!box.disabled) payload[box.name] = box.checked;
   });
-  const response = await fetch("/api/settings", {
+  const response = await apiFetch("/api/settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -95,7 +95,7 @@ settingsForm.addEventListener("submit", async (event) => {
 // Spotify.
 export async function checkSpotify() {
   try {
-    const response = await fetch("/api/status");
+    const response = await apiFetch("/api/status");
     if (!response.ok) return;
     const status = await response.json();
     setBanner(
