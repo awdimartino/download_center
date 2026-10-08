@@ -986,3 +986,22 @@ def test_a_failed_move_leaves_no_placeholder(tmp_path, monkeypatch):
 
     assert source.exists()
     assert list(target.parent.iterdir()) == []
+
+
+# --- names Navidrome would hide (2H4) ----------------------------------------
+
+@pytest.mark.parametrize("name, filed_as", [
+    (".38 Special", "_38 Special"),
+    (".5: The Gray Chapter", "_5_ The Gray Chapter"),
+    (".hack//SIGN", "_hack__SIGN"),
+])
+def test_a_single_leading_dot_is_not_left_to_hide_the_folder(name, filed_as):
+    """Navidrome skips a folder or file whose name starts with exactly one
+    dot, so the album was filed, reported Done and never appeared."""
+    assert filer.sanitize(name) == filed_as
+
+
+@pytest.mark.parametrize("name", ["...And Justice for All", "..Baby One More Time"])
+def test_two_or_more_leading_dots_are_kept(name):
+    """Navidrome scans these: an ellipsis is a title, not a hidden file."""
+    assert filer.sanitize(name) == name

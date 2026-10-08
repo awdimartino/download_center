@@ -1241,7 +1241,7 @@ R2 split of `library.js` lost nothing.
       stayed); the same scenario is clean after. A static test pins the
       wiring.
 
-- [ ] **2H4. A name starting with a dot may be filed where Navidrome never
+- [x] **2H4. A name starting with a dot may be filed where Navidrome never
       scans.** *Our side verified; Navidrome's side unverified.*
       `app/filer.py:65-73` (`sanitize`), `app/inbox.py:326`,
       `app/walk.py:39-43`. `.38 Special` and `.5: The Gray Chapter` are
@@ -1254,6 +1254,18 @@ R2 split of `library.js` lost nothing.
       *Check first:* make a dot-folder in a test library on the Pi and scan.
       *Fix:* replace a leading single dot in `sanitize`; report hidden
       folders in the inbox rather than pass over them.
+      **Fixed:** confirmed from Navidrome's source
+      (`scanner/walk_dir_tree.go`, `isDotEntry`): with `IgnoreDotFolders`
+      on, the default, a folder or a file whose name starts with exactly one
+      dot is skipped; two or more dots are scanned. `sanitize` now turns a
+      single leading dot into `_` (`.38 Special` → `_38 Special`) and keeps
+      `...And Justice for All`. The upload route keeps the dot on the file's
+      own name so it can still refuse macOS's `._` companions, and now
+      accepts a `...` title it used to refuse. New tests fail on the old
+      code. Not done here: the inbox still skips hidden folders, on purpose,
+      since `.incomplete` and a `.Trash` folder live there. Reporting what it
+      skipped is part of 2M6. Albums already filed under a dot-folder on the
+      Pi stay where they are until edited.
 
 ## Medium
 

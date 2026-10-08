@@ -971,3 +971,14 @@ def test_a_move_that_fails_partway_leaves_no_half_file(space, monkeypatch):
 
     assert source.read_bytes() == whole
     assert inbox.waiting(space) == []
+
+
+def test_an_uploaded_names_single_dot_survives_for_refusal_and_dots_are_kept():
+    """sanitize() now replaces a single leading dot (2H4); the upload route
+    still has to see it to refuse macOS's ._ companions. A title that is an
+    ellipsis is a real track and is kept as it is."""
+    from app import main
+
+    assert main._relpath_segments("Album/._01.mp3", None)[-1] == "._01.mp3"
+    assert main._relpath_segments("Album/... (Continued).mp3", None)[-1] \
+        == "... (Continued).mp3"

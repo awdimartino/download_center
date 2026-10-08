@@ -68,6 +68,12 @@ def sanitize(name: str) -> str:
     cleaned = _TRAILING.sub("", cleaned)
     if len(cleaned) > MAX_COMPONENT:
         cleaned = cleaned[:MAX_COMPONENT].rstrip(" .")
+    # Navidrome's scanner skips any folder or file whose name starts with
+    # exactly one dot, as hidden. ".38 Special" was filed, reported Done and
+    # never appeared. Two or more dots are not hidden ("...And Justice for
+    # All"), so only the single one is replaced.
+    if cleaned.startswith(".") and not cleaned.startswith(".."):
+        cleaned = f"_{cleaned[1:]}"
     if cleaned.split(".")[0].lower() in _RESERVED:
         cleaned = f"_{cleaned}"
     return cleaned or "unknown"

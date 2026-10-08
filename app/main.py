@@ -919,8 +919,11 @@ def _relpath_segments(relpath: str, filename: str | None) -> list[str]:
     if not raw:
         return []
     folders = [part.lstrip(".") for part in raw[:-1]]
-    return ([filer.sanitize(part) for part in folders if part.strip()]
-            + [filer.sanitize(raw[-1])])
+    name = raw[-1]
+    # sanitize() would turn the dot into an underscore and file the junk.
+    hidden = name.startswith(".") and not name.startswith("..")
+    last = f".{filer.sanitize(name[1:])}" if hidden else filer.sanitize(name)
+    return [filer.sanitize(part) for part in folders if part.strip()] + [last]
 
 
 @app.post("/api/inbox/upload")
@@ -941,7 +944,7 @@ async def upload_to_inbox(
     if not segments:
         raise HTTPException(status_code=400, detail="No filename given.")
     name = segments[-1]
-    if name.startswith("."):
+    if name.startswith(".") and not name.startswith(".."):
         # macOS's ._ companions, mostly. Hidden from the poller, so it
         # would sit in the inbox for ever.
         raise HTTPException(
