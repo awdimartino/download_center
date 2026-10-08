@@ -1420,13 +1420,17 @@ R2 split of `library.js` lost nothing.
       to downloads and drops too, not only moves. New test fails on the old
       code.
 
-- [ ] **2M9. `album_key_of` reads only the first file, so an untagged stray
+- [x] **2M9. `album_key_of` reads only the first file, so an untagged stray
       that sorts first re-UUIDs the whole album.** *Verified.*
       `app/filer.py:436-451`, used at `:358` and `app/main.py:2138`.
       `require_one_album` ignores strays, but if the stray is first, `was`
       is empty and `after_retag` mints rather than moves. The old key stays
       registered against a UUID no file carries.
       *Fix:* take `was` from `_by_album`, the key the tagged files share.
+      **Fixed** as suggested: `album_key_of` returns the one key the tagged
+      files share, or "" when none name an album or (defensively) more than
+      one do. Covers both callers, `retag_album` and *Use this*. New test
+      fails on the old code.
 
 - [ ] **2M10. A rename that fails part-way cannot be finished, and the
       suggested route splits the album.** *Verified.*

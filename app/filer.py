@@ -445,18 +445,16 @@ def album_key_of(folder: Path) -> str:
     """The registry key the files in a folder currently answer to.
 
     Read before a retag, so the album can be followed to whatever it becomes.
-    Taken from the first file: they are one album, and after the filer put
-    them there they agree about which.
+    The key the tagged files share, not the first file's: `require_one_album`
+    lets an untagged stray through, and when it sorted first there was no
+    key to follow, so the whole album was given a new UUID and lost its
+    stars and plays. Empty when no file names an album - each is then its
+    own record - or, defensively, when they name more than one.
     """
-    files = audio_in(folder)
-    if not files:
+    named, _ = _by_album(audio_in(folder))
+    if len(named) != 1:
         return ""
-    meta = read_meta(files[0])
-    if not meta.names_album:
-        # Nothing to follow: a folder of files that do not name an album has
-        # no album key to move, and each of them is its own record.
-        return ""
-    return registry.album_key(meta.albumartist, meta.album)
+    return next(iter(named))
 
 
 def after_retag(space: workspace.Workspace, paths: list[Path],

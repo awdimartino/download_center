@@ -1130,3 +1130,23 @@ def test_files_that_disagree_are_not_guessed_between(space):
 
     assert moved.album_uuid not in {album[0].album_uuid,
                                     "22222222-2222-4222-8222-222222222222"}
+
+
+# --- an untagged stray does not decide the album's key (2M9) -------------------
+
+def test_renaming_an_album_with_an_untagged_stray_first_keeps_its_uuid(space):
+    """require_one_album lets a file with no album tag through, but the key
+    was read from the first file alone: when the stray sorted first there
+    was nothing to follow, and the whole album got a new UUID."""
+    album = album_on_disk(space, "Boards", "Geogaddi", ["Music Is Math",
+                                                        "Sixtyten"])
+    folder = album[0].path.parent
+    stray = folder / "00 - stray.mp3"      # sorts first, names no album
+    shutil.copy(track(tmp_of(space), name="stray.mp3", albumartist="Boards",
+                      title="Stray"), stray)
+    before = album[0].album_uuid
+
+    moved = filer.retag_album(space, folder, album="Geogaddi (Remaster)")
+
+    tagged = [m for m in moved if m.album_key != registry.loose_key(m.track_uuid)]
+    assert {m.album_uuid for m in tagged} == {before}
