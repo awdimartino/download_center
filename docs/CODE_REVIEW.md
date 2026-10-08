@@ -1432,7 +1432,7 @@ R2 split of `library.js` lost nothing.
       one do. Covers both callers, `retag_album` and *Use this*. New test
       fails on the old code.
 
-- [ ] **2M10. A rename that fails part-way cannot be finished, and the
+- [x] **2M10. A rename that fails part-way cannot be finished, and the
       suggested route splits the album.** *Verified.*
       `app/filer.py:352-366,419-433`. If `write_tags` fails on file *k* (or
       the container dies), the folder holds two keys; retrying is refused as
@@ -1441,6 +1441,16 @@ R2 split of `library.js` lost nothing.
       *Fix:* write an intent record before the first tag write and let
       `retag_album` resume a folder whose two keys are exactly that pair; or
       roll back the files already written.
+      **Fixed, both ways.** `retag_album` saves the tags it is about to
+      replace on each file and, when a write fails, puts them back on the
+      files already written, so the folder keeps one name and a retry
+      works. For what a rollback cannot cover (the container stopping
+      mid-loop), it writes a hidden `.renaming` marker holding the old key
+      before the first write and removes it once the files are filed; a
+      folder holding the old key plus at most one other, with that marker,
+      is treated as the rename in progress and finished from the old key.
+      Without the marker two names are still refused. New tests; the
+      rollback one fails on the old code.
 
 - [ ] **2M11. Health fails permanently once an artist has two album-less
       tracks.** *Verified.* `app/diskaudit.py:137-140`,

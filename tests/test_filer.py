@@ -1150,3 +1150,58 @@ def test_renaming_an_album_with_an_untagged_stray_first_keeps_its_uuid(space):
 
     tagged = [m for m in moved if m.album_key != registry.loose_key(m.track_uuid)]
     assert {m.album_uuid for m in tagged} == {before}
+
+
+# --- a rename that fails part way (2M10) ----------------------------------------
+
+def test_a_rename_that_fails_part_way_puts_back_what_it_wrote(space, monkeypatch):
+    """A failure on file k used to leave 0..k-1 renamed: a folder with two
+    names, which every album action then refused."""
+    album = album_on_disk(space, "Boards", "Geogaddi", ["One", "Two", "Three"])
+    folder = album[0].path.parent
+    real = filer.write_tags
+    calls = {"n": 0}
+
+    def fails_second(path, **fields):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise filer.NotEditable("No space left on device")
+        real(path, **fields)
+
+    monkeypatch.setattr(filer, "write_tags", fails_second)
+    with pytest.raises(filer.NotEditable):
+        filer.retag_album(space, folder, album="Geogaddi (Remaster)")
+
+    assert {filer.read_meta(p).album for p in filer.audio_in(folder)} == {"Geogaddi"}
+    assert not (folder / filer.RENAMING).exists()
+
+    monkeypatch.setattr(filer, "write_tags", real)
+    moved = filer.retag_album(space, folder, album="Geogaddi (Remaster)")
+    assert {m.album_uuid for m in moved} == {album[0].album_uuid}
+
+
+def test_a_rename_cut_short_by_a_restart_can_be_finished(space):
+    """Nothing can roll back a container that stopped mid-loop. The marker
+    left in the folder says the second name is the first one's rename."""
+    import json
+
+    album = album_on_disk(space, "Boards", "Geogaddi", ["One", "Two", "Three"])
+    folder = album[0].path.parent
+    (folder / filer.RENAMING).write_text(
+        json.dumps({"was": album[0].album_key}), encoding="utf-8")
+    filer.write_tags(album[0].path, album="Geogaddi (Remaster)")   # then it stopped
+
+    moved = filer.retag_album(space, folder, album="Geogaddi (Remaster)")
+
+    assert {m.album_uuid for m in moved} == {album[0].album_uuid}
+    assert len({m.path.parent for m in moved}) == 1
+    assert not folder.exists()
+
+
+def test_without_the_marker_two_names_are_still_refused(space):
+    album = album_on_disk(space, "Boards", "Geogaddi", ["One", "Two"])
+    folder = album[0].path.parent
+    filer.write_tags(album[0].path, album="Something Else")
+
+    with pytest.raises(filer.NotEditable):
+        filer.retag_album(space, folder, album="Geogaddi")

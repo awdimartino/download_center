@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import json
 import logging
 import os
 import re
@@ -288,6 +289,52 @@ def write_tags(path: Path, **fields: Any) -> None:
         raise NotEditable(f"{type(exc).__name__}: {exc}") from exc
 
 
+def _saved_tags(path: Path, fields: dict[str, Any]) -> dict[str, list[str] | None]:
+    """The values `write_tags` is about to replace, to put back if it must."""
+    from mutagen import File as MutagenFile
+
+    audio = MutagenFile(path, easy=True)
+    tags = audio.tags if audio is not None and audio.tags is not None else {}
+    saved: dict[str, list[str] | None] = {}
+    for name in fields:
+        key = _EASY.get(name)
+        if key is not None:
+            value = tags.get(key)
+            saved[key] = list(value) if value else None
+    return saved
+
+
+def _restore_tags(path: Path, saved: dict[str, list[str] | None]) -> None:
+    from mutagen import File as MutagenFile
+
+    audio = MutagenFile(path, easy=True)
+    if audio is None:
+        return
+    if audio.tags is None:
+        audio.add_tags()
+    for key, value in saved.items():
+        if value is None:
+            audio.tags.pop(key, None)
+        else:
+            audio.tags[key] = value
+    audio.save()
+
+
+# Left in an album's folder while it is being renamed, saying what it was
+# called. Hidden, so Navidrome skips it. If the rename is cut short - the
+# container stops part way through - the folder holds two names, which an
+# album action refuses; this says the second is the first one's rename, so
+# renaming again can finish the job instead of splitting the album.
+RENAMING = ".renaming"
+
+
+def _renaming_from(folder: Path) -> str | None:
+    try:
+        return json.loads((folder / RENAMING).read_text(encoding="utf-8"))["was"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def _album_identity(path: Path) -> tuple[str, str, bool]:
     """What this file currently says about which album it is on."""
     meta = read_meta(path)
@@ -358,15 +405,43 @@ def retag_album(space: workspace.Workspace, folder: Path,
     files = audio_in(folder)
     if not files:
         raise NotEditable("there is nothing in that folder to edit")
-    require_one_album(folder)
+    interrupted = _renaming_from(folder)
+    named, _ = _by_album(files)
+    if interrupted and interrupted in named and len(named) <= 2:
+        # A rename that was cut short: the old name and the one it was
+        # becoming. Finish it, following the album from where it started.
+        was = interrupted
+    else:
+        require_one_album(folder)
+        was = album_key_of(folder)
     check_writable(files)
 
-    was = album_key_of(folder)
-    for path in files:
-        write_tags(path, **fields)
+    marker = folder / RENAMING
+    if was:
+        marker.write_text(json.dumps({"was": was}), encoding="utf-8")
+    written: list[tuple[Path, dict[str, list[str] | None]]] = []
+    try:
+        for path in files:
+            saved = _saved_tags(path, fields)
+            write_tags(path, **fields)
+            written.append((path, saved))
+    except Exception:
+        # Put back what was already written. A disk filling on file k of
+        # an album used to leave 0..k-1 renamed and the rest not: a folder
+        # with two names, which every album action then refused.
+        for path, saved in reversed(written):
+            try:
+                _restore_tags(path, saved)
+            except Exception:
+                log.exception("could not put back the tags on %s", path)
+        with contextlib.suppress(OSError):
+            marker.unlink()
+        raise
 
     after_retag(space, files, was)
     filed = [file_track(space, path) for path in files]
+    with contextlib.suppress(OSError):
+        marker.unlink()
     leave_folder(folder, {one.path.parent for one in filed},
                   space.library_path)
     return filed
