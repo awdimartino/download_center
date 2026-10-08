@@ -2095,10 +2095,32 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 .lib-todo-text { flex: 1 1 18rem; min-width: 0; }
 .lib-todo-text h3 { margin: 0; font-size: var(--t-lg); font-weight: var(--w-bold); }
 .lib-todo-text h3 small { color: var(--faint); font-size: var(--t-sm); font-weight: var(--w-normal); }
+.lib-todo-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-radius: var(--r-sm);
+}
+.lib-todo-toggle:hover, .lib-todo-toggle:active { background: transparent; }
+.lib-todo-toggle:hover .lib-todo-chevron { color: var(--text); }
+.lib-todo-chevron {
+  display: inline-block;
+  width: 1em;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.lib-todo.collapsed .lib-todo-chevron { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .lib-todo-chevron { transition: none; } }
 .lib-todo-text p { margin: var(--s-0) 0 0; color: var(--muted); font-size: var(--t-sm); }
 .lib-done { color: var(--ok); font-size: var(--t-sm); }
 .lib-group { padding: var(--s-3) 0; border-top: 1px solid var(--line-soft); }
-.lib-todo-head + .lib-group { margin-top: var(--s-3); }
+.lib-todo-body > .lib-group:first-child { margin-top: var(--s-3); }
 
 .lib-strip { display: flex; gap: var(--s-3); overflow-x: auto; padding: var(--s-3) 0 var(--s-1); }
 .lib-mini { flex: 0 0 112px; }

@@ -129,21 +129,70 @@ function miniCard(album, sub) {
   return clickable(card, album);
 }
 
-function todoSection({ title, count, why, albums, actions = [], sub }) {
+// Sections the person has folded away, by title. One long section - forty
+// groups of singles - used to push everything below it off the screen, with
+// no way past it but scrolling.
+function collapsed() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem("library.collapsed") || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function setCollapsed(title, closed) {
+  const set = collapsed();
+  if (closed) set.add(title);
+  else set.delete(title);
+  remember("collapsed", JSON.stringify([...set]));
+}
+
+let sectionIds = 0;
+
+// The frame every section shares: a heading that folds the section, the
+// reason it exists, and a body for its contents. The actions stay in the
+// heading when folded, so "Measure all" is still a click away.
+function sectionShell({ title, count, why, actions = [] }) {
   const section = el("section", "lib-todo");
   const head = el("div", "lib-todo-head");
   const text = el("div", "lib-todo-text");
-  const h = el("h3", "", title);
-  if (count !== undefined) h.append(el("small", "", ` ${count.toLocaleString()}`));
-  text.append(h, el("p", "", why));
+  const body = el("div", "lib-todo-body");
+  body.id = `lib-todo-${++sectionIds}`;
+  const toggle = el("button", "lib-todo-toggle");
+  toggle.type = "button";
+  toggle.setAttribute("aria-controls", body.id);
+  toggle.append(el("span", "lib-todo-chevron", "▾"), el("span", "", title));
+  if (count !== undefined) toggle.append(el("small", "", ` ${count.toLocaleString()}`));
+  const h = el("h3");
+  h.append(toggle);
+  const reason = el("p", "", why);
+  text.append(h, reason);
   head.append(text);
   if (count === 0) head.append(el("span", "lib-done", "✓ All clear"));
   else head.append(...actions);
-  section.append(head);
+  section.append(head, body);
+
+  const show = (open) => {
+    section.classList.toggle("collapsed", !open);
+    toggle.setAttribute("aria-expanded", String(open));
+    body.hidden = !open;
+    reason.hidden = !open;
+  };
+  show(!collapsed().has(title));
+  toggle.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") !== "true";
+    setCollapsed(title, !open);
+    show(open);
+  });
+  return { section, body };
+}
+
+function todoSection({ title, count, why, albums, actions = [], sub }) {
+  const { section, body } = sectionShell({ title, count, why, actions });
   if (albums && albums.length) {
     const strip = el("div", "lib-strip");
     strip.append(...albums.map((a) => miniCard(a, sub && sub(a))));
-    section.append(strip);
+    body.append(strip);
   }
   return section;
 }
@@ -163,15 +212,12 @@ export async function loadAttention() {
   }
 
   const groups = suggestedGroups();
-  const together = el("section", "lib-todo");
-  const head = el("div", "lib-todo-head");
-  const text = el("div", "lib-todo-text");
-  text.append(el("h3", "", "Singles that belong together"),
-              el("p", "", "Songs downloaded one at a time arrive as an album each. "
-                + "Two or more by one artist are offered here to combine."));
-  head.append(text);
-  if (!groups.length) head.append(el("span", "lib-done", "✓ All clear"));
-  together.append(head);
+  const { section: together, body: groupList } = sectionShell({
+    title: "Singles that belong together",
+    count: groups.length,
+    why: "Songs downloaded one at a time arrive as an album each. "
+      + "Two or more by one artist are offered here to combine.",
+  });
   for (const group of groups) {
     const row = el("div", "lib-group");
     const words = el("span", "lib-suggest-text", group.albums.map((a) => a.album).join(", "));
@@ -182,7 +228,7 @@ export async function loadAttention() {
         dismiss(group);
         loadAttention();
       }));
-    together.append(row);
+    groupList.append(row);
   }
 
   const covers = el("div");
