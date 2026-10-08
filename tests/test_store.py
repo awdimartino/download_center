@@ -270,3 +270,26 @@ def test_an_existing_run_log_gains_the_without_uuid_column(tmp_path):
             "SELECT without_uuid FROM play_snapshot_run").fetchone() == (0,)
     finally:
         _close()
+
+
+def test_a_migration_left_half_done_is_finished(tmp_path):
+    """Each step committed on its own, so a stop after the rename stranded
+    every "keep both" in duplicate_dismissed_old beside an empty new table,
+    and the next start never copied them (2L18)."""
+    path = tmp_path / "state.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE duplicate_dismissed_old (group_key TEXT PRIMARY KEY,"
+                " note TEXT, decided_at TEXT NOT NULL)")
+    old.execute("INSERT INTO duplicate_dismissed_old VALUES ('g1', 'keep both', 'x')")
+    old.execute("CREATE TABLE duplicate_dismissed (group_key TEXT NOT NULL,"
+                " decided_by TEXT NOT NULL DEFAULT '', note TEXT,"
+                " decided_at TEXT NOT NULL, PRIMARY KEY (group_key, decided_by))")
+    old.commit()
+    old.close()
+
+    store.connect(path)
+    try:
+        assert store.dismissed_duplicates() == {"g1"}
+        assert "duplicate_dismissed_old" not in _tables(path)
+    finally:
+        _close()

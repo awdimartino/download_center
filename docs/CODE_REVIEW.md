@@ -1940,10 +1940,15 @@ R2 split of `library.js` lost nothing.
       **Fixed** as suggested: the zeros now come with `available: false`
       and the reason, and Home shows a warning banner saying the numbers are
       not real. New test fails on the old code.
-- [ ] **2L18. The `duplicate_dismissed` migration is not atomic.**
+- [x] **2L18. The `duplicate_dismissed` migration is not atomic.**
       *Verified.* `app/store.py:231-248`. A crash between steps strands the
       old table, and every "keep both" returns to the review list. *Fix:*
       explicit `BEGIN`/`COMMIT`; copy from `_old` whenever it exists.
+      **Fixed** as suggested: the four steps run in one explicit
+      transaction, and a `duplicate_dismissed_old` found at start-up (from
+      an older version stopped mid-way) is copied across without
+      overwriting newer decisions, then dropped. New test fails on the old
+      code.
 - [ ] **2L19. Last.fm temporary errors are not retried.** Body errors 8,
       16 and 29 and HTTP 429 throw away the whole fetch (the rest of 2M16).
 

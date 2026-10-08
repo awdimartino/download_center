@@ -248,24 +248,53 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # the table is rebuilt rather than altered. Existing decisions keep an
     # empty `decided_by`: nobody recorded who made them, so they still apply
     # to everyone.
+    #
+    # One transaction for all four steps. Each used to commit on its own, so
+    # a stop between the rename and the copy left the decisions stranded in
+    # duplicate_dismissed_old beside an empty new table - and the next start
+    # saw `decided_by` present and never copied them, so every "keep both"
+    # came back to the review list.
     if "duplicate_dismissed" in tables:
         columns = {row[1] for row in
                    conn.execute("PRAGMA table_info(duplicate_dismissed)")}
         if "decided_by" not in columns:
-            conn.execute("ALTER TABLE duplicate_dismissed"
-                         " RENAME TO duplicate_dismissed_old")
+            conn.execute("BEGIN")
+            try:
+                conn.execute("ALTER TABLE duplicate_dismissed"
+                             " RENAME TO duplicate_dismissed_old")
+                conn.execute(
+                    "CREATE TABLE duplicate_dismissed ("
+                    " group_key TEXT NOT NULL,"
+                    " decided_by TEXT NOT NULL DEFAULT '',"
+                    " note TEXT, decided_at TEXT NOT NULL,"
+                    " PRIMARY KEY (group_key, decided_by))")
+                conn.execute(
+                    "INSERT INTO duplicate_dismissed"
+                    " (group_key, decided_by, note, decided_at)"
+                    " SELECT group_key, '', note, decided_at"
+                    " FROM duplicate_dismissed_old")
+                conn.execute("DROP TABLE duplicate_dismissed_old")
+                conn.execute("COMMIT")
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+            tables.discard("duplicate_dismissed_old")
+
+    # A migration an older version left half done: the decisions are still
+    # in the old table. Copied across, without overwriting any made since.
+    if "duplicate_dismissed_old" in tables and "duplicate_dismissed" in tables:
+        conn.execute("BEGIN")
+        try:
             conn.execute(
-                "CREATE TABLE duplicate_dismissed ("
-                " group_key TEXT NOT NULL,"
-                " decided_by TEXT NOT NULL DEFAULT '',"
-                " note TEXT, decided_at TEXT NOT NULL,"
-                " PRIMARY KEY (group_key, decided_by))")
-            conn.execute(
-                "INSERT INTO duplicate_dismissed"
+                "INSERT OR IGNORE INTO duplicate_dismissed"
                 " (group_key, decided_by, note, decided_at)"
                 " SELECT group_key, '', note, decided_at"
                 " FROM duplicate_dismissed_old")
             conn.execute("DROP TABLE duplicate_dismissed_old")
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
 
 
 class _Rows:
