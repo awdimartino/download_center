@@ -1,4 +1,6 @@
-FROM python:3.13-slim
+# Pinned by digest as well as tag, so a rebuild of one commit starts from the
+# same image; Dependabot moves it forward (.github/dependabot.yml).
+FROM python:3.13-slim@sha256:bf44cdfcb76cd3b41e879bc058fc37ec5872002ccfde7fcb765e218cde0cd79c
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -18,8 +20,8 @@ RUN apt-get update \
 WORKDIR /app
 
 # Copied on its own so the dependency layer is cached across code changes.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY app ./app
 # The one-off maintenance scripts, run with `docker exec` or `docker run

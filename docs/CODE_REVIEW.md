@@ -1872,9 +1872,21 @@ R2 split of `library.js` lost nothing.
       older than the window, not only the asking address's. Offered matches
       are recorded through `_offer`, which keeps when each list was made and
       drops lists older than a day. New tests fail on the old code.
-- [ ] **2L11. Transitive dependencies float.** Only top-level requirements
+- [x] **2L11. Transitive dependencies float.** Only top-level requirements
       are pinned and the base image is not pinned by digest. Dev runs
       Python 3.14 against 3.13 in the image.
+      **Fixed, two of three.** New `constraints.txt` pins the 36 packages
+      the direct requirements pull in, resolved with `uv pip compile` for
+      Python 3.13 on Linux (identical for ARM and x86); the image and CI
+      install with `-c constraints.txt`. Direct requirements are left out of
+      it so Dependabot's bumps to `requirements.txt` do not conflict. The
+      Dockerfile pins `python:3.13-slim` by digest, and Dependabot now
+      watches the Docker base too. A constrained install resolves (`pip
+      install --dry-run`). **Left for you:** the local `.venv` is Python
+      3.14 while the image is 3.13; a 3.13 is installed on this machine if
+      you want the venv rebuilt on it. **Note for the next deploy:** the
+      transitive versions are today's latest, not what the current image
+      happened to get, so the next build may move a few of them.
 
 ### Library and listening
 

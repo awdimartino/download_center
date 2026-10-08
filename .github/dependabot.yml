@@ -8,6 +8,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  # The base image, pinned by digest in the Dockerfile: security fixes to
+  # Debian and Python arrive as a pull request instead of never.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

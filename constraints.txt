@@ -1,0 +1,48 @@
+# Every package the direct requirements pull in, pinned, so two builds of
+# one commit install the same thing. Only requirements.txt was pinned, and
+# everything beneath it - beets' tree, uvicorn's, pydantic - floated to
+# whatever was newest on the day the image was built.
+#
+# Direct requirements are left out on purpose: they are pinned in
+# requirements.txt, where Dependabot bumps them, and pinning them here too
+# would make every bump a conflict.
+#
+# Regenerate after changing requirements.txt, for the image's platform:
+#   uv pip compile requirements.txt --python-version 3.13 #     --python-platform aarch64-unknown-linux-gnu --no-header -o lock.txt
+# then keep the lines for packages not named in requirements.txt.
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+audioop-lts==0.2.2
+audioread==3.1.0
+certifi==2026.7.22
+charset-normalizer==3.5.2
+click==8.5.0
+confuse==2.3.0
+filetype==1.2.0
+h11==0.16.0
+httptools==0.8.0
+idna==3.20
+jellyfish==1.2.1
+lap==0.5.13
+mediafile==0.17.0
+numpy==2.5.3
+packaging==26.3
+platformdirs==4.12.4
+pydantic-core==2.46.5
+pydantic==2.13.5
+pyrate-limiter==4.5.0
+python-dotenv==1.2.4
+redis==8.1.0
+requests-ratelimiter==0.10.0
+standard-aifc==3.13.0
+standard-chunk==3.13.0
+standard-sunau==3.13.0
+starlette==0.49.3
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+unidecode==1.4.0
+urllib3==2.8.0
+uvloop==0.23.0
+watchfiles==1.3.0
+websockets==17.2
