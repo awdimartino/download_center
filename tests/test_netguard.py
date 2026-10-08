@@ -11,7 +11,8 @@ import socket
 
 import pytest
 
-from app import generic, main, netguard
+from app import generic, netguard
+from app import jobs
 
 
 @pytest.mark.parametrize("url", [
@@ -46,4 +47,4 @@ def test_a_public_address_is_allowed(monkeypatch):
 
 def test_queuing_a_direct_link_to_the_lan_is_refused():
     with pytest.raises(generic.ResolveError, match="private network"):
-        main.validate("http://192.168.1.1/admin")
+        jobs.validate("http://192.168.1.1/admin")

@@ -98,8 +98,12 @@ has been done and written up; fixing what it found comes next.
         notes and the IDE workspace point at it).
       Then update SETUP.md (settings table, "Moving from the old name") and
       the 2026-10-04 decisions-log entry that says the prefix stays.
-- [ ] **Split `app/main.py` into routers.** 2,287 lines holding every
-      route. The review proposes a split.
+- [x] **Split `app/main.py` into routers.** 2,287 lines holding every
+      route. The review proposes a split. **Done** (CODE_REVIEW R1):
+      `app/main.py` is the application, its middleware and the page;
+      routes are in `app/api/`, one router per panel; job state in
+      `app/jobs.py`, the socket broker in `app/events.py`, the loops in
+      `app/background.py`.
 - [ ] **Folders holding more than one album.** Found 2026-09-28: 57 of
       Alex's folders carry more than one album UUID (e.g. `Aiden
       Williams/Believe` holds *Believe*, *Breakup* and *Continuum EP*;

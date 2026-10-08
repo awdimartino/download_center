@@ -10,6 +10,8 @@ from __future__ import annotations
 import pytest
 
 from app import playlists
+from app import playlists as smart_playlists
+from app.api import playlists as playlists_routes
 
 SCOPE = {"is": {"library_id": 1}}
 
@@ -274,15 +276,14 @@ async def test_updating_a_playlist_with_navidrome_down_is_a_502(monkeypatch):
 
     from fastapi import HTTPException
 
-    from app import main
 
     def down(identity):
         raise ConnectionRefusedError("Connection refused")
 
-    monkeypatch.setattr(main.smart_playlists, "mine", down)
+    monkeypatch.setattr(smart_playlists, "mine", down)
     with pytest.raises(HTTPException) as refused:
-        await main.update_playlist(
-            "p1", main.PlaylistRequest(name="x", form={}),
+        await playlists_routes.update_playlist(
+            "p1", playlists_routes.PlaylistRequest(name="x", form={}),
             SimpleNamespace(identity=None, id="s"))
     assert refused.value.status_code == 502
 

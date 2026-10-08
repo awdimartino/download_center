@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from app import generic, main, spotify
+from app import generic, spotify
+from app import jobs
 
 BROWSE = (Path(__file__).resolve().parent.parent / "app" / "static" / "js"
           / "browse.js").read_text(encoding="utf-8")
@@ -31,7 +32,7 @@ def test_every_form_parses_to_the_same_album(link):
     assert spotify.parse_link(link) == ("album", "4yP0hdKOZPNshxUOjY0cZj")
     assert spotify.canonical(link) == \
         "https://open.spotify.com/album/4yP0hdKOZPNshxUOjY0cZj"
-    main.validate(link)
+    jobs.validate(link)
 
 
 @pytest.mark.parametrize("link", ["https://spotify.link/AbC123xyz",
@@ -44,8 +45,8 @@ def test_a_short_link_goes_to_spotify_not_yt_dlp(link, monkeypatch):
                         or "https://open.spotify.com/track/abc")
     monkeypatch.setattr(spotify, "resolve",
                         lambda kind, sid, limit=None: ("A song", [{"id": sid, "kind": kind}]))
-    main.validate(link)
-    assert main._resolve(link) == ("track", "A song", [{"id": "abc", "kind": "track"}])
+    jobs.validate(link)
+    assert jobs._resolve(link) == ("track", "A song", [{"id": "abc", "kind": "track"}])
     assert followed == [link]
 
 
@@ -81,7 +82,7 @@ def test_other_sites_still_go_to_yt_dlp(monkeypatch):
 
     monkeypatch.setattr(netguard, "check", lambda url: None)
     assert not spotify.is_spotify("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-    main.validate("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    jobs.validate("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 
 
 def _page_test():
@@ -151,5 +152,5 @@ def test_the_job_resolver_passes_the_limit(monkeypatch):
         return "x", [{"id": "t"}]
 
     monkeypatch.setattr(spotify, "resolve", resolve)
-    main._resolve("https://open.spotify.com/playlist/abc")
-    assert seen["limit"] == main.MAX_TRACKS_PER_JOB
+    jobs._resolve("https://open.spotify.com/playlist/abc")
+    assert seen["limit"] == jobs.MAX_TRACKS_PER_JOB

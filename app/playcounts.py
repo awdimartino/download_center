@@ -381,7 +381,7 @@ _last_without_uuid = 0
 
 
 
-# Six missed readings at the cadence in main.py. Long enough that a slow
+# Six missed readings at the cadence in background.py. Long enough that a slow
 # run or a restart is not an alarm, short enough that a collector which
 # died this morning is not still reported healthy this evening.
 STALE_AFTER_MINUTES = 30

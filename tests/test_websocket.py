@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from app import main
+from app import auth
+from app import events
+from app.api import jobs as jobs_routes
+from app import jobs
+from app.api import deps
 
 
 class FakeSocket:
@@ -29,7 +33,7 @@ class FakeSocket:
 async def test_an_expired_session_is_told_so_with_4401():
     socket = FakeSocket()
 
-    await main.websocket(socket)
+    await jobs_routes.websocket(socket)
 
     assert socket.calls == ["accept", ("close", 4401)]
 
@@ -54,9 +58,8 @@ class _Socket:
 async def test_signing_out_closes_that_sessions_sockets_only():
     """An open socket outlived its sign-out, went on receiving that person's
     events, and the page behind it never showed the sign-in form."""
-    from app import main
 
-    broker = main.Broker()
+    broker = events.Broker()
     mine, other_tab = _Socket(), _Socket()
     await broker.register(mine, "alex", "session-1")
     await broker.register(other_tab, "alex", "session-2")
@@ -75,14 +78,13 @@ async def test_a_client_dropped_for_stalling_is_closed_not_just_forgotten(monkey
     received nothing ever again; nothing made it reconnect (2M27)."""
     import asyncio
 
-    from app import main
 
     class Stalled(_Socket):
         async def send_json(self, message):
             await asyncio.Event().wait()
 
-    broker = main.Broker()
-    monkeypatch.setattr(main.Broker, "SEND_TIMEOUT", 0.05)
+    broker = events.Broker()
+    monkeypatch.setattr(events.Broker, "SEND_TIMEOUT", 0.05)
     stalled = Stalled()
     await broker.register(stalled, "alex")
 
@@ -100,10 +102,9 @@ async def test_a_socket_closes_once_its_session_is_gone(monkeypatch):
     import asyncio
     from types import SimpleNamespace
 
-    from app import main
 
     class Socket(_Socket):
-        cookies = {main.auth.COOKIE: "session-1"}
+        cookies = {auth.COOKIE: "session-1"}
         headers = {}
 
         async def receive_text(self):
@@ -111,13 +112,13 @@ async def test_a_socket_closes_once_its_session_is_gone(monkeypatch):
 
     session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
     answers = iter([session, None])
-    monkeypatch.setattr(main.auth, "get", lambda cookie: next(answers))
-    monkeypatch.setattr(main, "same_origin", lambda headers: True)
-    monkeypatch.setattr(main, "_visible_jobs", lambda session: [])
-    monkeypatch.setattr(main, "SOCKET_RECHECK", 0.05)
-    monkeypatch.setattr(main, "broker", main.Broker())
+    monkeypatch.setattr(auth, "get", lambda cookie: next(answers))
+    monkeypatch.setattr(deps, "same_origin", lambda headers: True)
+    monkeypatch.setattr(jobs, "_visible_jobs", lambda session: [])
+    monkeypatch.setattr(jobs_routes, "SOCKET_RECHECK", 0.05)
+    monkeypatch.setattr(events, "broker", events.Broker())
     ws = Socket()
 
-    await asyncio.wait_for(main.websocket(ws), 2)
+    await asyncio.wait_for(jobs_routes.websocket(ws), 2)
 
     assert ws.closed_with == 4401

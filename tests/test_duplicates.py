@@ -14,6 +14,10 @@ import pytest
 
 from app import duplicates, navidrome, store
 from conftest import add_track
+from app import inbox
+from app import navidrome
+from app.api import duplicates as duplicates_routes
+from app.api import library_edit as library_edit_routes
 
 
 @pytest.fixture(autouse=True)
@@ -625,13 +629,12 @@ async def test_auto_resolve_waits_while_music_is_arriving(monkeypatch, identity)
 
     from fastapi import HTTPException
 
-    from app import main
 
-    monkeypatch.setattr(main.inbox, "receiving", lambda path: True)
+    monkeypatch.setattr(inbox, "receiving", lambda path: True)
     session = SimpleNamespace(identity=identity)
 
     with pytest.raises(HTTPException) as refused:
-        await main.auto_resolve_apply(main.AutoResolve(groups=[]), session)
+        await duplicates_routes.auto_resolve_apply(duplicates_routes.AutoResolve(groups=[]), session)
     assert refused.value.status_code == 409
 
 
@@ -642,13 +645,12 @@ async def test_keep_both_refuses_a_group_you_cannot_see(monkeypatch, identity,
 
     from fastapi import HTTPException
 
-    from app import main
 
-    monkeypatch.setattr(main, "_duplicate_groups", lambda identity: [])
+    monkeypatch.setattr(duplicates_routes, "_duplicate_groups", lambda identity: [])
     session = SimpleNamespace(identity=identity)
 
     with pytest.raises(HTTPException) as refused:
-        await main.dismiss_duplicate(main.DismissRequest(key="files:abc"), session)
+        await duplicates_routes.dismiss_duplicate(duplicates_routes.DismissRequest(key="files:abc"), session)
     assert refused.value.status_code == 404
     assert store.dismissed_duplicates() == set()
 
@@ -656,10 +658,9 @@ async def test_keep_both_refuses_a_group_you_cannot_see(monkeypatch, identity,
 def test_a_note_is_capped():
     from pydantic import ValidationError
 
-    from app import main
 
     with pytest.raises(ValidationError):
-        main.DismissRequest(key="files:abc", note="x" * 501)
+        duplicates_routes.DismissRequest(key="files:abc", note="x" * 501)
 
 
 # --- the set-aside list, whole (CODE_REVIEW M34) -----------------------------
@@ -780,7 +781,7 @@ async def test_an_album_still_arriving_is_not_quarantined(monkeypatch, tmp_path)
 
     from fastapi import HTTPException
 
-    from app import inbox, library, main
+    from app import inbox, library
 
     monkeypatch.setattr(library, "tracks", lambda identity, lid, folder: {
         "items": [{"id": "t1", "path": "Artist/Album/01.mp3", "artist": "A"}]})
@@ -791,8 +792,8 @@ async def test_an_album_still_arriving_is_not_quarantined(monkeypatch, tmp_path)
                         lambda copies, identity: moved.append(1))
 
     with pytest.raises(HTTPException) as refused:
-        await main.api_library_quarantine(
-            main.LibraryQuarantine(library_id=1, folder="Artist/Album"),
+        await library_edit_routes.api_library_quarantine(
+            library_edit_routes.LibraryQuarantine(library_id=1, folder="Artist/Album"),
             SimpleNamespace(identity=identity))
 
     assert refused.value.status_code == 409
@@ -849,15 +850,14 @@ async def test_resolve_and_dismiss_say_navidrome_is_unreadable(monkeypatch, rout
 
     from fastapi import HTTPException
 
-    from app import main
 
     def unavailable(identity):
-        raise main.navidrome.Unavailable("Navidrome's database is not mounted")
+        raise navidrome.Unavailable("Navidrome's database is not mounted")
 
-    monkeypatch.setattr(main, "_duplicate_groups", unavailable)
-    model = main.ResolveRequest if route == "resolve_duplicate" else main.DismissRequest
+    monkeypatch.setattr(duplicates_routes, "_duplicate_groups", unavailable)
+    model = duplicates_routes.ResolveRequest if route == "resolve_duplicate" else duplicates_routes.DismissRequest
     session = SimpleNamespace(identity=SimpleNamespace(user_id="u", username="alex"))
 
     with pytest.raises(HTTPException) as refused:
-        await getattr(main, route)(model(**body), session)
+        await getattr(duplicates_routes, route)(model(**body), session)
     assert refused.value.status_code == 503

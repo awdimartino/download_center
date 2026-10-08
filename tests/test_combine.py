@@ -16,6 +16,10 @@ from PIL import Image
 
 from app import combine, covers, filer, registry, uuidtags
 from test_filer import album_on_disk, space, track, tmp_of  # noqa: F401
+from app import library
+from app import operations
+from app import workspace
+from app.api import library_edit as library_edit_routes
 
 
 def _single(space, artist, title, tracknumber=None):
@@ -299,27 +303,26 @@ def test_the_route_counts_a_track_inside_a_chosen_folder_once(
 
     from fastapi import HTTPException
 
-    from app import main
 
     single = _single(space, "Phoebe Bridgers", "Motion Sickness")
     folder = single.path.parent
-    monkeypatch.setattr(main.workspace, "for_session",
+    monkeypatch.setattr(workspace, "for_session",
                         lambda identity, library_id: space)
-    monkeypatch.setattr(main.library, "album_dir",
+    monkeypatch.setattr(library, "album_dir",
                         lambda identity, library_id, name: folder)
-    monkeypatch.setattr(main.library, "track_path",
+    monkeypatch.setattr(library, "track_path",
                         lambda identity, library_id, name: single.path)
     started = []
-    monkeypatch.setattr(main.operations, "start",
+    monkeypatch.setattr(operations, "start",
                         lambda *args: started.append(args) or (
                             SimpleNamespace(as_dict=dict), True))
 
-    body = main.CombineRequest(library_id=1, albumartist="Phoebe Bridgers",
+    body = library_edit_routes.CombineRequest(library_id=1, albumartist="Phoebe Bridgers",
                                album="Stranger in the Alps",
                                albums=["the folder"], tracks=["the track"])
     session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
     with pytest.raises(HTTPException) as refused:
-        asyncio.run(main.library_combine(body, session))
+        asyncio.run(library_edit_routes.library_combine(body, session))
     assert refused.value.status_code == 400
     assert started == []
 

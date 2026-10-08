@@ -135,3 +135,20 @@ def _call(method: str, path: str) -> int:
 def test_every_guarded_route_refuses_a_signed_out_request(method, path, guard):
     concrete = re.sub(r"\{[^}]+\}", "x", path)
     assert _call(method, concrete) == 401
+
+
+def test_every_router_but_sign_in_declares_the_session_guard_itself():
+    """Not resting on the middleware's path prefix alone: a route added to
+    one of these without its own Depends is still guarded."""
+    import importlib
+    import pkgutil
+
+    import app.api
+    from app.api import deps
+
+    for info in pkgutil.iter_modules(app.api.__path__):
+        if info.name in ("deps", "auth"):
+            continue
+        module = importlib.import_module(f"app.api.{info.name}")
+        calls = [d.dependency for d in module.router.dependencies]
+        assert deps.current_session in calls, info.name

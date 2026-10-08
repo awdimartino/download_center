@@ -11,8 +11,11 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app import folderlock, main, replaygain
+from app import folderlock, replaygain
 from test_filer import album_on_disk, space  # noqa: F401
+from app import library
+from app import workspace
+from app.api import library_edit as library_edit_routes
 
 
 def test_a_held_folder_refuses_a_second_change(tmp_path):
@@ -63,15 +66,15 @@ def test_replaygain_skips_a_folder_being_changed(tmp_path, identity, monkeypatch
 async def test_an_album_edit_during_another_change_is_a_409(space, monkeypatch):
     filed = album_on_disk(space, "Artist", "Album", ["One"])
     folder = filed[0].path.parent
-    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
-    monkeypatch.setattr(main.library, "album_dir",
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(library, "album_dir",
                         lambda identity, lid, name, **_: folder)
     session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
 
     with folderlock.holding(folder):
         with pytest.raises(HTTPException) as refused:
-            await main.library_album_edit(
-                main.AlbumEdit(library_id=1, folder="Artist/Album",
+            await library_edit_routes.library_album_edit(
+                library_edit_routes.AlbumEdit(library_id=1, folder="Artist/Album",
                                album_artist="Artist", album="Renamed"), session)
 
     assert refused.value.status_code == 409

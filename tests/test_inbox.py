@@ -16,6 +16,8 @@ import pytest
 from mutagen.easyid3 import EasyID3
 
 from app import inbox, uuidtags
+from app import workspace
+from app.api import inbox as inbox_routes
 
 SILENCE = Path(__file__).parent / "fixtures" / "silence.mp3"
 
@@ -759,13 +761,12 @@ def _session():
 
 @pytest.mark.asyncio
 async def test_an_upload_is_copied_in_chunks(space, monkeypatch):
-    from app import main
 
-    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
-    monkeypatch.setattr(main, "UPLOAD_CHUNK", 4)
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(inbox_routes, "UPLOAD_CHUNK", 4)
     data = SILENCE.read_bytes()
 
-    answer = await main.upload_to_inbox(_upload(data), "", None, None, _session())
+    answer = await inbox_routes.upload_to_inbox(_upload(data), "", None, None, _session())
 
     landed = inbox.upload_root(space, answer["batch"]) / "song.mp3"
     assert landed.read_bytes() == data
@@ -777,13 +778,12 @@ async def test_a_declared_oversize_upload_is_refused_before_reading(space,
                                                                     monkeypatch):
     from fastapi import HTTPException
 
-    from app import main
 
-    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
-    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 10)
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(inbox_routes, "MAX_UPLOAD_BYTES", 10)
 
     with pytest.raises(HTTPException) as refused:
-        await main.upload_to_inbox(_upload(b"x" * 50, size=50), "", None, None,
+        await inbox_routes.upload_to_inbox(_upload(b"x" * 50, size=50), "", None, None,
                                    _session())
     assert refused.value.status_code == 413
 
@@ -792,14 +792,13 @@ async def test_a_declared_oversize_upload_is_refused_before_reading(space,
 async def test_an_undeclared_oversize_upload_stops_at_the_cap(space, monkeypatch):
     from fastapi import HTTPException
 
-    from app import main
 
-    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
-    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 10)
-    monkeypatch.setattr(main, "UPLOAD_CHUNK", 4)
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(inbox_routes, "MAX_UPLOAD_BYTES", 10)
+    monkeypatch.setattr(inbox_routes, "UPLOAD_CHUNK", 4)
 
     with pytest.raises(HTTPException) as refused:
-        await main.upload_to_inbox(_upload(b"x" * 50), "", None, None, _session())
+        await inbox_routes.upload_to_inbox(_upload(b"x" * 50), "", None, None, _session())
     assert refused.value.status_code == 413
     assert not [p for p in space.inbox_dir.rglob("*") if p.is_file()]
 
@@ -813,11 +812,10 @@ async def test_an_album_drop_is_filed_with_its_cover_that_came_last(space,
                                                                     monkeypatch):
     from mutagen.easyid3 import EasyID3 as Tags
 
-    from app import main
     from app.config import settings
 
     monkeypatch.setattr(settings, "inbox_quiet_seconds", 120)
-    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
     tracks = []
     for n in (1, 2):
         path = space.staging / f"src{n}.mp3"
@@ -830,15 +828,15 @@ async def test_an_album_drop_is_filed_with_its_cover_that_came_last(space,
 
     batch = None
     for n, data in enumerate(tracks, start=1):
-        answer = await main.upload_to_inbox(
+        answer = await inbox_routes.upload_to_inbox(
             _upload(data, name=f"{n:02d}.mp3"), f"Album/{n:02d}.mp3", batch,
             None, _session())
         batch = answer["batch"]
     mid_upload = inbox.drain(space)          # the poller, mid-drop
-    await main.upload_to_inbox(_upload(b"\xff\xd8 art", name="cover.jpg"),
+    await inbox_routes.upload_to_inbox(_upload(b"\xff\xd8 art", name="cover.jpg"),
                                "Album/cover.jpg", batch, None, _session())
 
-    finished = await main.finish_upload(None, batch, _session())
+    finished = await inbox_routes.finish_upload(None, batch, _session())
 
     assert mid_upload.filed == []
     assert len(finished["filed"]) == 2
@@ -894,9 +892,8 @@ def test_a_download_that_cannot_be_filed_is_not_left_for_the_poller(space,
 def test_an_upload_under_a_hidden_folder_is_filed(space):
     """The poller walks past hidden folders, so a drop of `.music/Album/`
     sat in the inbox for ever."""
-    from app import main
 
-    segments = main._relpath_segments(".music/Abbey Road/01.mp3", None)
+    segments = inbox_routes._relpath_segments(".music/Abbey Road/01.mp3", None)
     assert segments == ["music", "Abbey Road", "01.mp3"]
 
     path = inbox.upload_root(space, "batch1").joinpath(*segments)
@@ -909,9 +906,8 @@ def test_an_upload_under_a_hidden_folder_is_filed(space):
 
 
 def test_a_dot_dot_segment_still_cannot_climb_out():
-    from app import main
 
-    assert main._relpath_segments("../../etc/song.mp3", None) == ["etc", "song.mp3"]
+    assert inbox_routes._relpath_segments("../../etc/song.mp3", None) == ["etc", "song.mp3"]
 
 
 @pytest.mark.asyncio
@@ -920,7 +916,7 @@ async def test_a_hidden_file_is_refused_rather_than_left_unfiled(space, monkeypa
 
     from fastapi import HTTPException
 
-    from app import main, workspace
+    from app import workspace
 
     monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
 
@@ -929,7 +925,7 @@ async def test_a_hidden_file_is_refused_rather_than_left_unfiled(space, monkeypa
 
     upload = SimpleNamespace(filename="._01.mp3", size=10, file=None, close=close)
     with pytest.raises(HTTPException) as refused:
-        await main.upload_to_inbox(file=upload, relpath="Album/._01.mp3",
+        await inbox_routes.upload_to_inbox(file=upload, relpath="Album/._01.mp3",
                                    batch=None, library_id=None,
                                    session=SimpleNamespace(identity=None))
     assert refused.value.status_code == 400
@@ -977,10 +973,9 @@ def test_an_uploaded_names_single_dot_survives_for_refusal_and_dots_are_kept():
     """sanitize() now replaces a single leading dot (2H4); the upload route
     still has to see it to refuse macOS's ._ companions. A title that is an
     ellipsis is a real track and is kept as it is."""
-    from app import main
 
-    assert main._relpath_segments("Album/._01.mp3", None)[-1] == "._01.mp3"
-    assert main._relpath_segments("Album/... (Continued).mp3", None)[-1] \
+    assert inbox_routes._relpath_segments("Album/._01.mp3", None)[-1] == "._01.mp3"
+    assert inbox_routes._relpath_segments("Album/... (Continued).mp3", None)[-1] \
         == "... (Continued).mp3"
 
 
@@ -1079,12 +1074,11 @@ def test_the_last_pass_is_kept_for_its_owner_alone(space, monkeypatch):
 def test_an_oversized_upload_is_refused_from_its_declared_length():
     """The handler's check came after Starlette had spooled the whole body
     to /tmp, so any size was stored first."""
-    from app import main
 
-    big = str(main.MAX_UPLOAD_BYTES + main.UPLOAD_OVERHEAD + 1)
-    assert main._upload_refusal({"content-length": big}).status_code == 413
-    assert main._upload_refusal({}).status_code == 411
-    assert main._upload_refusal({"content-length": "12345"}) is None
+    big = str(inbox_routes.MAX_UPLOAD_BYTES + inbox_routes.UPLOAD_OVERHEAD + 1)
+    assert inbox_routes._upload_refusal({"content-length": big}).status_code == 413
+    assert inbox_routes._upload_refusal({}).status_code == 411
+    assert inbox_routes._upload_refusal({"content-length": "12345"}) is None
 
 
 def test_the_middleware_asks_before_the_body_is_read():

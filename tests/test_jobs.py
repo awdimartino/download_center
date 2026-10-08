@@ -12,75 +12,75 @@ import asyncio
 
 import pytest
 
-from app import main, worker
+from app import worker
 from app.config import settings
 
 
 @pytest.fixture(autouse=True)
 def clean_jobs():
-    main.JOBS.clear()
-    main.RUNNING.clear()
+    jobs.JOBS.clear()
+    jobs.RUNNING.clear()
     yield
-    main.JOBS.clear()
-    main.RUNNING.clear()
+    jobs.JOBS.clear()
+    jobs.RUNNING.clear()
 
 
 def _job(job_id, owner="alex", status="complete", created="2026-01-01T00:00:00"):
-    main.JOBS[job_id] = {
+    jobs.JOBS[job_id] = {
         "id": job_id, "owner": owner, "status": status,
         "created_at": created, "items": [],
     }
-    return main.JOBS[job_id]
+    return jobs.JOBS[job_id]
 
 
 # --- keeping the queue from growing forever -------------------------------
 
 def test_finished_jobs_are_evicted_oldest_first():
-    for n in range(main.MAX_FINISHED_JOBS + 10):
+    for n in range(jobs.MAX_FINISHED_JOBS + 10):
         _job(f"j{n:03d}", created=f"2026-01-01T00:{n:02d}:00")
 
-    main._evict_old_jobs("alex")
+    jobs._evict_old_jobs("alex")
 
-    assert len(main.JOBS) == main.MAX_FINISHED_JOBS
-    assert "j000" not in main.JOBS, "oldest should go first"
-    assert f"j{main.MAX_FINISHED_JOBS + 9:03d}" in main.JOBS
+    assert len(jobs.JOBS) == jobs.MAX_FINISHED_JOBS
+    assert "j000" not in jobs.JOBS, "oldest should go first"
+    assert f"j{jobs.MAX_FINISHED_JOBS + 9:03d}" in jobs.JOBS
 
 
 def test_eviction_never_touches_a_running_job():
-    for n in range(main.MAX_FINISHED_JOBS + 5):
+    for n in range(jobs.MAX_FINISHED_JOBS + 5):
         _job(f"j{n:03d}", created=f"2026-01-01T00:{n:02d}:00")
     _job("live", status="running", created="2026-01-01T00:00:00")
 
-    main._evict_old_jobs("alex")
-    assert "live" in main.JOBS
+    jobs._evict_old_jobs("alex")
+    assert "live" in jobs.JOBS
 
 
 def test_eviction_never_touches_a_job_with_a_task_still_tracked():
     """A cancelled job whose task has not finished unwinding is still
     entitled to its scratch directory."""
-    for n in range(main.MAX_FINISHED_JOBS + 5):
+    for n in range(jobs.MAX_FINISHED_JOBS + 5):
         _job(f"j{n:03d}", created=f"2026-01-01T00:{n:02d}:00")
     _job("unwinding", status="cancelled", created="2026-01-01T00:00:00")
-    main.RUNNING["unwinding"] = object()
+    jobs.RUNNING["unwinding"] = object()
 
-    main._evict_old_jobs("alex")
-    assert "unwinding" in main.JOBS
+    jobs._evict_old_jobs("alex")
+    assert "unwinding" in jobs.JOBS
 
 
 def test_eviction_only_touches_the_named_person():
-    for n in range(main.MAX_FINISHED_JOBS + 5):
+    for n in range(jobs.MAX_FINISHED_JOBS + 5):
         _job(f"j{n:03d}", created=f"2026-01-01T00:{n:02d}:00")
     _job("hers", owner="kelly", created="2026-01-01T00:00:00")
 
-    main._evict_old_jobs("alex")
-    assert "hers" in main.JOBS
+    jobs._evict_old_jobs("alex")
+    assert "hers" in jobs.JOBS
 
 
 def test_nothing_is_evicted_below_the_limit():
     for n in range(3):
         _job(f"j{n}")
-    main._evict_old_jobs("alex")
-    assert len(main.JOBS) == 3
+    jobs._evict_old_jobs("alex")
+    assert len(jobs.JOBS) == 3
 
 
 # --- the download gate ------------------------------------------------------
@@ -183,11 +183,11 @@ def test_the_gate_actually_limits(monkeypatch):
 # --- refusing an enormous playlist ------------------------------------------
 
 def test_the_track_cap_is_a_real_number():
-    assert 0 < main.MAX_TRACKS_PER_JOB <= 2000
+    assert 0 < jobs.MAX_TRACKS_PER_JOB <= 2000
 
 
 def test_the_active_job_cap_is_a_real_number():
-    assert 0 < main.MAX_ACTIVE_JOBS <= 20
+    assert 0 < jobs.MAX_ACTIVE_JOBS <= 20
 
 
 # --- stopping a job before deleting its files -----------------------------
@@ -208,13 +208,13 @@ async def test_stopping_a_job_cancels_it_and_waits():
             stopped.set()
             raise
 
-    main.RUNNING["j1"] = asyncio.create_task(work())
+    jobs.RUNNING["j1"] = asyncio.create_task(work())
     await asyncio.sleep(0)
 
-    await main._stop_job("j1")
+    await jobs._stop_job("j1")
 
     assert stopped.is_set(), "the task should have seen the cancellation"
-    assert "j1" not in main.RUNNING
+    assert "j1" not in jobs.RUNNING
 
 
 @pytest.mark.asyncio
@@ -232,10 +232,10 @@ async def test_stopping_waits_for_cleanup_before_returning():
             order.append("task cleaned up")
             raise
 
-    main.RUNNING["j1"] = asyncio.create_task(work())
+    jobs.RUNNING["j1"] = asyncio.create_task(work())
     await asyncio.sleep(0)
 
-    await main._stop_job("j1")
+    await jobs._stop_job("j1")
     order.append("stop returned")
 
     assert order == ["task cleaned up", "stop returned"]
@@ -243,22 +243,22 @@ async def test_stopping_waits_for_cleanup_before_returning():
 
 @pytest.mark.asyncio
 async def test_stopping_an_unknown_or_finished_job_is_harmless():
-    await main._stop_job("never-existed")
+    await jobs._stop_job("never-existed")
 
     async def done():
         return None
 
     task = asyncio.create_task(done())
     await task
-    main.RUNNING["j1"] = task
-    await main._stop_job("j1")
-    assert "j1" not in main.RUNNING
+    jobs.RUNNING["j1"] = task
+    await jobs._stop_job("j1")
+    assert "j1" not in jobs.RUNNING
 
 
 @pytest.mark.asyncio
 async def test_a_task_that_will_not_stop_does_not_hang_the_delete(monkeypatch):
     """Bounded, so one wedged task cannot make Delete unresponsive too."""
-    monkeypatch.setattr(main, "STOP_TIMEOUT", 0.05)
+    monkeypatch.setattr(jobs, "STOP_TIMEOUT", 0.05)
 
     async def stubborn():
         # Swallows the first cancellation and honours the second. Ignoring
@@ -274,11 +274,11 @@ async def test_a_task_that_will_not_stop_does_not_hang_the_delete(monkeypatch):
                 ignored = True
 
     task = asyncio.create_task(stubborn())
-    main.RUNNING["j1"] = task
+    jobs.RUNNING["j1"] = task
     await asyncio.sleep(0)
 
     # Returns despite the task still running: the timeout is the bound.
-    await asyncio.wait_for(main._stop_job("j1"), timeout=2)
+    await asyncio.wait_for(jobs._stop_job("j1"), timeout=2)
     assert not task.done(), "the point of this test is that it did not stop"
 
     task.cancel()
@@ -320,6 +320,11 @@ async def test_a_cancelled_download_gives_its_gate_slot_back(monkeypatch):
 from types import SimpleNamespace
 
 from fastapi import HTTPException
+from app import beets_runner
+from app import jobs
+from app import workspace
+from app.api import jobs as jobs_routes
+from app import events
 
 SESSION = SimpleNamespace(identity=SimpleNamespace(username="alex"))
 LINK = "https://open.spotify.com/album/4yP0hdKOZPNshxUOjY0cZj"
@@ -338,7 +343,7 @@ def queueing(monkeypatch):
         space.prepared += 1
 
     space.prepare = prepare
-    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
 
     async def resolved(job, url, space):
         return None
@@ -346,26 +351,26 @@ def queueing(monkeypatch):
     async def ran(job, space):
         return None
 
-    monkeypatch.setattr(main, "_resolve_job", resolved)
-    monkeypatch.setattr(main, "_run", ran)
-    monkeypatch.setattr(main, "push_job", lambda job: asyncio.sleep(0))
+    monkeypatch.setattr(jobs, "_resolve_job", resolved)
+    monkeypatch.setattr(jobs, "_run", ran)
+    monkeypatch.setattr(events, "push_job", lambda job: asyncio.sleep(0))
     return space
 
 
 @pytest.mark.asyncio
 async def test_two_requests_at_once_cannot_both_take_the_last_slot(queueing):
-    for n in range(main.MAX_ACTIVE_JOBS - 1):
+    for n in range(jobs.MAX_ACTIVE_JOBS - 1):
         _job(f"busy{n}", status="running")
 
     outcomes = await asyncio.gather(
-        main.create_job(main.JobRequest(url=LINK), SESSION),
-        main.create_job(main.JobRequest(url=LINK), SESSION),
+        jobs_routes.create_job(jobs_routes.JobRequest(url=LINK), SESSION),
+        jobs_routes.create_job(jobs_routes.JobRequest(url=LINK), SESSION),
         return_exceptions=True)
 
     refused = [o for o in outcomes if isinstance(o, HTTPException)]
     assert len(refused) == 1 and refused[0].status_code == 429
-    active = [j for j in main.JOBS.values() if j["status"] not in main.FINISHED]
-    assert len(active) == main.MAX_ACTIVE_JOBS
+    active = [j for j in jobs.JOBS.values() if j["status"] not in jobs.FINISHED]
+    assert len(active) == jobs.MAX_ACTIVE_JOBS
 
 
 @pytest.mark.asyncio
@@ -376,8 +381,8 @@ async def test_queueing_a_download_writes_no_beets_config(queueing,
     def refuse(space):
         raise AssertionError("queueing a download wrote a beets config")
 
-    monkeypatch.setattr(main.beets_runner, "ensure_config", refuse)
-    await main.create_job(main.JobRequest(url=LINK), SESSION)
+    monkeypatch.setattr(beets_runner, "ensure_config", refuse)
+    await jobs_routes.create_job(jobs_routes.JobRequest(url=LINK), SESSION)
     assert queueing.prepared == 1
 
 
@@ -392,11 +397,11 @@ def _failed_job():
 @pytest.mark.asyncio
 async def test_retry_counts_against_the_cap(queueing):
     job = _failed_job()
-    for n in range(main.MAX_ACTIVE_JOBS):
+    for n in range(jobs.MAX_ACTIVE_JOBS):
         _job(f"busy{n}", status="running")
 
     with pytest.raises(HTTPException) as refused:
-        await main.retry_job("old", SESSION)
+        await jobs_routes.retry_job("old", SESSION)
 
     assert refused.value.status_code == 429
     assert job["status"] == "failed"
@@ -410,11 +415,11 @@ async def test_a_retry_that_cannot_start_leaves_the_failures_alone(queueing,
     def gone(identity, lid):
         raise ValueError("That library is no longer yours.")
 
-    monkeypatch.setattr(main.workspace, "for_session", gone)
+    monkeypatch.setattr(workspace, "for_session", gone)
     job = _failed_job()
 
     with pytest.raises(HTTPException):
-        await main.retry_job("old", SESSION)
+        await jobs_routes.retry_job("old", SESSION)
 
     assert job["items"][0]["status"] == "failed"
     assert job["items"][0]["error"] == "no audio"
@@ -424,7 +429,7 @@ async def test_a_retry_that_cannot_start_leaves_the_failures_alone(queueing,
 async def test_a_retry_with_room_starts(queueing):
     job = _failed_job()
 
-    assert await main.retry_job("old", SESSION) == {"retrying": 1}
+    assert await jobs_routes.retry_job("old", SESSION) == {"retrying": 1}
     assert job["status"] == "queued"
     assert job["items"][0]["status"] == "pending"
 
@@ -446,12 +451,12 @@ async def test_two_retries_at_once_start_one_runner(queueing, monkeypatch):
         time.sleep(0.05)
         return queueing
 
-    monkeypatch.setattr(main, "_run", ran)
-    monkeypatch.setattr(main.workspace, "for_session", slow_workspace)
+    monkeypatch.setattr(jobs, "_run", ran)
+    monkeypatch.setattr(workspace, "for_session", slow_workspace)
     _failed_job()
 
-    outcomes = await asyncio.gather(main.retry_job("old", SESSION),
-                                    main.retry_job("old", SESSION),
+    outcomes = await asyncio.gather(jobs_routes.retry_job("old", SESSION),
+                                    jobs_routes.retry_job("old", SESSION),
                                     return_exceptions=True)
     await asyncio.sleep(0.05)
 
@@ -468,9 +473,9 @@ async def test_a_retried_job_can_be_cancelled_straight_away(queueing):
     tracked once its task first ran, so a cancel pressed at once was told
     the job was not running."""
     _failed_job()
-    await main.retry_job("old", SESSION)
+    await jobs_routes.retry_job("old", SESSION)
 
-    assert await main.cancel_job("old", SESSION) == {"ok": True}
+    assert await jobs_routes.cancel_job("old", SESSION) == {"ok": True}
 
 
 def test_the_page_cancels_an_active_job_rather_than_deleting_it():
@@ -497,12 +502,12 @@ async def test_a_cancel_while_announcing_the_resolve_leaves_no_ghost(monkeypatch
             pushed.set()
             await asyncio.sleep(5)
 
-    monkeypatch.setattr(main, "push_job", slow_push)
-    monkeypatch.setattr(main, "_resolve",
+    monkeypatch.setattr(events, "push_job", slow_push)
+    monkeypatch.setattr(jobs, "_resolve",
                         lambda url: ("album", "Abbey Road", [{"id": "s1", "title": "T"}]))
-    monkeypatch.setattr(main, "new_item", lambda track: {"id": track["id"], "status": "pending"})
-    task = asyncio.create_task(main._resolve_job(job, "https://x", None))
-    main.RUNNING[job["id"]] = task
+    monkeypatch.setattr(jobs, "new_item", lambda track: {"id": track["id"], "status": "pending"})
+    task = asyncio.create_task(jobs._resolve_job(job, "https://x", None))
+    jobs.RUNNING[job["id"]] = task
 
     await asyncio.wait_for(pushed.wait(), 2)
     task.cancel()
@@ -510,21 +515,21 @@ async def test_a_cancel_while_announcing_the_resolve_leaves_no_ghost(monkeypatch
         await task
 
     assert job["status"] == "cancelled"
-    assert job["id"] not in main.RUNNING
+    assert job["id"] not in jobs.RUNNING
 
 
 @pytest.mark.asyncio
 async def test_too_many_tracks_is_refused_and_not_left_running(monkeypatch):
     job = _job("j-big", status="resolving")
-    monkeypatch.setattr(main, "push_job", lambda job: asyncio.sleep(0))
-    monkeypatch.setattr(main, "_resolve", lambda url: (
-        "playlist", "Huge", [{"id": str(n)} for n in range(main.MAX_TRACKS_PER_JOB + 1)]))
-    main.RUNNING[job["id"]] = asyncio.current_task()
+    monkeypatch.setattr(events, "push_job", lambda job: asyncio.sleep(0))
+    monkeypatch.setattr(jobs, "_resolve", lambda url: (
+        "playlist", "Huge", [{"id": str(n)} for n in range(jobs.MAX_TRACKS_PER_JOB + 1)]))
+    jobs.RUNNING[job["id"]] = asyncio.current_task()
 
-    await main._resolve_job(job, "https://x", None)
+    await jobs._resolve_job(job, "https://x", None)
 
     assert job["status"] == "failed"
-    assert job["id"] not in main.RUNNING
+    assert job["id"] not in jobs.RUNNING
 
 
 @pytest.mark.asyncio
@@ -536,5 +541,5 @@ async def test_a_workspace_that_cannot_be_made_is_a_clear_refusal(queueing, monk
 
     monkeypatch.setattr(queueing, "prepare", clash)
     with pytest.raises(HTTPException) as refused:
-        await main.create_job(main.JobRequest(url=LINK), SESSION)
+        await jobs_routes.create_job(jobs_routes.JobRequest(url=LINK), SESSION)
     assert refused.value.status_code == 409

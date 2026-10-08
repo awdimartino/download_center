@@ -19,6 +19,8 @@ import pytest
 from fastapi import HTTPException
 
 from app import auth, filer, inbox, library, main, workspace
+from app.api import jobs as jobs_routes
+from app.api import library_edit as library_edit_routes
 
 on_loop: list[str] = []
 
@@ -61,16 +63,16 @@ def _call(route, *args):
 
 
 @pytest.mark.parametrize("route, body", [
-    (main.library_album_edit, main.AlbumEdit(library_id=1, folder="A/B",
+    (library_edit_routes.library_album_edit, library_edit_routes.AlbumEdit(library_id=1, folder="A/B",
                                              album_artist="A", album="B")),
-    (main.library_track_edit, main.TrackEdit(library_id=1, path="A/B/01.mp3",
+    (library_edit_routes.library_track_edit, library_edit_routes.TrackEdit(library_id=1, path="A/B/01.mp3",
                                              title="x")),
-    (main.library_match, main.AlbumTarget(library_id=1, folder="A/B")),
-    (main.library_match_apply, main.AlbumChoice(library_id=1, folder="A/B",
+    (library_edit_routes.library_match, library_edit_routes.AlbumTarget(library_id=1, folder="A/B")),
+    (library_edit_routes.library_match_apply, library_edit_routes.AlbumChoice(library_id=1, folder="A/B",
                                                 release_id="r")),
-    (main.library_cover_candidates, main.AlbumTarget(library_id=1, folder="A/B")),
-    (main.library_cover_apply, main.CoverChoice(library_id=1, folder="A/B")),
-    (main.library_combine, main.CombineRequest(library_id=1, albumartist="A",
+    (library_edit_routes.library_cover_candidates, library_edit_routes.AlbumTarget(library_id=1, folder="A/B")),
+    (library_edit_routes.library_cover_apply, library_edit_routes.CoverChoice(library_id=1, folder="A/B")),
+    (library_edit_routes.library_combine, library_edit_routes.CombineRequest(library_id=1, albumartist="A",
                                                album="B", albums=["A/B", "A/C"])),
 ])
 def test_an_album_route_checks_its_folder_off_the_loop(route, body):
@@ -79,8 +81,8 @@ def test_an_album_route_checks_its_folder_off_the_loop(route, body):
 
 
 def test_queuing_a_download_checks_the_library_off_the_loop():
-    _call(main.create_job,
-          main.JobRequest(url="https://open.spotify.com/album/abc"), SESSION)
+    _call(jobs_routes.create_job,
+          jobs_routes.JobRequest(url="https://open.spotify.com/album/abc"), SESSION)
     assert on_loop == []
 
 

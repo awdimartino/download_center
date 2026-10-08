@@ -13,8 +13,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app import auth, main, navidrome
+from app import auth, navidrome
 from app.config import settings
+from app.api import playlists as playlists_routes
 
 
 class Response:
@@ -75,7 +76,7 @@ async def test_an_expired_navidrome_sign_in_ends_this_one(monkeypatch):
     session = SimpleNamespace(id="sid", identity=_identity())
 
     with pytest.raises(HTTPException) as refused:
-        await main.list_playlists(session)
+        await playlists_routes.list_playlists(session)
 
     assert refused.value.status_code == 401
     assert ended == ["sid"]

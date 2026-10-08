@@ -13,6 +13,15 @@ import sqlite3
 import pytest
 
 from app import main
+from app import background
+from app import inbox
+from app import jobs
+from app import navidrome
+from app import overview
+from app import playcounts
+from app import store
+from app.api import inbox as inbox_routes
+from app.api import listening as listening_routes
 
 
 @pytest.mark.asyncio
@@ -29,11 +38,11 @@ async def test_the_audit_loop_survives_an_unexpected_error(monkeypatch):
         if len(calls) >= 2:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr(main, "_library_roots", roots)
-    monkeypatch.setattr(main.asyncio, "sleep", sleep)
+    monkeypatch.setattr(background, "_library_roots", roots)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
 
     with pytest.raises(asyncio.CancelledError):
-        await main._audit_loop()
+        await background._audit_loop()
 
     assert len(calls) == 2
 
@@ -51,14 +60,14 @@ async def test_the_inbox_loop_asks_for_a_scan_only_when_it_filed_something(
     result = inbox.Result(filed=[object()] if changed else [],
                           failures=[] if changed else ["x.mp3: unreadable"])
     monkeypatch.setattr(inbox, "drain_all", lambda: {"alex": result})
-    monkeypatch.setattr(main.navidrome, "notify", lambda *a, **k: asked.append(1))
+    monkeypatch.setattr(navidrome, "notify", lambda *a, **k: asked.append(1))
 
     async def sleep(seconds):
         raise asyncio.CancelledError
 
-    monkeypatch.setattr(main.asyncio, "sleep", sleep)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
     with pytest.raises(asyncio.CancelledError):
-        await main._inbox_loop()
+        await background._inbox_loop()
 
     assert len(asked) == scans
 
@@ -73,12 +82,12 @@ async def test_finishing_an_upload_asks_for_a_scan(monkeypatch, tmp_path):
     monkeypatch.setattr(inbox, "drain",
                         lambda space: inbox.Result(filed=[tmp_path / "a.mp3"]))
     asked = []
-    monkeypatch.setattr(main.navidrome, "notify", lambda *a, **k: asked.append(1))
+    monkeypatch.setattr(navidrome, "notify", lambda *a, **k: asked.append(1))
 
     class Session:
         identity = None
 
-    out = await main.finish_upload(library_id=None, batch=None, session=Session())
+    out = await inbox_routes.finish_upload(library_id=None, batch=None, session=Session())
 
     assert out["filed"] == ["a.mp3"]
     assert asked == [1]
@@ -89,11 +98,11 @@ async def test_finishing_an_upload_asks_for_a_scan(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_a_forced_snapshot_warms_home_for_whoever_played(monkeypatch):
     warmed = []
-    monkeypatch.setattr(main.playcounts, "take",
+    monkeypatch.setattr(playcounts, "take",
                         lambda: {"users": ["u-alex"], "rows": 3})
-    monkeypatch.setattr(main.overview, "warm", lambda users: warmed.append(users))
+    monkeypatch.setattr(overview, "warm", lambda users: warmed.append(users))
 
-    taken = await main.playcount_snapshot(session=None)
+    taken = await listening_routes.playcount_snapshot(session=None)
 
     assert taken["rows"] == 3
     assert warmed == [["u-alex"]]
@@ -102,10 +111,10 @@ async def test_a_forced_snapshot_warms_home_for_whoever_played(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_forced_snapshot_with_nothing_new_warms_nothing(monkeypatch):
     warmed = []
-    monkeypatch.setattr(main.playcounts, "take", lambda: {"users": []})
-    monkeypatch.setattr(main.overview, "warm", lambda users: warmed.append(users))
+    monkeypatch.setattr(playcounts, "take", lambda: {"users": []})
+    monkeypatch.setattr(overview, "warm", lambda users: warmed.append(users))
 
-    await main.playcount_snapshot(session=None)
+    await listening_routes.playcount_snapshot(session=None)
 
     assert warmed == []
 
@@ -122,10 +131,10 @@ async def test_shutting_down_stops_jobs_and_operations(monkeypatch):
     async def idle():
         await asyncio.Event().wait()
 
-    monkeypatch.setattr(main.store, "connect", lambda path: None)
-    monkeypatch.setattr(main.inbox, "clear_scratch", lambda: None)
+    monkeypatch.setattr(store, "connect", lambda path: None)
+    monkeypatch.setattr(inbox, "clear_scratch", lambda: None)
     for loop in ("_audit_loop", "_inbox_loop", "_snapshot_loop"):
-        monkeypatch.setattr(main, loop, idle)
+        monkeypatch.setattr(background, loop, idle)
     operations.reset()
 
     stopped = threading.Event()
@@ -138,7 +147,7 @@ async def test_shutting_down_stops_jobs_and_operations(monkeypatch):
 
     async with main.lifespan(main.app):
         job = asyncio.create_task(idle())
-        monkeypatch.setitem(main.RUNNING, "job1", job)
+        monkeypatch.setitem(jobs.RUNNING, "job1", job)
         operation, _ = operations.start("replaygain", "alex", work)
         await asyncio.sleep(0.05)
 

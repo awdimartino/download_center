@@ -14,6 +14,7 @@ import pytest
 
 from app import library, navidrome
 from conftest import add_track
+from app.api import browse as browse_routes
 
 
 @pytest.fixture
@@ -382,21 +383,19 @@ def test_a_real_folder_still_resolves(tmp_path, identity):
 # came up unmarked - which is exactly when a second copy gets queued.
 
 def test_a_solo_track_in_the_library_is_marked(db, identity, monkeypatch):
-    from app import main
     add_track(db, "t1", title="Billie Jean", artist="Michael Jackson")
 
-    cards = main._mark_held([{"name": "Billie Jean",
+    cards = browse_routes._mark_held([{"name": "Billie Jean",
                               "artist": "Michael Jackson",
                               "primary_artist": "Michael Jackson"}], 1)
     assert cards[0]["held"] is True
 
 
 def test_a_collaboration_is_marked_too(db, identity, monkeypatch):
-    from app import main
     # What tagger.tag writes: the primary artist, not the full credit.
     add_track(db, "t1", title="The Girl Is Mine", artist="Michael Jackson")
 
-    cards = main._mark_held([{"name": "The Girl Is Mine",
+    cards = browse_routes._mark_held([{"name": "The Girl Is Mine",
                               "artist": "Michael Jackson, Paul McCartney",
                               "primary_artist": "Michael Jackson"}], 1)
     assert cards[0]["held"] is True
@@ -404,33 +403,30 @@ def test_a_collaboration_is_marked_too(db, identity, monkeypatch):
 
 def test_a_file_tagged_with_the_full_credit_is_marked(db, identity):
     """A CD rip or a hand-tagged file may have it the other way round."""
-    from app import main
     add_track(db, "t1", title="The Girl Is Mine",
               artist="Michael Jackson, Paul McCartney",
               album_artist="Michael Jackson")
 
-    cards = main._mark_held([{"name": "The Girl Is Mine",
+    cards = browse_routes._mark_held([{"name": "The Girl Is Mine",
                               "artist": "Michael Jackson, Paul McCartney",
                               "primary_artist": "Michael Jackson"}], 1)
     assert cards[0]["held"] is True
 
 
 def test_a_track_the_library_does_not_have_is_not_marked(db, identity):
-    from app import main
     add_track(db, "t1", title="Billie Jean", artist="Michael Jackson")
 
-    cards = main._mark_held([{"name": "Thriller",
+    cards = browse_routes._mark_held([{"name": "Thriller",
                               "artist": "Michael Jackson",
                               "primary_artist": "Michael Jackson"}], 1)
     assert cards[0]["held"] is False
 
 
 def test_the_badge_is_scoped_to_the_library(db, identity):
-    from app import main
     add_track(db, "t1", title="Billie Jean", artist="Michael Jackson",
               library_id=2)
 
-    cards = main._mark_held([{"name": "Billie Jean",
+    cards = browse_routes._mark_held([{"name": "Billie Jean",
                               "artist": "Michael Jackson",
                               "primary_artist": "Michael Jackson"}], 1)
     assert cards[0]["held"] is False
@@ -444,43 +440,39 @@ def _album_card(**extra):
 
 
 def test_an_album_counts_the_tracks_the_library_has(db, identity):
-    from app import main
     for n in range(3):
         add_track(db, f"t{n}", title=f"Song {n}", artist="Michael Jackson",
                   album_artist="Michael Jackson", album="Thriller")
 
-    cards = main._mark_albums_held([_album_card()], 1)
+    cards = browse_routes._mark_albums_held([_album_card()], 1)
     assert cards[0]["held_tracks"] == 3
 
 
 def test_an_album_filed_under_the_primary_artist_is_counted(db, identity):
     """The card carries the full credit; the file may carry only the first."""
-    from app import main
     add_track(db, "t1", title="The Girl Is Mine", artist="Michael Jackson",
               album_artist="Michael Jackson", album="Thriller")
 
-    cards = main._mark_albums_held(
+    cards = browse_routes._mark_albums_held(
         [_album_card(artist="Michael Jackson, Paul McCartney")], 1)
     assert cards[0]["held_tracks"] == 1
 
 
 def test_an_album_count_never_exceeds_the_album(db, identity):
     """A deluxe edition filed under the plain title must not read 12 of 9."""
-    from app import main
     for n in range(12):
         add_track(db, f"t{n}", title=f"Song {n}", artist="Michael Jackson",
                   album_artist="Michael Jackson", album="Thriller")
 
-    cards = main._mark_albums_held([_album_card()], 1)
+    cards = browse_routes._mark_albums_held([_album_card()], 1)
     assert cards[0]["held_tracks"] == 9
 
 
 def test_an_album_count_is_scoped_to_the_library(db, identity):
-    from app import main
     add_track(db, "t1", title="Billie Jean", artist="Michael Jackson",
               album_artist="Michael Jackson", album="Thriller", library_id=2)
 
-    cards = main._mark_albums_held([_album_card()], 1)
+    cards = browse_routes._mark_albums_held([_album_card()], 1)
     assert cards[0]["held_tracks"] == 0
 
 

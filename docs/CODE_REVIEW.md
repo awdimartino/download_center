@@ -1050,7 +1050,7 @@ it less likely.
 
 ## Readability
 
-- [ ] **R1. Split `app/main.py` (2,287 lines) into routers.** Proposed:
+- [x] **R1. Split `app/main.py` (2,287 lines) into routers.** Proposed:
       `main.py` (~150 lines: app, middleware, lifespan, `/healthz`, `/`,
       static); `api/deps.py` (`current_session`, `admin_session`, a
       `space_for` dependency replacing ~12 copies of one try/except, an
@@ -1061,6 +1061,26 @@ it less likely.
       `api/library_read`, `api/library_edit`, `api/listening`. Give each
       router `dependencies=[Depends(current_session)]`, so auth stops
       depending only on a path prefix.
+      **Done**, following round 2's advice (see "R1 advice" there). First a
+      characterisation test (`tests/test_routes.py`) froze all 58 routes
+      with the guard on each, and sends a signed-out request to every
+      guarded one through the real application. Then `main.py` (2,877
+      lines by then) was split mechanically by a script that read its
+      syntax tree and wrote each module's imports from the names its code
+      uses: `main.py` (230 lines: app, middleware, lifespan, `/healthz`,
+      `/`, static), `events.py` (the broker and `push_*`), `jobs.py`,
+      `background.py`, `api/deps.py`, and ten routers. The route table is
+      unchanged. Names the tests patch across modules (`events.push_job`,
+      `events.broker`, `jobs._run`, `deps.same_origin`, `deps._before_edit`,
+      the loops) are called module-qualified by their consumers, and an
+      audit found no consumer bypassing a patched name. Every test's
+      `main.X` was moved to the new module. Every router except sign-in
+      declares `Depends(current_session)` (a test checks); the socket has
+      its own router, since an HTTP dependency cannot serve it. Not done
+      from the proposal: `space_for` and `album_target` helpers. Round 2's
+      advice found the callers differ on purpose (four sources of
+      `library_id`, deliberate single thread hops), so they stay as they
+      are. Moving work bodies out of handlers is 2D4.
 - [x] **R2. Split `app/static/js/library.js` (~2,300 lines)** along its own
       sections: list, attention, drawer and editing, combine. Pass options to
       `showProgress` instead of special-casing the string "ReplayGain"; share

@@ -11,7 +11,13 @@ import pytest
 from fastapi import HTTPException
 
 from test_filer import album_on_disk, space  # noqa: F401
-from app import filer, main, registry, replaygain, uuidtags
+from app import filer, registry, replaygain, uuidtags
+from app import inbox
+from app import library
+from app import navidrome
+from app import workspace
+from app.api import library_edit as library_edit_routes
+from app.api import deps
 
 
 def _two_albums_in_one_folder(space):
@@ -54,14 +60,14 @@ async def test_matching_a_folder_holding_two_albums_is_refused(space, monkeypatc
     from types import SimpleNamespace
 
     folder, _, _ = _two_albums_in_one_folder(space)
-    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
-    monkeypatch.setattr(main.library, "album_dir",
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(library, "album_dir",
                         lambda identity, lid, name, **_: folder)
     session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
 
     with pytest.raises(HTTPException) as refused:
-        await main.library_match(
-            main.AlbumTarget(library_id=1, folder="x"), session)
+        await library_edit_routes.library_match(
+            library_edit_routes.AlbumTarget(library_id=1, folder="x"), session)
     assert refused.value.status_code == 409
 
 
@@ -87,19 +93,19 @@ async def test_a_track_edit_says_when_the_file_left_its_album(space, monkeypatch
     from types import SimpleNamespace
 
     first = album_on_disk(space, "Artist", "Record", ["One", "Two"])
-    monkeypatch.setattr(main.workspace, "for_session", lambda identity, lid: space)
-    monkeypatch.setattr(main.library, "track_path",
+    monkeypatch.setattr(workspace, "for_session", lambda identity, lid: space)
+    monkeypatch.setattr(library, "track_path",
                         lambda identity, lid, path: space.library_path / path)
-    monkeypatch.setattr(main, "_before_edit", lambda *args: set())
-    monkeypatch.setattr(main.navidrome, "notify", lambda: True)
-    monkeypatch.setattr(main.inbox, "receiving", lambda path: False)
+    monkeypatch.setattr(deps, "_before_edit", lambda *args: set())
+    monkeypatch.setattr(navidrome, "notify", lambda: True)
+    monkeypatch.setattr(inbox, "receiving", lambda path: False)
     session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
     relative = str(first[0].path.relative_to(space.library_path))
 
-    renamed = await main.library_track_edit(
-        main.TrackEdit(library_id=1, path=relative, title="Uno"), session)
-    moved = await main.library_track_edit(
-        main.TrackEdit(library_id=1, path=str(first[1].path.relative_to(
+    renamed = await library_edit_routes.library_track_edit(
+        library_edit_routes.TrackEdit(library_id=1, path=relative, title="Uno"), session)
+    moved = await library_edit_routes.library_track_edit(
+        library_edit_routes.TrackEdit(library_id=1, path=str(first[1].path.relative_to(
             space.library_path)), album="Elsewhere"), session)
 
     assert renamed["moved"] is False

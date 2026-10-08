@@ -19,6 +19,8 @@ import pytest
 from app import diskaudit, health
 from app.config import settings
 from conftest import add_track, annotate
+from app import background
+from app import inbox
 
 
 @pytest.fixture
@@ -373,18 +375,18 @@ def test_a_loop_whose_last_pass_failed_is_a_failure(monkeypatch):
 async def test_the_inbox_loop_reports_an_unreadable_workspace(monkeypatch):
     import asyncio
 
-    from app import heartbeat, main, workspace
+    from app import heartbeat, workspace
 
     heartbeat.reset()
-    monkeypatch.setattr(main.inbox, "drain_all", lambda: {})
+    monkeypatch.setattr(inbox, "drain_all", lambda: {})
     monkeypatch.setattr(workspace, "unreadable", lambda: 1)
 
     async def stop(_seconds):
         raise asyncio.CancelledError
 
-    monkeypatch.setattr(main.asyncio, "sleep", stop)
+    monkeypatch.setattr(asyncio, "sleep", stop)
     with pytest.raises(asyncio.CancelledError):
-        await main._inbox_loop()
+        await background._inbox_loop()
 
     beat = heartbeat.snapshot()["inbox"]
     assert "1 workspace(s) could not be read" in beat["problem"]

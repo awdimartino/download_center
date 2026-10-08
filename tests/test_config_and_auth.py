@@ -12,6 +12,11 @@ import time
 import pytest
 
 from app import auth, config, navidrome
+from app.api import auth as auth_routes
+from app.api import deps
+from app.api import jobs as jobs_routes
+from app.api import library_read as library_read_routes
+from app.api import settings as settings_routes
 
 
 # --- config.save ------------------------------------------------------------
@@ -106,13 +111,13 @@ def test_a_windows_path_survives_the_serialiser(config_file):
 def test_beets_enabled_is_editable_and_settable():
     """It was in EDITABLE and returned by GET, but absent from the update
     model - so the two disagreed about what "editable" meant."""
-    from app.main import SettingsUpdate
+    from app.api.settings import SettingsUpdate
     assert "beets_enabled" in config.EDITABLE
     assert "beets_enabled" in SettingsUpdate.model_fields
 
 
 def test_the_acoustid_key_is_editable_and_settable():
-    from app.main import SettingsUpdate
+    from app.api.settings import SettingsUpdate
     assert "acoustid_key" in config.EDITABLE
     assert "acoustid_key" in SettingsUpdate.model_fields
 
@@ -121,14 +126,14 @@ def test_the_acoustid_key_is_never_sent_to_a_browser():
     """It identifies an application to a service that rate-limits and bans by
     key. Nothing in the page needs to read it back, so it goes out masked with
     the passwords rather than in the clear with the Spotify client id."""
-    from app.main import SECRETS
+    from app.api.settings import SECRETS
     assert "acoustid_key" in SECRETS
 
 
 def test_every_secret_is_an_editable_setting():
     """A key in SECRETS but not in EDITABLE is masked on a form that cannot
     save it, which reads as the field being broken."""
-    for key in __import__("app.main", fromlist=["SECRETS"]).SECRETS:
+    for key in __import__("app.api.settings", fromlist=["SECRETS"]).SECRETS:
         assert key in config.EDITABLE, key
 
 
@@ -304,7 +309,7 @@ def test_the_playcount_status_needs_an_administrator():
                  if getattr(r, "path", None) == "/api/playcounts"
                  and "GET" in r.methods)
     dependencies = {d.call for d in route.dependant.dependencies}
-    assert main.admin_session in dependencies
+    assert deps.admin_session in dependencies
 
 
 # --- the generated API docs need a session (L32) -------------------------------
@@ -410,15 +415,14 @@ def test_a_cookie_sent_today_is_not_sent_again(monkeypatch):
 async def test_an_emptied_field_clears_the_setting(config_file, monkeypatch):
     from types import SimpleNamespace
 
-    from app import main
 
     monkeypatch.setattr(config.settings, "spotify_client_id", "abc123")
     monkeypatch.setattr(config.settings, "beets_enabled", True)
     monkeypatch.setattr(config, "FROM_ENV", set())
     admin = SimpleNamespace(identity=SimpleNamespace(is_admin=True))
 
-    await main.put_settings(
-        main.SettingsUpdate(spotify_client_id="", beets_enabled=False), admin)
+    await settings_routes.put_settings(
+        settings_routes.SettingsUpdate(spotify_client_id="", beets_enabled=False), admin)
 
     assert config.settings.spotify_client_id == ""
     assert config.settings.beets_enabled is False
@@ -485,7 +489,7 @@ def test_a_post_from_this_page_or_no_browser_goes_through(headers):
 def test_a_socket_opened_by_another_page_is_closed(monkeypatch):
     import asyncio
 
-    from app import auth, main
+    from app import auth
 
     monkeypatch.setattr(auth, "get", lambda sid: object())
     events = []
@@ -500,7 +504,7 @@ def test_a_socket_opened_by_another_page_is_closed(monkeypatch):
         async def close(self, code):
             events.append(code)
 
-    asyncio.run(main.websocket(Socket()))
+    asyncio.run(jobs_routes.websocket(Socket()))
     assert events == ["accept", 4403]
 
 
@@ -512,7 +516,7 @@ def _sign_in(monkeypatch, outcome, address="10.0.0.9"):
     from starlette.requests import Request
     from starlette.responses import Response
 
-    from app import auth, main
+    from app import auth
 
     def attempt(username, password):
         if isinstance(outcome, Exception):
@@ -523,14 +527,13 @@ def _sign_in(monkeypatch, outcome, address="10.0.0.9"):
     request = Request({"type": "http", "method": "POST", "path": "/api/auth/login",
                        "headers": [], "query_string": b"", "client": (address, 5000),
                        "scheme": "http"})
-    return asyncio.run(main.sign_in(request, main.LoginRequest(
+    return asyncio.run(auth_routes.sign_in(request, auth_routes.LoginRequest(
         username="alex", password="pw"), Response()))
 
 
 @pytest.fixture
 def no_failures(monkeypatch):
-    from app import main
-    monkeypatch.setattr(main, "_sign_in_failures", {}, raising=False)
+    monkeypatch.setattr(auth_routes, "_sign_in_failures", {}, raising=False)
 
 
 def test_an_unreachable_navidrome_is_not_described_to_a_stranger(monkeypatch,
@@ -547,9 +550,9 @@ def test_an_unreachable_navidrome_is_not_described_to_a_stranger(monkeypatch,
 def test_repeated_failed_sign_ins_are_slowed_down(monkeypatch, no_failures):
     from fastapi import HTTPException
 
-    from app import main, navidrome
+    from app import navidrome
 
-    for _ in range(main.SIGN_IN_FAILURES):
+    for _ in range(auth_routes.SIGN_IN_FAILURES):
         with pytest.raises(HTTPException) as refused:
             _sign_in(monkeypatch, navidrome.LoginFailed("Incorrect username or password."))
         assert refused.value.status_code == 401
@@ -566,9 +569,8 @@ def test_repeated_failed_sign_ins_are_slowed_down(monkeypatch, no_failures):
 
 def test_owner_checked_cover_art_is_not_cached_for_everyone():
     """A shared cache would serve one person's art to another (L40)."""
-    from app import main
 
-    assert main.ART_CACHE.startswith("private,")
+    assert library_read_routes.ART_CACHE.startswith("private,")
 
 
 # --- the download settings are checked (L44) -----------------------------------
@@ -598,13 +600,12 @@ async def test_a_saved_setting_is_stored_as_the_model_reads_it(
     restart read the file back through the model."""
     from types import SimpleNamespace
 
-    from app import main
 
     monkeypatch.setattr(config.settings, "audio_bitrate", "192")
     monkeypatch.setattr(config, "FROM_ENV", set())
     admin = SimpleNamespace(identity=SimpleNamespace(is_admin=True))
 
-    await main.put_settings(main.SettingsUpdate(audio_bitrate="320k"), admin)
+    await settings_routes.put_settings(settings_routes.SettingsUpdate(audio_bitrate="320k"), admin)
 
     assert config.settings.audio_bitrate == "320"
     assert 'audio_bitrate = "320"' in config_file.read_text(encoding="utf-8")
@@ -692,13 +693,12 @@ def test_the_password_mark_is_a_hash_of_what_navidrome_stores(navidrome_db, monk
 def test_failed_sign_ins_from_every_address_age_out(monkeypatch):
     """Only the address asking was tidied, so every address that failed once
     stayed in memory for good (2L10)."""
-    from app import main
 
     clock = [1000.0]
-    monkeypatch.setattr(main.time, "time", lambda: clock[0])
-    monkeypatch.setattr(main, "_sign_in_failures", {"1.2.3.4": [1000.0]})
-    clock[0] += main.SIGN_IN_WINDOW + 1
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    monkeypatch.setattr(auth_routes, "_sign_in_failures", {"1.2.3.4": [1000.0]})
+    clock[0] += auth_routes.SIGN_IN_WINDOW + 1
 
-    main._recent_failures("5.6.7.8")
+    auth_routes._recent_failures("5.6.7.8")
 
-    assert main._sign_in_failures == {}
+    assert auth_routes._sign_in_failures == {}

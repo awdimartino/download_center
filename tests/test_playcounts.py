@@ -17,6 +17,7 @@ import pytest
 from app import store, playcounts
 from app.config import settings
 from conftest import add_track
+from app.api import listening as listening_routes
 
 UUID_A = '{"navidrome_uuid": [{"value": "uuid-a"}]}'
 UUID_B = '{"navidrome_uuid": [{"value": "uuid-b"}]}'
@@ -853,7 +854,6 @@ async def test_a_range_without_leading_zeros_finds_the_same_plays(wired):
     dates, so the range came back empty."""
     from types import SimpleNamespace
 
-    from app import main
 
     add_track(wired, "t1", tags=UUID_A)
     played(wired, "t1", ALEX, 1)
@@ -863,9 +863,9 @@ async def test_a_range_without_leading_zeros_finds_the_same_plays(wired):
     session = SimpleNamespace(identity=SimpleNamespace(
         user_id=ALEX, username="alex", libraries=[], is_admin=False))
 
-    padded = await main.playcount_top(start="2026-03-01", end="2026-03-31",
+    padded = await listening_routes.playcount_top(start="2026-03-01", end="2026-03-31",
                                       session=session)
-    unpadded = await main.playcount_top(start="2026-3-1", end="2026-3-31",
+    unpadded = await listening_routes.playcount_top(start="2026-3-1", end="2026-3-31",
                                         session=session)
 
     assert padded["plays"] == 3
