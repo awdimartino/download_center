@@ -1482,13 +1482,20 @@ R2 split of `library.js` lost nothing.
       Windows, which hides the bug in `is_file()` (it checks the names
       returned).
 
-- [ ] **2M13. `unfuse` gives the shared UUID to the keeper even when only a
+- [x] **2M13. `unfuse` gives the shared UUID to the keeper even when only a
       stray file carries it.** *Verified.* `app/unfuse.py:124-137,211-233`.
       Album A has 3 files on UUID `a`; album B has 9 on `b` and one stray on
       `a`. B is the keeper, so all 9 are rewritten to `a` and A gets a fresh
       one. The report shows `retired: []`.
       *Fix:* give the shared UUID to the album where it is the majority; add
       the keeper's dropped UUIDs to `retired`.
+      **Fixed:** the keeper is now chosen only among albums whose majority
+      is the shared UUID (by Navidrome's showing, then size, as before); if
+      none, nobody keeps it. Every other album in the group keeps its own
+      majority when no other album carries it, so only its stray files
+      change, and gets a fresh UUID otherwise. The keeper's dropped UUIDs
+      are now listed in `retired`. New test fails on the old code; the
+      existing unfuse tests still pass.
 
 - [ ] **2M14. Resolving duplicates takes no folder lock.** *By reading.*
       `app/main.py:1327-1348,1429-1437`, `app/duplicates.py:566-633`. A

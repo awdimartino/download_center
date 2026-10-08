@@ -174,9 +174,14 @@ def build(found: survey_module.Survey, library_id: int,
     # Every UUID anywhere in this library, so a minted one cannot collide
     # with an album this pass is not even looking at.
     taken: set[str] = set()
+    # How many albums carry each UUID. An album may keep its own majority
+    # only if nobody else carries it; otherwise keeping it keeps a fusion.
+    carriers: dict[str, set[str]] = collections.defaultdict(set)
     for album in [*found.ready, *found.partial, *found.split,
                   *[a for g in found.fused for a in g]]:
         taken.update(album.uuids)
+        for value in album.uuids:
+            carriers[value].add(album.key)
 
     # --- fused: one UUID, several albums ---------------------------------
     # An album can appear in two groups, if it shares one UUID with one
@@ -198,39 +203,52 @@ def build(found: survey_module.Survey, library_id: int,
                 _unify(plan, album, found.root, "split")
                 settled.add(album.key)
             continue
-        showing: collections.Counter = collections.Counter()
-        if connection is not None:
-            showing = _album_rows(
-                connection, found.root,
-                [p for album in group for p in album.files])
-        keeper = _keeper(group, showing)
-        # The value that fused them, which is the one the keeper should end
-        # up alone with - not merely its own majority, which for an album
-        # that is fused *and* split may be the other one.
+        # The value that fused them. Only an album where it is the
+        # majority can keep it. It used to go to the keeper chosen by size,
+        # wherever it sat: an album of nine files on its own UUID and one
+        # stray carrying the shared one had all nine rewritten to it, while
+        # the album it really belonged to was given a fresh UUID - both
+        # losing their identity for what was one file's mistake.
         shared = _shared(group)
-        keeps = shared if shared in keeper.uuids else _majority(keeper)
+        owners = [album for album in group if _majority(album) == shared]
+        keeper = None
+        if owners:
+            showing: collections.Counter = collections.Counter()
+            if connection is not None:
+                showing = _album_rows(
+                    connection, found.root,
+                    [p for album in owners for p in album.files])
+            keeper = _keeper(owners, showing)
 
-        # The keeper may itself be split, and being chosen as keeper is not
-        # a reason to leave it that way.
-        for path in keeper.files:
-            was = _read_album_uuid(path)
-            if was != keeps:
-                plan.changes.append(Change(
-                    path=_relative(path, found.root), album=keeper.name,
-                    key=keeper.key, was=was, becomes=keeps, why="fused"))
-        plan.keepers.append((keeper.name, keeper.key, keeps))
-        settled.add(keeper.key)
+            # The keeper may itself be split, and being chosen as keeper is
+            # not a reason to leave it that way.
+            for path in keeper.files:
+                was = _read_album_uuid(path)
+                if was != shared:
+                    plan.changes.append(Change(
+                        path=_relative(path, found.root), album=keeper.name,
+                        key=keeper.key, was=was, becomes=shared, why="fused"))
+            plan.keepers.append((keeper.name, keeper.key, shared))
+            plan.retired.extend(v for v in keeper.uuids if v != shared)
+            settled.add(keeper.key)
 
         for album in group:
-            if album.key == keeper.key:
+            if keeper is not None and album.key == keeper.key:
                 continue
-            value = _fresh(taken)
+            # Its own identity where it has one nobody else carries: only
+            # the stray files change. A fresh one otherwise.
+            own = _majority(album)
+            value = (own if own != shared and carriers[own] == {album.key}
+                     else _fresh(taken))
             for path in album.files:
                 was = _read_album_uuid(path)
-                plan.changes.append(Change(
-                    path=_relative(path, found.root), album=album.name,
-                    key=album.key, was=was, becomes=value, why="fused"))
-            plan.retired.extend(v for v in album.uuids if v != keeps)
+                if was != value:
+                    plan.changes.append(Change(
+                        path=_relative(path, found.root), album=album.name,
+                        key=album.key, was=was, becomes=value, why="fused"))
+            plan.retired.extend(
+                v for v in album.uuids
+                if v != value and not (keeper is not None and v == shared))
             settled.add(album.key)
 
     # --- split: one album, several UUIDs ---------------------------------

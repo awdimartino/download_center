@@ -378,3 +378,22 @@ def test_each_library_gets_its_own_plan_file(tmp_path):
     base = tmp_path / "plan.json"
     assert unfuse.plan_path(base, 1) != unfuse.plan_path(base, 2)
     assert unfuse.plan_path(base, 2).name == "plan-2.json"
+
+
+# --- a stray does not decide who keeps the identity (2M13) ----------------------
+
+def test_one_stray_carrying_the_shared_uuid_changes_only_the_stray(state_db, library):
+    """The keeper was chosen by size and given the shared UUID wherever it
+    sat: nine files of B were rewritten to A's UUID, A got a fresh one, and
+    the report said nothing stopped being used."""
+    album(library, "X", "A", 3, [A, A, A])
+    b = album(library, "X", "B", 10, [B] * 9 + [A])
+
+    plan = planned(library)
+
+    changed = {change.path for change in plan.changes}
+    assert changed == {b[9].relative_to(library).as_posix()}
+    assert all(change.becomes == B for change in plan.changes)
+    [(name, _key, keeps)] = plan.keepers
+    assert keeps == A and name.endswith("A")
+    assert plan.retired == []
