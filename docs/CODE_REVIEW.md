@@ -1383,7 +1383,7 @@ R2 split of `library.js` lost nothing.
 
 ### Album identity and covers
 
-- [ ] **2M7. A folder cover is still carried to the wrong album (H7's
+- [x] **2M7. A folder cover is still carried to the wrong album (H7's
       siblings).** *Verified.* `app/filer.py:516-550,724-726`, reached from
       `retag_track` and combine's loose tracks. Moving one track from an
       album with `cover.jpg` to one with embedded art only copies the old
@@ -1393,6 +1393,15 @@ R2 split of `library.js` lost nothing.
       *Fix:* carry a cover only when the whole folder is one album moving
       together; never from `retag_track`; skip if the destination already
       holds audio or any folder cover.
+      **Fixed:** `file_track` takes `carry_cover`, and `retag_track` passes
+      False. `_carry_cover` now copies only into a folder with no music and
+      no folder cover of any name, and only when every other track in the
+      source folder names the same album (it stops reading at the first
+      that does not, so a hundred-album dump costs a few tag reads). New
+      `filer.folder_cover()` finds a cover whatever its case; it is used
+      here and is the helper 2M12 needs elsewhere. New tests fail on the
+      old code. Behaviour change: a dropped album folder no longer brings
+      its cover into an album that is already on disk.
 
 - [ ] **2M8. A registry miss mints a new album UUID without looking at
       disk.** *Verified.* `app/filer.py:387-392,707-710`. Files agree on an

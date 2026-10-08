@@ -395,7 +395,9 @@ def retag_track(space: workspace.Workspace, path: Path,
     moving = _album_identity(path) != before
 
     was = path.parent
-    filed = file_track(space, path, adopt_album=not moving)
+    # Never the cover: the folder it leaves is the album it is leaving, and
+    # that album's art on another album is the wrong picture.
+    filed = file_track(space, path, adopt_album=not moving, carry_cover=False)
     if filed.path.parent != was:
         leave_folder(was, {filed.path.parent}, space.library_path)
     return filed
@@ -519,7 +521,46 @@ COVER_NAMES = ("cover", "folder", "front", "album", "albumart")
 COVER_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
 
 
-def _carry_cover(source_dir: Path, target_dir: Path) -> None:
+def folder_cover(folder: Path) -> Path | None:
+    """The folder cover Navidrome would show for this folder, if any.
+
+    Matched without regard to case: a rip made on Windows says Folder.jpg
+    or cover.JPG, and on the Pi's filesystem a lower-case lookup missed it.
+    In Navidrome's order of preference.
+    """
+    try:
+        files = {p.name.lower(): p for p in folder.iterdir() if p.is_file()}
+    except OSError:
+        return None
+    for name in COVER_NAMES:
+        for suffix in COVER_SUFFIXES:
+            found = files.get(f"{name}{suffix}")
+            if found is not None:
+                return found
+    return None
+
+
+def _folder_is_one_album(folder: Path, track: Path, key: str) -> bool:
+    """Whether every other track in the folder names the same album.
+
+    Stops at the first that does not, so a dump of a hundred albums in one
+    folder costs a few tag reads, not hundreds.
+    """
+    for other in sorted(folder.iterdir()):
+        if other == track or not other.is_file() or not uuidtags.is_audio(other):
+            continue
+        try:
+            meta = read_meta(other)
+        except Exception:
+            return False
+        if not meta.names_album or registry.album_key(meta.albumartist,
+                                                      meta.album) != key:
+            return False
+    return True
+
+
+def _carry_cover(source_dir: Path, target_dir: Path, track: Path | None = None,
+                 key: str | None = None) -> None:
     """Copy a folder cover across with the first track that moves.
 
     Filing moves audio and nothing else, so an album dropped in as a
@@ -533,24 +574,33 @@ def _carry_cover(source_dir: Path, target_dir: Path) -> None:
     be the same bug one file later. Skipped entirely once the destination
     has one, so it happens once per album however many tracks arrive.
 
+    Only into a new folder, and only from a folder that is one album. A
+    folder already holding music is an album with its own art, embedded if
+    not in a file, and Navidrome prefers a folder cover to embedded art: a
+    dropped folder of several albums and one cover.jpg gave that picture to
+    every album it touched, existing ones included.
+
     Never worth failing a file for - the music is what matters, and the art
     can be added later.
     """
     try:
         if not source_dir.is_dir():
             return
-        for name in COVER_NAMES:
-            for suffix in COVER_SUFFIXES:
-                found = source_dir / f"{name}{suffix}"
-                if not found.is_file():
-                    continue
-                target_dir.mkdir(parents=True, exist_ok=True)
-                landing = target_dir / found.name
-                if landing.exists():
-                    return
-                shutil.copy2(found, landing)
-                log.info("carried %s across to %s", found.name, target_dir)
+        found = folder_cover(source_dir)
+        if found is None:
+            return
+        if target_dir.is_dir():
+            if folder_cover(target_dir) is not None:
                 return
+            if any(p.is_file() and uuidtags.is_audio(p)
+                   for p in target_dir.iterdir()):
+                return
+        if track is not None and key is not None and not _folder_is_one_album(
+                source_dir, track, key):
+            return
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(found, target_dir / found.name)
+        log.info("carried %s across to %s", found.name, target_dir)
     except Exception as exc:
         log.warning("could not carry the cover from %s: %s: %s",
                     source_dir, type(exc).__name__, exc)
@@ -705,7 +755,7 @@ def _read_identity(path: Path) -> tuple[str | None, str | None]:
 
 
 def file_track(space: workspace.Workspace, source: Path,
-               adopt_album: bool = True) -> Filed:
+               adopt_album: bool = True, carry_cover: bool = True) -> Filed:
     """Tag a finished file with its identity and move it into the library.
 
     Identity is written before the move, so the file appears at its final
@@ -748,9 +798,9 @@ def file_track(space: workspace.Workspace, source: Path,
         # every later album with no folder cover of its own - and Navidrome
         # prefers a folder cover to the right embedded art. The library
         # root is the same case for a loose file.
-        if source.parent.resolve() not in (space.inbox_dir.resolve(),
-                                           space.library_path.resolve()):
-            _carry_cover(source.parent, target.parent)
+        if carry_cover and source.parent.resolve() not in (
+                space.inbox_dir.resolve(), space.library_path.resolve()):
+            _carry_cover(source.parent, target.parent, source, key)
         target = _move_into_place(source, target)
 
     return Filed(path=target, track_uuid=track_uuid, album_uuid=album_uuid,

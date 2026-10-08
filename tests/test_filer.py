@@ -1049,3 +1049,53 @@ def test_a_copy_that_dies_part_way_leaves_nothing_under_the_real_name(
     monkeypatch.setattr(os, "replace", cross_device)
     assert filer._move_into_place(source, target) == target
     assert target.read_bytes() == b"the whole track"
+
+
+# --- a cover only goes where it belongs (2M7) --------------------------------
+
+def test_moving_one_track_does_not_take_its_old_albums_cover(space):
+    """Navidrome prefers a folder cover to embedded art, so every track of
+    the album the stray joined showed the other album's picture."""
+    abbey = album_on_disk(space, "The Beatles", "Abbey Road", ["Come Together"])
+    (abbey[0].path.parent / "cover.jpg").write_bytes(b"abbey road")
+    stray = album_on_disk(space, "The Beatles", "Abbey Road", ["Jet"])[0]
+    album_on_disk(space, "Wings", "Band on the Run", ["Band on the Run"])
+
+    moved = filer.retag_track(space, stray.path, albumartist="Wings",
+                              album="Band on the Run")
+
+    assert not (moved.path.parent / "cover.jpg").exists()
+
+
+def test_a_folder_of_several_albums_gives_its_cover_to_none_of_them(space, tmp_path):
+    dump = space.inbox_dir / "upload-1" / "everything"
+    dump.mkdir(parents=True)
+    (dump / "cover.jpg").write_bytes(b"one picture")
+    for n, album in enumerate(["Geogaddi", "Campfire Headphase"], start=1):
+        shutil.copy(track(tmp_path, name=f"{n}.mp3", albumartist="Boards",
+                          album=album, title=f"Song {n}"), dump / f"{n}.mp3")
+
+    filed = filer.file_track(space, dump / "1.mp3")
+
+    assert not (filed.path.parent / "cover.jpg").exists()
+
+
+def test_a_cover_is_not_carried_into_an_album_already_on_disk(space, tmp_path):
+    existing = album_on_disk(space, "Boards", "Geogaddi", ["Music Is Math"])[0]
+    dropped = space.inbox_dir / "upload-1" / "Geogaddi"
+    dropped.mkdir(parents=True)
+    (dropped / "cover.jpg").write_bytes(b"the drop's own")
+    shutil.copy(track(tmp_path, albumartist="Boards", album="Geogaddi",
+                      title="Sixtyten", tracknumber="2"), dropped / "02.mp3")
+
+    filed = filer.file_track(space, dropped / "02.mp3")
+
+    assert filed.path.parent == existing.path.parent
+    assert not (filed.path.parent / "cover.jpg").exists()
+
+
+def test_a_folder_cover_is_found_whatever_its_case(space):
+    folder = tmp_of(space) / "rip"
+    folder.mkdir()
+    (folder / "Folder.JPG").write_bytes(b"art")
+    assert filer.folder_cover(folder).name == "Folder.JPG"
