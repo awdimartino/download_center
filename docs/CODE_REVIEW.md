@@ -1913,10 +1913,13 @@ R2 split of `library.js` lost nothing.
       back, stamps its `restored_at` in the same transaction, and stops
       hiding it. A file merely deleted from the quarantine is not "back".
       New test fails on the old code.
-- [ ] **2L14. `tools/fix_broken_m4a.py --all --mode mp3|flac` can overwrite
+- [x] **2L14. `tools/fix_broken_m4a.py --all --mode mp3|flac` can overwrite
       an existing file of the same stem.** `:216-219`. It also still walks
       the quarantine (`:88`). *Fix:* refuse or number the name; skip
       `duplicates-removed/`.
+      **Fixed** as suggested: the repaired file takes the next free numbered
+      name when another file has the one it wants (`free_name`), and the
+      walk skips `duplicates-removed/`. New tests fail on the old code.
 - [ ] **2L15. Plays on tracks with no UUID are dropped every reading and
       reported nowhere.** `app/playcounts.py:198-200,344-353`.
       `without_uuid` appears only in the forced snapshot's JSON. *Fix:*

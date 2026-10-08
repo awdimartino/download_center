@@ -76,6 +76,27 @@ def audio_codec(info: dict | None) -> str | None:
     return None
 
 
+# Where the duplicates panel sets copies aside, inside each library.
+QUARANTINE_NAME = "duplicates-removed"
+
+
+def free_name(original: Path, wanted: Path) -> Path:
+    """`wanted`, or a numbered variant of it if another file has it.
+
+    The filer names a second copy of a track in another format with the
+    same stem, so "01 - Song.mp3" beside "01 - Song.m4a" is exactly the
+    pair this meets. Moving the repaired file onto that name replaced the
+    MP3 already there - its own UUID, stars and play counts gone.
+    """
+    if wanted == original or not wanted.exists():
+        return wanted
+    for n in range(2, 100):
+        candidate = wanted.with_name(f"{wanted.stem} ({n}){wanted.suffix}")
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(f"{wanted} and 98 numbered variants all exist")
+
+
 def find_targets(roots: list[Path], every: bool) -> list[Path]:
     """The .m4a files to act on.
 
@@ -86,6 +107,10 @@ def find_targets(roots: list[Path], every: bool) -> list[Path]:
     targets = []
     for root in roots:
         for path in sorted(root.rglob("*.m4a")):
+            # Never the duplicates set aside, which are not the library's -
+            # the same rule as app/walk.py, copied because this runs alone.
+            if QUARANTINE_NAME in path.relative_to(root).parts:
+                continue
             if every:
                 targets.append(path)
                 continue
@@ -213,8 +238,8 @@ def main() -> int:
                 break
             keep = args.quarantine / f"{path.stem} ({n}){path.suffix}"
 
-        final = path.with_suffix({"remux": ".m4a", "mp3": ".mp3",
-                                  "flac": ".flac"}[args.mode])
+        final = free_name(path, path.with_suffix(
+            {"remux": ".m4a", "mp3": ".mp3", "flac": ".flac"}[args.mode]))
         shutil.move(str(path), str(keep))
         shutil.move(str(repaired), str(final))
         print(f"  fixed      {label:<14} {final.name[:58]}")
