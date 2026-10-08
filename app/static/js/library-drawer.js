@@ -372,7 +372,17 @@ function trackRow(album, track, allPicked) {
   // The list and Needs attention are re-read behind the panel; the panel
   // keeps showing what was typed, since Navidrome has not rescanned yet and
   // reading it back would show the value from before the save.
-  async function saveField(input, key, value, previous) {
+  // One save at a time, in the order they were made. Each saves on leaving
+  // the field, and the server holds the album's folder while it writes, so
+  // tabbing from one field to the next while the first was still saving had
+  // the second refused (409) - and that refusal left the unsaved text in
+  // the field, looking saved.
+  function saveField(input, key, value, previous) {
+    trackEdits = trackEdits.then(() => saveFieldNow(input, key, value, previous));
+    return trackEdits;
+  }
+
+  async function saveFieldNow(input, key, value, previous) {
     if (value === previous) return;
     // Setting the artist of a track with no album artist changes which
     // album the file is on, so the server may move it. Say so first. Asked
@@ -387,7 +397,7 @@ function trackRow(album, track, allPicked) {
         return;
       }
     }
-    await saveEdit("/api/library/track/edit",
+    const saved = await saveEdit("/api/library/track/edit",
       { library_id: album.library_id, path: track.path, [key]: value },
       input, (data) => {
         track[key] = value;
@@ -404,6 +414,10 @@ function trackRow(album, track, allPicked) {
         }
         refreshLibrary(album);
       });
+    if (!saved) {
+      // Back to what is really on the file; the warning says why.
+      input.value = previous || "";
+    }
   }
 
   no.addEventListener("change", () => {
@@ -443,6 +457,9 @@ function trackRow(album, track, allPicked) {
 }
 
 /* --- editing ------------------------------------------------------------- */
+
+// The chain of inline track saves; see saveField.
+let trackEdits = Promise.resolve();
 
 async function saveEdit(path, body, button, done) {
   button.disabled = true;

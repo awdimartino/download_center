@@ -1705,13 +1705,19 @@ R2 split of `library.js` lost nothing.
       the combine dialog's fields no longer closes the dialog; Escape
       elsewhere in it still does.
 
-- [ ] **2M26. A refused inline track edit leaves the unsaved text in the
+- [x] **2M26. A refused inline track edit leaves the unsaved text in the
       field.** *Verified for the page; frequency on the Pi unverified.*
       `app/static/js/library-drawer.js:375-407,447-462`. Save-on-blur meets
       M14's non-blocking lock: a second edit during the first gets 409, the
       text stays, the next save says "Saved.", and nothing retries.
       *Fix:* restore the old value on failure; chain one album's edits so
       they never overlap.
+      **Fixed** as suggested: a failed save puts the field back to the value
+      on the file (the warning says why), and inline track saves go through
+      one promise chain, so each waits for the one before. Verified in
+      Chromium: S9 (field restored) and a new S16 (the second of two quick
+      edits is sent after the first answers, where it used to go 10 ms
+      later); both BUG on the old code.
 
 - [ ] **2M27. A client the broker drops for a stalled send stays connected
       and deaf.** *Verified with a fake socket.* `app/main.py:175-191`.

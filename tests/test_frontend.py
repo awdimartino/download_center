@@ -547,3 +547,12 @@ def test_escape_belongs_to_a_text_box_and_to_the_menu_first():
         assert "pageEscape(event)" in JS_FILES[name], name
     assert 'event.key === "Escape"' not in JS_FILES["library.js"] + JS_FILES["browse.js"]
     assert "}, true);" in JS_FILES["nav.js"]
+
+
+def test_inline_track_saves_run_in_order_and_undo_a_refusal():
+    """A save refused with 409 left its text in the field under a later
+    "Saved.", and quick edits overlapped into that 409 (2M26). Checked in
+    Chromium; this pins the wiring."""
+    drawer = JS_FILES["library-drawer.js"]
+    assert "trackEdits = trackEdits.then(" in drawer
+    assert 'input.value = previous || "";' in drawer
