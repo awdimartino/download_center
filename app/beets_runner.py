@@ -27,7 +27,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import workspace
+from . import filer, workspace
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.beets")
@@ -307,3 +307,37 @@ def import_chosen(space: workspace.Workspace, path: Path,
     log.info("retagged %s as %s", path.name, release_id)
     return {"ran": True, "imported": 1, "skipped": 0, "failed": [],
             "chosen": release_id}
+
+
+def apply_release(space: workspace.Workspace, path: Path,
+                  release_id: str) -> dict[str, Any]:
+    """Tag an album as the chosen release, then file it where that puts it.
+
+    The whole of *Use this*, which lived in its route handler and could only
+    be reached through it. The caller holds the folder and decides who may.
+    """
+    # Read before beets touches anything: once the tags are rewritten there
+    # is nothing left to say which album this used to be.
+    was = filer.album_key_of(path)
+    # Before beets writes anything: a file it cannot tag would otherwise
+    # leave the album half retagged.
+    filer.check_writable(filer.audio_in(path))
+    result = import_chosen(space, path, release_id)
+    if not result.get("imported"):
+        return result
+
+    # Beets retagged in place, so the files are still where they were and
+    # there is no need to ask its database where they went. Settle the album
+    # UUID first, then let the filer move each one - it is the only thing
+    # that decides where a track lives, so a retag that changes the artist or
+    # album puts them under the new name in the layout everything else uses.
+    retagged = filer.audio_in(path)
+    # Raises if beets left the files disagreeing about their album; the
+    # operation then fails with that message and nothing moves.
+    result["album_uuid"] = filer.after_retag(space, retagged, was)
+    settled = [filer.file_track(space, one) for one in retagged]
+    result["failed"] = [*result.get("failed", []), *filer.unidentified(settled)]
+    filed = [one.path for one in settled]
+    result["filed"] = [str(one) for one in filed]
+    filer.leave_folder(path, {one.parent for one in filed}, space.library_path)
+    return result

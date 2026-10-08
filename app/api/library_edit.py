@@ -45,21 +45,6 @@ from .deps import (
 router = APIRouter(dependencies=[Depends(current_session)])
 
 
-def _copy_from_track_row(row: dict[str, Any], library_id: int,
-                         album: str, artist: str) -> duplicates.Copy:
-    """Enough of duplicates.Copy to quarantine a track by hand.
-
-    The fields duplicates.py ranks copies by - bit rate, duration, a
-    MusicBrainz id - do not matter here: nothing is being compared against
-    anything else, only moved.
-    """
-    return duplicates.Copy(
-        id=row["id"], path=row["path"], title=row.get("title", ""),
-        album=album, artist=artist, suffix="", bit_rate=0, duration=0.0,
-        size=0, mbid="", track_artist=artist, starred=False, rating=0,
-        library_id=library_id, library="")
-
-
 class LibraryQuarantine(BaseModel):
     library_id: int
     folder: str
@@ -87,7 +72,7 @@ async def api_library_quarantine(
 
     folder = _library_folder(session.identity, body.library_id, body.folder)
     await asyncio.to_thread(_not_arriving, folder)
-    copies = [_copy_from_track_row(t, body.library_id, body.album,
+    copies = [duplicates.copy_from_track(t, body.library_id, body.album,
                                    t["artist"] or body.artist)
               for t in found["items"]]
     outcome = await _locked_request(
@@ -133,7 +118,7 @@ async def api_track_quarantine(
 
     folder = _library_folder(session.identity, body.library_id, body.folder)
     await asyncio.to_thread(_not_arriving, folder)
-    copy = _copy_from_track_row(track, body.library_id, body.album,
+    copy = duplicates.copy_from_track(track, body.library_id, body.album,
                                 track["artist"] or body.artist)
     try:
         moved = await _locked_request(
@@ -435,33 +420,10 @@ async def library_match_apply(
     space, path = await asyncio.to_thread(check)
 
     def run() -> dict[str, Any]:
-        # Read before beets touches anything: once the tags are rewritten
-        # there is nothing left to say which album this used to be.
-        was = filer.album_key_of(path)
         ids = deps._before_edit(session.identity, body.library_id, body.folder)
-        # Before beets writes anything: a file it cannot tag would otherwise
-        # leave the album half retagged.
-        filer.check_writable(filer.audio_in(path))
-        result = beets_runner.import_chosen(space, path, body.release_id)
+        result = beets_runner.apply_release(space, path, body.release_id)
         if not result.get("imported"):
             return result
-
-        # Beets retagged in place, so the files are still where they were
-        # and there is no need to ask its database where they went. Settle
-        # the album UUID first, then let the filer move each one - it is the
-        # only thing that decides where a track lives, so a retag that
-        # changes the artist or album puts them under the new name in the
-        # layout everything else uses.
-        retagged = filer.audio_in(path)
-        # Raises if beets left the files disagreeing about their album; the
-        # operation then fails with that message and nothing moves.
-        result["album_uuid"] = filer.after_retag(space, retagged, was)
-        settled = [filer.file_track(space, one) for one in retagged]
-        result["failed"] = [*result.get("failed", []), *filer.unidentified(settled)]
-        filed = [one.path for one in settled]
-        result["filed"] = [str(one) for one in filed]
-        filer.leave_folder(path, {one.parent for one in filed},
-                           space.library_path)
         # Last, so an album whose retag did not go through stays in review.
         _reviewed(session.identity, body.library_id, ids, "matched")
         navidrome.notify()
@@ -533,19 +495,13 @@ async def library_cover_apply(
     path, tracks = await asyncio.to_thread(check)
 
     def run() -> dict[str, Any]:
-        data = (covers.fetch(body.url, covers.CHOOSABLE_HOSTS) if body.url
-                else covers.current(path, tracks))
-        if not data:
-            raise HTTPException(
-                status_code=502 if body.url else 404,
-                detail="Could not fetch that cover." if body.url
-                else "This album has no cover to square.")
-        if not body.url and covers.is_square(data):
-            # Squaring a square is every file rewritten for nothing - and a
-            # bulk "square these" reaches plenty of covers that already are.
-            return {"written": 0, "failed": [], "already_square": True}
-        result = covers.apply(path, tracks, data)
-        navidrome.notify()
+        try:
+            result = covers.apply_choice(path, tracks, body.url)
+        except covers.NoCover as exc:
+            raise HTTPException(status_code=502 if exc.fetched else 404,
+                                detail=str(exc)) from exc
+        if not result.get("already_square"):
+            navidrome.notify()
         return result
 
     return await _locked_request([path], run)

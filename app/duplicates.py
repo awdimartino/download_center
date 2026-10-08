@@ -772,3 +772,19 @@ def auto_resolve(connection: sqlite3.Connection, identity: navidrome.Identity,
         except Exception as exc:
             failures.append(f"{group.key}: {type(exc).__name__}: {exc}")
     return {"resolved": resolved, "failed": failures, "skipped": skipped}
+
+
+def copy_from_track(row: dict[str, Any], library_id: int,
+                    album: str, artist: str) -> Copy:
+    """Enough of a Copy to quarantine a track by hand, from a Library row.
+
+    The fields copies are ranked by - bit rate, duration, a MusicBrainz id -
+    do not matter here: nothing is being compared against anything else,
+    only moved. Lived in the route handlers, which had to know this class's
+    fields to set a track aside.
+    """
+    return Copy(
+        id=row["id"], path=row["path"], title=row.get("title", ""),
+        album=album, artist=artist, suffix="", bit_rate=0, duration=0.0,
+        size=0, mbid="", track_artist=artist, starred=False, rating=0,
+        library_id=library_id, library="")

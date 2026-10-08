@@ -2092,7 +2092,7 @@ R2 split of `library.js` lost nothing.
       fails cleanly back to scratch for Retry. Two new tests fail on the old
       code. `inbox.receiving` stays a one-time check: it is about the inbox's
       own recent arrivals, and the lock now covers the race it could not.
-- [ ] **2D4. Business logic lives in route handlers.** About two thirds of
+- [x] **2D4. Business logic lives in route handlers.** About two thirds of
       `main.py`: `library_match_apply.run`, `library_combine`,
       `library_cover_apply.run`, the quarantine handlers and the job
       lifecycle. During R1, move the `run()` bodies into the domain
@@ -2100,6 +2100,21 @@ R2 split of `library.js` lost nothing.
       `operations`, `library`, `inbox` and `folderlock`, and `library`
       imports `playcounts`. All in-process state assumes one uvicorn
       worker, and nothing enforces that.
+      **Done, with two left as they are.** The job lifecycle moved out of
+      the handlers with R1 (`app/jobs.py`). *Use this*'s retag sequence is
+      now `beets_runner.apply_release`; choosing and applying a cover is
+      `covers.apply_choice` (with `covers.NoCover` for "nothing to put
+      on"); turning a Library row into a `duplicates.Copy` is
+      `duplicates.copy_from_track`, so the quarantine routes no longer know
+      that class's fields. The handlers now check, lock, start and report.
+      Combine's handler only picks which cover bytes to hand
+      `combine.combine`, which already did the work. One worker is now
+      enforced: start-up refuses `WEB_CONCURRENCY` other than 1 (new test).
+      **Left:** `replaygain` reporting progress through `operations` and
+      checking `inbox.receiving`, and `library` reading `playcounts`. Both
+      are real dependencies of what those modules do, not handler logic in
+      the wrong place, and there are no import cycles. Untangling them
+      would mean passing callbacks through for no behaviour change.
 - [x] **2D5. The frontend has no shared fetch layer.** 30 raw `fetch` calls
       against 19 through `getJSON`/`postJSON`, with three error
       conventions; the root of 2M22, 2L20 and 2L26. `startOperation`

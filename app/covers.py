@@ -581,3 +581,29 @@ def candidates(folder: Path, tracks: list[Path], artist: str,
                 "detail": " · ".join(p for p in (card["artist"], card["year"]) if p),
                 "preview": card["cover"]})
     return found
+
+
+class NoCover(Exception):
+    """There was no picture to put on the album: the chosen one could not be
+    fetched (`fetched` True), or the album has none of its own to square."""
+
+    def __init__(self, message: str, fetched: bool) -> None:
+        super().__init__(message)
+        self.fetched = fetched
+
+
+def apply_choice(path: Path, tracks: list[Path], url: str | None) -> dict[str, Any]:
+    """Put a chosen cover - or, with no URL, the album's own cover squared -
+    on every track of the album. Lived in its route handler before.
+
+    Squaring a square is every file rewritten for nothing, and a bulk
+    "square these" reaches plenty of covers that already are; that is
+    answered without writing anything.
+    """
+    data = fetch(url, CHOOSABLE_HOSTS) if url else current(path, tracks)
+    if not data:
+        raise NoCover("Could not fetch that cover." if url
+                      else "This album has no cover to square.", fetched=bool(url))
+    if not url and is_square(data):
+        return {"written": 0, "failed": [], "already_square": True}
+    return apply(path, tracks, data)

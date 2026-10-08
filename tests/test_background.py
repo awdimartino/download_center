@@ -154,3 +154,14 @@ async def test_shutting_down_stops_jobs_and_operations(monkeypatch):
     assert job.cancelled()
     assert stopped.is_set()
     assert operation.task is None and operation.status == operations.DONE
+
+
+@pytest.mark.asyncio
+async def test_a_second_worker_is_refused(monkeypatch):
+    """Sessions, jobs, locks and the broker live in this process's memory.
+    A second worker would have its own of each, and nothing stopped one
+    being started (2D4)."""
+    monkeypatch.setenv("WEB_CONCURRENCY", "2")
+    with pytest.raises(RuntimeError, match="single worker"):
+        async with main.lifespan(main.app):
+            pass

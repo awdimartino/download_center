@@ -10,6 +10,7 @@ import contextlib
 import functools
 import hashlib
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,15 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Sessions, jobs, operations, the folder locks and the socket broker all
+    # live in this process's memory. A second worker would have its own of
+    # each: signed-in people signed out at random, two downloads of one album
+    # holding two different locks. Refused, rather than assumed.
+    workers = os.environ.get("WEB_CONCURRENCY", "1").strip() or "1"
+    if workers != "1":
+        raise RuntimeError(
+            f"WEB_CONCURRENCY is {workers}; this application keeps its state "
+            "in memory and must run as a single worker.")
     store.connect(settings.state_db)
     operations.subscribe(push_operation)
     log.info("workspace root: %s", settings.output_dir)
