@@ -523,11 +523,16 @@ def overview(identity: navidrome.Identity) -> dict[str, Any]:
         heard = listening(identity)
     except Exception as exc:
         log.warning("cannot read listening history: %s", exc)
+        # Zeros so the page can still draw, and a flag so it does not
+        # present them as the truth: on their own they were exactly what an
+        # account that had never played anything looks like.
         heard = {"months": [], "top_artists": [], "total_plays": 0,
                  "this_month": 0, "last_month": 0, "tracked_since": "",
                  "artists_heard": 0, "busiest_month": {"month": "", "plays": 0},
                  "year": {"year": _now().year, "plays": 0,
-                          "tracks": 0, "seconds": 0}}
+                          "tracks": 0, "seconds": 0},
+                 "available": False,
+                 "reason": f"{type(exc).__name__}: {exc}"[:200]}
     counted = collection(identity)
     return {
         "username": identity.username,

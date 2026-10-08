@@ -1935,8 +1935,11 @@ R2 split of `library.js` lost nothing.
       parsed dates on, reformatted.
       **Fixed** as suggested: once parsed, the range is written back as
       padded dates. New test fails on the old code (0 plays against 3).
-- [ ] **2L17. Home shows an all-zero history when the history read fails.**
+- [x] **2L17. Home shows an all-zero history when the history read fails.**
       `app/overview.py:522-530`. *Fix:* `"available": false` and a banner.
+      **Fixed** as suggested: the zeros now come with `available: false`
+      and the reason, and Home shows a warning banner saying the numbers are
+      not real. New test fails on the old code.
 - [ ] **2L18. The `duplicate_dismissed` migration is not atomic.**
       *Verified.* `app/store.py:231-248`. A crash between steps strands the
       old table, and every "keep both" returns to the review list. *Fix:*

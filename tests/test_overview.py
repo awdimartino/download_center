@@ -745,3 +745,19 @@ def test_the_months_headline_counts_plays_as_plays(state_db, identity_with_db,
     month = next(f for f in facts if f["tail"] == "this month")
 
     assert month["value"] == "5 plays"
+
+
+# --- a history that could not be read (2L17) -------------------------------------
+
+def test_a_history_that_cannot_be_read_says_so(identity_with_db, monkeypatch, state_db):
+    """Replaced with zeros and nothing else, which looks exactly like an
+    account that has never played anything."""
+    def locked(identity):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(overview, "listening", locked)
+
+    heard = overview.overview(identity_with_db)["listening"]
+
+    assert heard["available"] is False
+    assert "locked" in heard["reason"]

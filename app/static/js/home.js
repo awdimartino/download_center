@@ -270,11 +270,14 @@ export async function loadHome() {
     // is the one thing here worth interrupting for, because every day it
     // does not run is a day of listening nobody can recover.
     const snaps = data.snapshots || {};
-    setBanner(homeSnapshots, snaps.up_to_date === false
-      ? "Play counts have not been read since "
-        + (snaps.last_reading || "ever")
-        + " — listening since then is not being recorded."
-      : "", "warn");
+    setBanner(homeSnapshots, heard.available === false
+      ? "Your listening history could not be read just now, so these "
+        + "numbers are not real. Try again shortly."
+      : snaps.up_to_date === false
+        ? "Play counts have not been read since "
+          + (snaps.last_reading || "ever")
+          + " — listening since then is not being recorded."
+        : "", "warn");
   } catch (err) {
     homeEmpty.hidden = false;
     homeEmpty.textContent = "Could not load: " + err.message;

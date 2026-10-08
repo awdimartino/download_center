@@ -585,3 +585,8 @@ def test_a_rebuilt_retry_button_stays_pressed():
     downloads = JS_FILES["downloads.js"]
     assert "retry.disabled = retrying.has(job.id);" in downloads
     assert "if (retrying.has(id)) return;" in downloads
+
+
+def test_home_says_when_the_history_could_not_be_read():
+    """Zeros on their own read as "you have never played anything" (2L17)."""
+    assert "heard.available === false" in JS_FILES["home.js"]
