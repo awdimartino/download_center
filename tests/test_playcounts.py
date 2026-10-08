@@ -773,3 +773,35 @@ def test_two_readings_at_once_are_taken_one_after_the_other(wired, monkeypatch):
         "SELECT SUM(changed) FROM play_snapshot_run").fetchone()[0]
     assert most[0] == 1, "two readings ran at once"
     assert changed == 1
+
+
+# --- a counter that comes back into view (2M15) -----------------------------------
+
+def _missing(db, track_id, missing):
+    connection = sqlite3.connect(db)
+    with connection:
+        connection.execute("update media_file set missing = ? where id = ?",
+                           (int(missing), track_id))
+    connection.close()
+
+
+def test_a_track_hidden_at_the_first_reading_does_not_count_its_lifetime(wired):
+    """Only rows from the first reading were baselines, so a track missing,
+    set aside or unstamped then had its whole history counted as new plays
+    when it reappeared, dated months before collection began."""
+    add_track(wired, "t1", tags=UUID_A)
+    add_track(wired, "t2", tags=UUID_B, path="b.mp3")
+    played(wired, "t1", ALEX, 100)
+    played(wired, "t2", ALEX, 40, when="2026-01-03T09:00:00+00:00")
+    _missing(wired, "t2", True)
+    playcounts.take("2026-03-01T10:00:00+00:00")
+    _missing(wired, "t2", False)
+    playcounts.take("2026-03-05T10:00:00+00:00")
+
+    assert playcounts.plays_between("2000-01-01", "2026-12-31", user_id=ALEX) == []
+
+    played(wired, "t2", ALEX, 41, when="2026-03-06T20:00:00+00:00")
+    playcounts.take("2026-03-06T20:05:00+00:00")
+
+    plays = playcounts.plays_between("2000-01-01", "2026-12-31", user_id=ALEX)
+    assert {row["track_uuid"]: row["plays"] for row in plays} == {"uuid-b": 1}

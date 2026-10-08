@@ -1516,7 +1516,7 @@ R2 split of `library.js` lost nothing.
 
 ### Listening
 
-- [ ] **2M15. A track the collector could not see at the first reading has
+- [x] **2M15. A track the collector could not see at the first reading has
       its whole lifetime counted as plays when it appears.** *Verified;
       whether it has happened on the Pi is unknown.*
       `app/playcounts.py:179-200,617-642`, `app/store.py:168-176`. Only rows
@@ -1532,6 +1532,16 @@ R2 split of `library.js` lost nothing.
       *Fix:* treat a first-seen row as a baseline when its `play_date`
       predates the previous reading; never count a rise older than the
       reading before it.
+      **Fixed** with a narrower rule than suggested: a rise whose latest
+      play (`play_date`) is before collection began is treated as a
+      baseline, never as plays. That covers both the reappearing track and
+      the returning duplicate file. "Older than the previous reading" was
+      not used: a client syncing offline plays late stamps them in the
+      past, and those are real. Applied when plays are computed from the
+      stored readings, not when they are taken, so any phantom plays
+      already in the Pi's history go away on deploy without touching
+      state.db. A first row with no `play_date` still counts, as before.
+      New test fails on the old code.
 
 - [x] **2M16. The Last.fm fetch double-counts and can silently truncate.**
       *Verified with a mocked `_call`.* `app/lastfm.py` (`scrobbles`). Pages

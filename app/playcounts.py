@@ -129,6 +129,18 @@ def local_stamp(raw: str | None) -> str:
     return moment.astimezone(zone()).isoformat(timespec="seconds")
 
 
+def _instant(raw: str | None) -> datetime | None:
+    """A stamp from either side - Navidrome's play_date, a reading's own
+    stamp, a bare date from the nightly era - as a moment, or None."""
+    if not raw:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(raw).strip())
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 def baseline_stamp() -> str | None:
     """When collection began: the stamp of the very first reading.
 
@@ -611,6 +623,7 @@ def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
             " where user_id = ?", (user_id,)).fetchall()
 
     first = baseline_stamp()
+    began = _instant(first)
     plays: list[tuple[str, str, int]] = []
     previous_track = None
     previous_count = 0
@@ -627,6 +640,18 @@ def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
             # as a baseline lost the first play of everything newly played
             # - exactly the music being discovered.
             previous_count = 0
+        last_played = _instant(play_date)
+        if (count > previous_count and began is not None
+                and last_played is not None and last_played < began):
+            # A rise whose latest play happened before collection began
+            # holds no play the collector could have seen: a lifetime
+            # counter coming back into view. A track missing, set aside or
+            # not yet stamped at the first reading had its whole history
+            # counted as new plays when it reappeared, dated months back,
+            # and counted again by any Last.fm import; so did one of two
+            # files sharing a UUID going missing and coming back.
+            previous_count = count
+            continue
         if count > previous_count:
             # A rise of more than one means the same track was played
             # twice inside one interval. Only the last of them has a
