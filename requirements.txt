@@ -27,7 +27,7 @@ PyYAML==6.0.3
 # zoneinfo falls back to this when the system has no tzdata, which a slim
 # image may not - and a lookup that fails there fails for every zone name,
 # including UTC.
-tzdata==2026.2
+tzdata==2026.5
 
 # The chroma plugin identifies a recording by acoustic fingerprint rather
 # than by its tags, which is the only thing that helps a file whose tags are
