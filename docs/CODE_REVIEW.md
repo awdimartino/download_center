@@ -1719,11 +1719,16 @@ R2 split of `library.js` lost nothing.
       edits is sent after the first answers, where it used to go 10 ms
       later); both BUG on the old code.
 
-- [ ] **2M27. A client the broker drops for a stalled send stays connected
+- [x] **2M27. A client the broker drops for a stalled send stays connected
       and deaf.** *Verified with a fake socket.* `app/main.py:175-191`.
       After the 5-second timeout the socket is unregistered but never
       closed, so the page shows "live" and receives nothing.
       *Fix:* close it (code 1011, bounded) when dropping it.
+      **Fixed** as suggested: after unregistering a stalled socket the
+      broker closes it with 1011, bounded by the send timeout and in the
+      background so a dead peer holds nothing up (the task is kept until it
+      finishes). The page sees an ordinary close and reconnects for a fresh
+      snapshot. New test fails on the old code.
 
 - [ ] **2M28. Bulk *Square covers* caches the old picture for a week.**
       *Verified in Chromium; unverified against Navidrome.*

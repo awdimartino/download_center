@@ -67,3 +67,27 @@ async def test_signing_out_closes_that_sessions_sockets_only():
     assert other_tab.closed_with is None
     await broker.publish({"type": "job"}, owner="alex")
     assert list(broker._clients) == [other_tab]
+
+
+@pytest.mark.asyncio
+async def test_a_client_dropped_for_stalling_is_closed_not_just_forgotten(monkeypatch):
+    """Unregistered but left open, it went on looking live to its page and
+    received nothing ever again; nothing made it reconnect (2M27)."""
+    import asyncio
+
+    from app import main
+
+    class Stalled(_Socket):
+        async def send_json(self, message):
+            await asyncio.Event().wait()
+
+    broker = main.Broker()
+    monkeypatch.setattr(main.Broker, "SEND_TIMEOUT", 0.05)
+    stalled = Stalled()
+    await broker.register(stalled, "alex")
+
+    await broker.publish({"type": "job"}, owner="alex")
+    await asyncio.sleep(0.05)
+
+    assert stalled.closed_with == 1011
+    assert list(broker._clients) == []

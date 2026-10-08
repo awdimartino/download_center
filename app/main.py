@@ -150,6 +150,8 @@ class Broker:
         self._clients: dict[WebSocket, str] = {}
         # Which session opened each socket, so signing out can close it.
         self._sessions: dict[WebSocket, str] = {}
+        # Closes in flight, held so they are not collected before they run.
+        self._closing: set[asyncio.Task] = set()
         self._lock = asyncio.Lock()
 
     async def register(self, ws: WebSocket, username: str,
@@ -214,6 +216,19 @@ class Broker:
         for ws in stalled:
             if ws is not None:
                 await self.unregister(ws)
+                # Closed, not just forgotten. A socket dropped from the list
+                # but left open went on looking "live" to its page - a phone
+                # waking up still holding the TCP connection - and received
+                # nothing ever again. Closing it is what makes it reconnect.
+                # In the background, so a dead peer cannot hold this up.
+                task = asyncio.create_task(self._close(ws))
+                self._closing.add(task)
+                task.add_done_callback(self._closing.discard)
+
+    async def _close(self, ws: WebSocket) -> None:
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(ws.close(code=1011),
+                                   timeout=self.SEND_TIMEOUT)
 
 
 broker = Broker()
