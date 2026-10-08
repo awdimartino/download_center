@@ -714,25 +714,26 @@ def validate(url: str) -> None:
 
 async def _resolve_job(job: dict[str, Any], url: str,
                        space: workspace.Workspace) -> None:
-    """Resolve a link off the event loop, then announce the result."""
+    """Resolve a link off the event loop, then announce the result.
+
+    One handler for a cancel, wherever it lands. It covered only the resolve
+    itself, so a cancel arriving while the result was being announced left
+    the job at "queued" with a dead task behind it: Cancel answered ok and
+    did nothing, Retry said it was still running, and it counted against
+    the five-job limit until deleted.
+    """
     try:
-        kind, title, tracks = await threads.run(_resolve, url)
-    except asyncio.CancelledError:
-        # Cancelled while resolving. Without this the job sat at "resolving"
-        # for the life of the process, with no task behind it and no way to
-        # tell it apart from one still working.
-        job.update(status="cancelled", error=None)
-        RUNNING.pop(job["id"], None)
-        await push_job(job)
-        raise
-    except (spotify.ResolveError, generic.ResolveError) as exc:
-        job.update(status="failed", error=str(exc))
-        log.warning("resolve failed for %s: %s", url, exc)
-    except Exception as exc:
-        job.update(status="failed", error=f"Resolve error: {exc}")
-        log.exception("unexpected resolve failure for %s", url)
-    else:
-        if len(tracks) > MAX_TRACKS_PER_JOB:
+        try:
+            kind, title, tracks = await threads.run(_resolve, url)
+        except (spotify.ResolveError, generic.ResolveError) as exc:
+            job.update(status="failed", error=str(exc))
+            log.warning("resolve failed for %s: %s", url, exc)
+            tracks = None
+        except Exception as exc:
+            job.update(status="failed", error=f"Resolve error: {exc}")
+            log.exception("unexpected resolve failure for %s", url)
+            tracks = None
+        if tracks is not None and len(tracks) > MAX_TRACKS_PER_JOB:
             job.update(
                 status="failed",
                 title=title,
@@ -740,6 +741,12 @@ async def _resolve_job(job: dict[str, Any], url: str,
                       f"{MAX_TRACKS_PER_JOB} this can queue at once. Queue it "
                       "in parts - by album, say.")
             log.warning("refused %s: %d tracks", title, len(tracks))
+            tracks = None
+        if tracks is None:
+            # Not going to run, so nothing else will clear the entry. The
+            # refusal for too many tracks used to leave it, and Retry said
+            # the job was still running for the life of the process.
+            RUNNING.pop(job["id"], None)
             await push_job(job)
             return
         job.update(
@@ -750,12 +757,15 @@ async def _resolve_job(job: dict[str, Any], url: str,
         )
         log.info("resolved %s -> %d track(s)", title, len(tracks))
         await push_job(job)
-        await _run(job, space)
-        return
-    # Only reached when resolving failed: _run owns the entry from here on,
-    # and clears it in its own finally.
-    RUNNING.pop(job["id"], None)
-    await push_job(job)
+    except asyncio.CancelledError:
+        # A job that had already failed keeps saying why.
+        if job["status"] not in FINISHED:
+            job.update(status="cancelled", error=None)
+        RUNNING.pop(job["id"], None)
+        await push_job(job)
+        raise
+    # _run owns the entry from here on, and clears it in its own finally.
+    await _run(job, space)
 
 
 async def _run(job: dict[str, Any], space: workspace.Workspace) -> None:

@@ -480,3 +480,48 @@ def test_the_page_cancels_an_active_job_rather_than_deleting_it():
           / "downloads.js").read_text(encoding="utf-8")
     assert "/cancel`, { method: \"POST\" }" in js
     assert 'remove.dataset.action === "cancel"' in js
+
+
+# --- a cancel wherever it lands while resolving (2L2) ----------------------------
+
+@pytest.mark.asyncio
+async def test_a_cancel_while_announcing_the_resolve_leaves_no_ghost(monkeypatch):
+    """The handler covered only the resolve itself. A cancel landing while
+    the result was being announced left the job "queued", with a dead task
+    still listed as running."""
+    job = _job("j-resolving", status="resolving")
+    pushed = asyncio.Event()
+
+    async def slow_push(job):
+        if job["status"] == "queued":
+            pushed.set()
+            await asyncio.sleep(5)
+
+    monkeypatch.setattr(main, "push_job", slow_push)
+    monkeypatch.setattr(main, "_resolve",
+                        lambda url: ("album", "Abbey Road", [{"id": "s1", "title": "T"}]))
+    monkeypatch.setattr(main, "new_item", lambda track: {"id": track["id"], "status": "pending"})
+    task = asyncio.create_task(main._resolve_job(job, "https://x", None))
+    main.RUNNING[job["id"]] = task
+
+    await asyncio.wait_for(pushed.wait(), 2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert job["status"] == "cancelled"
+    assert job["id"] not in main.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_too_many_tracks_is_refused_and_not_left_running(monkeypatch):
+    job = _job("j-big", status="resolving")
+    monkeypatch.setattr(main, "push_job", lambda job: asyncio.sleep(0))
+    monkeypatch.setattr(main, "_resolve", lambda url: (
+        "playlist", "Huge", [{"id": str(n)} for n in range(main.MAX_TRACKS_PER_JOB + 1)]))
+    main.RUNNING[job["id"]] = asyncio.current_task()
+
+    await main._resolve_job(job, "https://x", None)
+
+    assert job["status"] == "failed"
+    assert job["id"] not in main.RUNNING

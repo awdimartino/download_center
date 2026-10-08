@@ -1780,9 +1780,15 @@ R2 split of `library.js` lost nothing.
       page keeps a set of jobs whose Retry is in flight, so a rebuilt button
       comes back disabled and a second press is ignored. New server test
       fails on the old code.
-- [ ] **2L2. A cancel just after resolving leaves a job stuck at "queued".**
+- [x] **2L2. A cancel just after resolving leaves a job stuck at "queued".**
       *Verified.* `app/main.py:637-657`. `push_job` is awaited outside any
       handler. *Fix:* one try/except/finally around `_resolve_job`'s body.
+      **Fixed** as suggested: one `CancelledError` handler now covers the
+      whole of `_resolve_job` before the run starts, and a job that had
+      already failed keeps its reason. Found alongside: refusing a link
+      over `MAX_TRACKS_PER_JOB` returned without clearing `RUNNING`, so
+      Retry said "still running" for the life of the process; every path
+      that will not run now clears it. Both new tests fail on the old code.
 - [ ] **2L3. A Settings save that fails still changes the live settings.**
       *Verified.* `app/config.py:204-214`. Invalid TOML or a read-only
       `/config` gives a 500 with the change in force until restart. A
