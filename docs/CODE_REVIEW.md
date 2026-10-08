@@ -1360,7 +1360,7 @@ R2 split of `library.js` lost nothing.
       row counts unreadable or broken workspaces without naming them, since
       Health is shown to every account. New tests fail on the old code.
 
-- [ ] **2M6. What the poller cannot file is still thrown away (M18 half
+- [x] **2M6. What the poller cannot file is still thrown away (M18 half
       fixed).** *Traced by reading; dot-folder case run.*
       `app/main.py:260-264`, `app/inbox.py:309-330,448-457`. `drain_all`
       returns failures but `_inbox_loop` reads only `changed`; only a
@@ -1370,6 +1370,16 @@ R2 split of `library.js` lost nothing.
       folders, a file with a future mtime.
       *Fix:* keep the last result per workspace and show it on Health or the
       Drop page, listing what was not filed and why.
+      **Fixed:** `inbox.drain_all` records each workspace's last pass:
+      what is arriving, what failed and why, and, from the new
+      `inbox.overlooked()`, what will never be filed (a format the filer
+      cannot tag, anything under a hidden folder other than `.incomplete`,
+      a file dated in the future). Health has a new per-person Inbox
+      section, built from `inbox.status_for(username)` only, so nobody sees
+      another account's file names: WARN "N not filed" naming the first
+      five, INFO while files are arriving, FAIL when the inbox could not be
+      read (2M5). This also covers 2H4's hidden-folder reporting. New tests
+      fail on the old code.
 
 ### Album identity and covers
 

@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import diskaudit, heartbeat, memo, navidrome, uuidtags
+from . import diskaudit, heartbeat, inbox, memo, navidrome, uuidtags
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.health")
@@ -430,6 +430,51 @@ def _stale_index_check(connection_stamped: int | None, audit) -> Check | None:
     )
 
 
+# How many files to name in a row's detail before saying "and N more".
+NAMED = 5
+
+
+def _named(lines: list[str]) -> str:
+    shown = "; ".join(lines[:NAMED])
+    return shown + (f"; and {len(lines) - NAMED} more" if len(lines) > NAMED else "")
+
+
+def _inbox_section(username: str | None) -> Section | None:
+    """This person's inboxes as the poller last saw them.
+
+    What the poller could not file was logged once and never mentioned
+    again; only a browser upload's own finish said anything. A drop over the
+    network share that could not be filed sat there unexplained.
+    """
+    if not username:
+        return None
+    entries = inbox.status_for(username)
+    if not entries:
+        return None
+    section = Section("Inbox")
+    many = len(entries) > 1
+    for entry in sorted(entries, key=lambda e: e["library"]):
+        label = f"Inbox: {entry['library']}" if many else "Inbox"
+        key = f"inbox_{entry['library']}"
+        if entry["broken"]:
+            section.add(Check(key, label, "unreadable", FAIL,
+                              f"Could not look in it: {entry['broken']}",
+                              "The log has the traceback."))
+            continue
+        stuck = entry["failures"] + entry["overlooked"]
+        if stuck:
+            section.add(Check(
+                key, label, f"{len(stuck)} not filed", WARN, _named(stuck),
+                "Fix or remove these in the inbox folder; a file that "
+                "changes is tried again."))
+        elif entry["waiting"]:
+            section.add(Check(key, label, f"{entry['waiting']} arriving", INFO,
+                              "Filed once they stop changing.", secondary=True))
+        else:
+            section.add(Check(key, label, "empty", OK, secondary=True))
+    return section
+
+
 def _system_section(started_at: float) -> Section:
     section = Section("System")
 
@@ -638,6 +683,9 @@ def report(started_at: float,
     if duplicates_check is not None:
         _attach(sections, "Libraries", duplicates_check)
 
+    inbox_section = _inbox_section(getattr(identity, "username", None))
+    if inbox_section is not None:
+        sections.append(inbox_section)
     sections.append(_system_section(started_at))
 
     # Counted over the rows you can act on. Every row is shown now, but a

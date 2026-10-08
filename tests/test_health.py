@@ -388,3 +388,22 @@ async def test_the_inbox_loop_reports_an_unreadable_workspace(monkeypatch):
 
     beat = heartbeat.snapshot()["inbox"]
     assert "1 workspace(s) could not be read" in beat["problem"]
+
+
+def test_health_names_what_the_inbox_could_not_file(monkeypatch):
+    """Logged once and never mentioned again; only a browser upload's own
+    finish ever said anything (2M6)."""
+    from app import health
+
+    monkeypatch.setattr(health.inbox, "status_for", lambda username: [{
+        "username": username, "library": "Music", "waiting": 0,
+        "failures": ["a.mp3: OSError: read-only filesystem"],
+        "overlooked": ["b.wma: a format this cannot tag, so cannot file"],
+        "broken": None, "at": 0}])
+
+    section = health._inbox_section("alex")
+    [check] = section.checks
+    assert check.status == health.WARN
+    assert check.value == "2 not filed"
+    assert "a.mp3" in check.detail and "b.wma" in check.detail
+    assert health._inbox_section(None) is None

@@ -35,6 +35,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from . import filer, uuidtags, workspace
 from .config import settings
@@ -482,6 +483,82 @@ def _drain(space: workspace.Workspace) -> Result:
     return result
 
 
+# Audio in a format the filer cannot tag, so cannot file. Not on this list
+# and not audio at all, a file is residue (see `_clear_residue`).
+_CANNOT_FILE = {".aac", ".aif", ".alac", ".dff", ".dsf", ".m4b", ".mka",
+                ".mpc", ".tta", ".wma"}
+
+
+def overlooked(space: workspace.Workspace) -> list[str]:
+    """Files in the inbox that will never be filed, and why.
+
+    `waiting()` passes over them in silence, so they used to sit there for
+    ever, counted nowhere: a format the filer cannot tag, anything under a
+    hidden folder (which the poller skips on purpose - `.incomplete` and a
+    `.Trash` folder live there), and a file dated in the future, which never
+    looks settled.
+    """
+    root = space.inbox_dir
+    if not root.is_dir():
+        return []
+    now = time.time()
+    found = []
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if relative.parts[0] == ".incomplete" or path.name.startswith("."):
+            continue
+        if not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        audio = uuidtags.is_audio(path)
+        if not (audio or suffix in _CANNOT_FILE):
+            continue
+        if any(part.startswith(".") for part in relative.parts[:-1]):
+            found.append(f"{relative}: in a hidden folder, which is never filed")
+        elif not audio:
+            found.append(f"{relative}: a format this cannot tag, so cannot file")
+        else:
+            try:
+                ahead = path.stat().st_mtime - now
+            except OSError:
+                continue
+            if ahead > 60:
+                found.append(f"{relative}: dated in the future, so it never "
+                             "looks finished arriving")
+    return found
+
+
+# The last pass's account of each workspace, for Health: what is waiting,
+# what could not be filed and why, and what will never be. Keyed by the
+# workspace's directory, since one person can have one per library.
+_status: dict[str, dict[str, Any]] = {}
+_status_lock = threading.Lock()
+
+
+def _record(space: workspace.Workspace, result: Result) -> None:
+    try:
+        missed = overlooked(space)
+    except OSError:
+        missed = []
+    with _status_lock:
+        _status[space.key] = {
+            "username": space.username,
+            "library": space.library_name,
+            "waiting": result.waiting,
+            "failures": list(result.failures),
+            "overlooked": missed,
+            "broken": result.broken,
+            "at": time.time(),
+        }
+
+
+def status_for(username: str) -> list[dict[str, Any]]:
+    """This person's inboxes as the poller last saw them, and nobody else's."""
+    with _status_lock:
+        return [dict(entry) for entry in _status.values()
+                if entry["username"] == username]
+
+
 def drain_all() -> dict[str, Result]:
     """Empty every workspace's inbox. Runs with nobody signed in.
 
@@ -526,6 +603,7 @@ def drain_all() -> dict[str, Result]:
         except Exception as exc:
             log.exception("could not drain %s's inbox", space.username)
             result = Result(broken=f"{type(exc).__name__}: {exc}"[:300])
+        _record(space, result)
         if result.changed or result.failures or result.broken:
             results[space.username] = result
     return results

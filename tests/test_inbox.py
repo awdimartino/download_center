@@ -1025,3 +1025,50 @@ def test_a_drain_that_raises_is_that_workspaces_failure_alone(space, monkeypatch
 
     assert results["alex"].changed
     assert "PermissionError" in results["kelly"].broken
+
+
+# --- what the poller cannot file is reported, not forgotten (2M6) -------------
+
+def test_what_will_never_be_filed_is_listed_with_why(space):
+    """These sat in the inbox for ever, counted nowhere: waiting() passes
+    over them in silence."""
+    import os
+    import time
+
+    inbox_dir = space.inbox_dir
+    (inbox_dir / "Album").mkdir(parents=True)
+    (inbox_dir / "Album" / "01 - Song.wma").write_bytes(b"x")
+    (inbox_dir / ".5 The Gray Chapter").mkdir()
+    (inbox_dir / ".5 The Gray Chapter" / "01 - Prelude.mp3").write_bytes(b"x")
+    future = inbox_dir / "Later.mp3"
+    future.write_bytes(b"x")
+    ahead = time.time() + 86400
+    os.utime(future, (ahead, ahead))
+    (inbox_dir / ".incomplete" / "job").mkdir(parents=True)
+    (inbox_dir / ".incomplete" / "job" / "item.mp3").write_bytes(b"x")
+
+    found = inbox.overlooked(space)
+
+    assert len(found) == 3
+    assert any("Song.wma: a format this cannot tag" in line for line in found)
+    assert any("Prelude.mp3: in a hidden folder" in line for line in found)
+    assert any("Later.mp3: dated in the future" in line for line in found)
+
+
+def test_the_last_pass_is_kept_for_its_owner_alone(space, monkeypatch):
+    monkeypatch.setattr(inbox, "_status", {})
+
+    def boom(space, path, adopt_album=True):
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(inbox.filer, "file_track", boom)
+    drop(space, albumartist="Artist", album="Album", title="Song",
+         tracknumber="1")
+    (space.inbox_dir / "Other.wma").write_bytes(b"x")
+
+    inbox.drain_all()
+
+    [entry] = inbox.status_for("alex")
+    assert any("read-only filesystem" in line for line in entry["failures"])
+    assert entry["overlooked"] == ["Other.wma: a format this cannot tag, so cannot file"]
+    assert inbox.status_for("kelly") == []
