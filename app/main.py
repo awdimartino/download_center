@@ -2074,7 +2074,8 @@ async def library_album_edit(
         return {"ran": True, "moved": len(filed),
                 "folder": str(filed[0].path.parent.relative_to(
                     space.library_path)) if filed else body.folder,
-                "album_uuid": filed[0].album_uuid if filed else None}
+                "album_uuid": filed[0].album_uuid if filed else None,
+                "failed": filer.unidentified(filed)}
 
     return await _locked_request([folder], run)
 
@@ -2347,7 +2348,9 @@ async def library_match_apply(
         # Raises if beets left the files disagreeing about their album; the
         # operation then fails with that message and nothing moves.
         result["album_uuid"] = filer.after_retag(space, retagged, was)
-        filed = [filer.file_track(space, one).path for one in retagged]
+        settled = [filer.file_track(space, one) for one in retagged]
+        result["failed"] = [*result.get("failed", []), *filer.unidentified(settled)]
+        filed = [one.path for one in settled]
         result["filed"] = [str(one) for one in filed]
         filer.leave_folder(path, {one.parent for one in filed},
                            space.library_path)

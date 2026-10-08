@@ -512,6 +512,20 @@ def require_one_album(folder: Path) -> None:
             "of them out first, or edit them track by track.")
 
 
+UNIDENTIFIED = ("filed, but its identity tags could not be written, so stars "
+                "and play counts cannot follow it")
+
+
+def unidentified(filed: list[Filed]) -> list[str]:
+    """What to say about each filed track whose identity tags did not take.
+
+    Reported, not ignored: a merge or rename whose UUID write failed on some
+    files left a split album behind and said "moved" over it.
+    """
+    return [f"{one.path.name}: {UNIDENTIFIED}" for one in filed
+            if not one.identified]
+
+
 def album_key_of(folder: Path) -> str:
     """The registry key the files in a folder currently answer to.
 

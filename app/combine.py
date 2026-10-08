@@ -84,6 +84,7 @@ def combine(space: workspace.Workspace, *,
                 except (filer.NotEditable, OSError) as exc:
                     failed.append(f"{path.name}: {exc}")
                     continue
+                failed.extend(filer.unidentified([filed]))
                 moved[path] = filed.path
                 album_uuid = album_uuid or filed.album_uuid
                 step(path.name)
@@ -93,9 +94,13 @@ def combine(space: workspace.Workspace, *,
         try:
             filed = filer.retag_album(space, folder,
                                       albumartist=albumartist, album=album)
-        except filer.NotEditable as exc:
+        except (filer.NotEditable, OSError) as exc:
+            # OSError too: a full disk or 98 taken names ended the whole
+            # combine half done, before the scan and the summary of what
+            # had already moved.
             failed.append(f"{folder.name}: {exc}")
             continue
+        failed.extend(filer.unidentified(filed))
         # retag_album files exactly the list audio_in gave it, in order.
         for before, after in zip(files, filed, strict=True):
             moved[before] = after.path
@@ -106,9 +111,10 @@ def combine(space: workspace.Workspace, *,
         try:
             filed = filer.retag_track(space, path,
                                       albumartist=albumartist, album=album)
-        except filer.NotEditable as exc:
+        except (filer.NotEditable, OSError) as exc:
             failed.append(f"{path.name}: {exc}")
             continue
+        failed.extend(filer.unidentified([filed]))
         moved[path] = filed.path
         album_uuid = album_uuid or filed.album_uuid
         step(path.name)
@@ -122,7 +128,7 @@ def combine(space: workspace.Workspace, *,
                 filed = filer.retag_track(space, path, track_no=number,
                                           track_total=len(numbered),
                                           disc_no=1, disc_total=1)
-            except filer.NotEditable as exc:
+            except (filer.NotEditable, OSError) as exc:
                 failed.append(f"{path.name}: {exc}")
                 continue
             # Renamed in its folder, so anything after this needs the new path.

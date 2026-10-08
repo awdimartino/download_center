@@ -507,8 +507,11 @@ function albumEditor(album) {
       library_id: album.library_id, folder: album.folder,
       album_artist: wantArtist, album: wantAlbum,
     }, save, (data) => {
+      const failed = data.failed || [];
       setNote("library-op",
-              `Renamed, and ${plural(data.moved, "file")} moved to match.`, "notice");
+              `Renamed, and ${plural(data.moved, "file")} moved to match.`
+              + (failed.length ? ` Problems: ${failed.join("; ")}` : ""),
+              failed.length ? "warn" : "notice");
       closeDrawer();
       refreshLibrary(album);
     });
@@ -870,7 +873,10 @@ async function quarantineTrack(album, track, button, gone) {
 
 function importSummary(result) {
   const failed = result.failed || [];
-  if (failed.length) return [`Retagging problems: ${failed.join("; ")}`, "warn"];
+  if (failed.length) {
+    return [(result.imported ? "Retagged, with problems: " : "Retagging problems: ")
+            + failed.join("; "), "warn"];
+  }
   if (result.imported) {
     return ["Retagged. Its tracks keep their stars and plays; if that "
             + "release was already in the library, the album joined it.",

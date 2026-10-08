@@ -1890,11 +1890,19 @@ R2 split of `library.js` lost nothing.
 
 ### Library and listening
 
-- [ ] **2L12. Album edit, combine and *Use this* report success when the
+- [x] **2L12. Album edit, combine and *Use this* report success when the
       identity write failed; combine aborts on an `OSError`.**
       `app/filer.py:499-504`, `app/main.py:1888-1898,2157`,
       `app/combine.py:93-111`. *Fix:* return `identified` from each and show
       it; catch `OSError` per album and per track in combine.
+      **Fixed** as suggested. `file_track` already retried the identity
+      write and recorded the outcome on each result; new
+      `filer.unidentified()` turns the ones that did not take into a line
+      each, and album edit, *Use this* and combine all put those in their
+      `failed` list, which the page shows as a warning. Combine catches
+      `OSError` around every album and track it moves, so one full disk no
+      longer ends the whole combine before the scan and the summary. Both
+      new tests fail on the old code.
 - [ ] **2L13. A quarantined file put back by hand stays invisible to the
       duplicate finder.** `restored_at` is read in three places and written
       nowhere (`app/store.py:362-374`, `app/duplicates.py:253-255,700`).

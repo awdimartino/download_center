@@ -322,3 +322,45 @@ def test_the_route_counts_a_track_inside_a_chosen_folder_once(
         asyncio.run(main.library_combine(body, session))
     assert refused.value.status_code == 400
     assert started == []
+
+
+# --- what a combine could not do is said (2L12) ------------------------------------
+
+def test_a_combine_reports_files_whose_identity_did_not_take(space, monkeypatch):
+    """A merge whose UUID write failed on some files left a split album and
+    was reported as moved."""
+    singles = [_single(space, "Phoebe Bridgers", t)
+               for t in ("Motion Sickness", "Scott Street")]
+    monkeypatch.setattr(filer, "_write_identity", lambda *args: False)
+
+    result = combine.combine(
+        space, albumartist="Phoebe Bridgers", album="Stranger in the Alps",
+        albums=[s.path.parent for s in singles], tracks=[])
+
+    assert result["moved"] == 2
+    assert len(result["failed"]) == 2
+    assert all("identity tags could not be written" in f for f in result["failed"])
+
+
+def test_a_combine_carries_on_past_a_filesystem_error(space, monkeypatch):
+    """Only NotEditable was caught, so a full disk on one album ended the
+    whole combine half done, before the scan and the summary."""
+    singles = [_single(space, "Phoebe Bridgers", t)
+               for t in ("Motion Sickness", "Scott Street")]
+    real = filer.retag_album
+    calls = []
+
+    def full_disk_once(space_, folder, **fields):
+        calls.append(folder)
+        if len(calls) == 1:
+            raise OSError(28, "No space left on device")
+        return real(space_, folder, **fields)
+
+    monkeypatch.setattr(filer, "retag_album", full_disk_once)
+
+    result = combine.combine(
+        space, albumartist="Phoebe Bridgers", album="Stranger in the Alps",
+        albums=[s.path.parent for s in singles], tracks=[])
+
+    assert result["moved"] == 1
+    assert any("No space left" in f for f in result["failed"])
