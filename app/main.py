@@ -2695,6 +2695,10 @@ async def playcount_top(
             raise HTTPException(status_code=422,
                                 detail="The start date is after the end date.")
         days = (last - first).days + 1
+        # Written back the way the history is compared: as text, against
+        # padded dates. strptime takes "2026-9-1", and the raw string then
+        # sorted after every September day and the range came back empty.
+        start, end = first.strftime("%Y-%m-%d"), last.strftime("%Y-%m-%d")
 
     def collect() -> dict[str, Any]:
         if start is not None:

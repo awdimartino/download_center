@@ -1930,9 +1930,11 @@ R2 split of `library.js` lost nothing.
       and `coverage()` returns it. The Listening panel shows a "Not being
       recorded" box when it is above zero. It is a count, never names. New
       tests fail on the old code, including the migration.
-- [ ] **2L16. `/api/playcounts/top` accepts unpadded dates and returns an
+- [x] **2L16. `/api/playcounts/top` accepts unpadded dates and returns an
       empty range.** *Verified.* `app/main.py:2491-2499`. *Fix:* pass the
       parsed dates on, reformatted.
+      **Fixed** as suggested: once parsed, the range is written back as
+      padded dates. New test fails on the old code (0 plays against 3).
 - [ ] **2L17. Home shows an all-zero history when the history read fails.**
       `app/overview.py:522-530`. *Fix:* `"available": false` and a banner.
 - [ ] **2L18. The `duplicate_dismissed` migration is not atomic.**

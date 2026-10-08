@@ -843,3 +843,30 @@ def test_plays_on_tracks_without_a_uuid_are_counted_where_people_look(wired, cap
 
     assert playcounts.coverage(ALEX)["without_uuid"] == 1
     assert any("no UUID" in r.getMessage() for r in caplog.records)
+
+
+# --- a range typed without leading zeros (2L16) -------------------------------------
+
+@pytest.mark.asyncio
+async def test_a_range_without_leading_zeros_finds_the_same_plays(wired):
+    """strptime took "2026-3-1" and the raw text was compared against padded
+    dates, so the range came back empty."""
+    from types import SimpleNamespace
+
+    from app import main
+
+    add_track(wired, "t1", tags=UUID_A)
+    played(wired, "t1", ALEX, 1)
+    playcounts.take("2026-03-01T10:00:00+00:00")
+    played(wired, "t1", ALEX, 4, when="2026-03-05T20:00:00+00:00")
+    playcounts.take("2026-03-05T20:05:00+00:00")
+    session = SimpleNamespace(identity=SimpleNamespace(
+        user_id=ALEX, username="alex", libraries=[], is_admin=False))
+
+    padded = await main.playcount_top(start="2026-03-01", end="2026-03-31",
+                                      session=session)
+    unpadded = await main.playcount_top(start="2026-3-1", end="2026-3-31",
+                                        session=session)
+
+    assert padded["plays"] == 3
+    assert unpadded["plays"] == padded["plays"]
