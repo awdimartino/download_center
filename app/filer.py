@@ -745,6 +745,32 @@ def _move_into_place(source: Path, target: Path) -> Path:
     return claimed
 
 
+def _album_uuid_on_disk(folder: Path, key: str, source: Path) -> str | None:
+    """The album UUID the files already in `folder` under `key` agree on.
+
+    None when there are none, or they disagree, or any of them carries none:
+    an ambiguous answer is worse than a fresh UUID, which the disk audit
+    will at least report.
+    """
+    if not folder.is_dir():
+        return None
+    found: set[str | None] = set()
+    for path in audio_in(folder):
+        if path == source or path.parent != folder:
+            continue
+        try:
+            meta = read_meta(path)
+        except Exception:
+            return None
+        if not meta.names_album or registry.album_key(meta.albumartist,
+                                                      meta.album) != key:
+            continue
+        found.add(_read_identity(path)[1])
+    if len(found) == 1:
+        return found.pop()
+    return None
+
+
 def _read_identity(path: Path) -> tuple[str | None, str | None]:
     """The UUIDs already on a file, or (None, None) if it has none to read."""
     try:
@@ -783,15 +809,22 @@ def file_track(space: workspace.Workspace, source: Path,
     track_uuid = had_track or str(uuid.uuid4())
     key = (registry.album_key(meta.albumartist, meta.album) if meta.names_album
            else registry.loose_key(track_uuid))
-    album_uuid = registry.uuid_for_key(
-        space.library_id, key, on_miss=had_album if adopt_album else None)
+    target = destination(space, meta, source.suffix.lower())
+    on_miss = had_album if adopt_album else None
+    if (on_miss is None and meta.names_album
+            and registry.known(space.library_id, key) is None):
+        # Never seen under this name, but the album may be on disk already:
+        # retagged by another tool, or a key the registry lost. Minting
+        # beside it split the album, and the next Save album moved every
+        # file to the newcomer's UUID, taking the album's stars and plays.
+        on_miss = _album_uuid_on_disk(target.parent, key, source)
+    album_uuid = registry.uuid_for_key(space.library_id, key, on_miss=on_miss)
 
     identified = _write_identity(
         source,
         None if had_track else track_uuid,
         None if had_album == album_uuid else album_uuid)
 
-    target = destination(space, meta, source.suffix.lower())
     if source.resolve() != target.resolve():
         # Only from a folder that belongs to the music. Downloads are filed
         # from the inbox root, so a stray cover.jpg there was copied into

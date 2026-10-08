@@ -1099,3 +1099,34 @@ def test_a_folder_cover_is_found_whatever_its_case(space):
     folder.mkdir()
     (folder / "Folder.JPG").write_bytes(b"art")
     assert filer.folder_cover(folder).name == "Folder.JPG"
+
+
+# --- an album on disk the registry has not heard of (2M8) ---------------------
+
+def test_a_track_moved_into_an_unregistered_album_joins_its_uuid(space):
+    """Files agreeing on an album UUID under a key the registry has never
+    seen (retagged by another tool, a backfill conflict). Minting split the
+    album, and the next Save album moved every file to the newcomer."""
+    album = album_on_disk(space, "Queen", "Greatest Hits", ["Bohemian Rhapsody",
+                                                            "Don't Stop Me Now"])
+    on_disk = album[0].album_uuid
+    registry.forget(space.library_id, album[0].album_key)
+    stray = album_on_disk(space, "Queen", "Innuendo", ["Innuendo"])[0]
+
+    moved = filer.retag_track(space, stray.path, album="Greatest Hits")
+
+    assert moved.path.parent == album[0].path.parent
+    assert moved.album_uuid == on_disk
+    assert uuidtags.read(moved.path)[1] == on_disk
+
+
+def test_files_that_disagree_are_not_guessed_between(space):
+    album = album_on_disk(space, "Queen", "Greatest Hits", ["One", "Two"])
+    uuidtags.write(album[1].path, None, "22222222-2222-4222-8222-222222222222")
+    registry.forget(space.library_id, album[0].album_key)
+    stray = album_on_disk(space, "Queen", "Innuendo", ["Innuendo"])[0]
+
+    moved = filer.retag_track(space, stray.path, album="Greatest Hits")
+
+    assert moved.album_uuid not in {album[0].album_uuid,
+                                    "22222222-2222-4222-8222-222222222222"}

@@ -1403,7 +1403,7 @@ R2 split of `library.js` lost nothing.
       old code. Behaviour change: a dropped album folder no longer brings
       its cover into an album that is already on disk.
 
-- [ ] **2M8. A registry miss mints a new album UUID without looking at
+- [x] **2M8. A registry miss mints a new album UUID without looking at
       disk.** *Verified.* `app/filer.py:387-392,707-710`. Files agree on an
       album UUID but their key is unregistered (retagged elsewhere, a
       backfill conflict). Moving a track into that album mints a fresh UUID,
@@ -1411,6 +1411,14 @@ R2 split of `library.js` lost nothing.
       UUID and the album loses its stars and plays.
       *Fix:* on a miss when moving, adopt the UUID the files already under
       that key or folder agree on (subject to 2H1's ownership check).
+      **Fixed:** when `file_track` would otherwise mint (no UUID to adopt
+      from the file, or a move) and the registry has never seen the key, it
+      now reads the files already in the destination folder under that key
+      (`_album_uuid_on_disk`). If they all carry one album UUID, that is
+      recorded; if they disagree, or any carries none, it still mints rather
+      than guess. 2H1's check still refuses a UUID another key owns. Applies
+      to downloads and drops too, not only moves. New test fails on the old
+      code.
 
 - [ ] **2M9. `album_key_of` reads only the first file, so an untagged stray
       that sorts first re-UUIDs the whole album.** *Verified.*
