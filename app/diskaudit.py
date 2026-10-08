@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import filer, uuidtags, walk
+from . import filer, registry, uuidtags, walk
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,10 @@ class Audit:
     untaggable: int = 0
     seconds: float = 0.0
     taken_at: float = 0.0
+    # For each folder whose files agree on one album UUID: the album key its
+    # first file names, and that UUID - for comparing with the registry.
+    # Not sent to the browser.
+    album_keys: dict[str, tuple[str, str]] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         # Only a sample of each list travels to the browser; the counts are
@@ -88,6 +92,16 @@ _walking: dict[str, threading.Event] = {}
 WALK_TIMEOUT = 600
 
 
+def _album_key(path: Path) -> str | None:
+    try:
+        meta = filer.read_meta(path)
+    except Exception:
+        return None
+    if not meta.names_album:
+        return None
+    return registry.album_key(meta.albumartist, meta.album)
+
+
 def _split(files: list[tuple[Path, str]]) -> bool:
     """Whether a directory with several album UUIDs really holds a split album.
 
@@ -116,6 +130,7 @@ def run(root: Path) -> Audit:
     by_uuid: dict[str, int] = collections.Counter()
     by_directory: dict[Path, set[str]] = collections.defaultdict(set)
     directory_files: dict[Path, list[tuple[Path, str]]] = collections.defaultdict(list)
+    directory_key: dict[Path, str | None] = {}
     album_directories: dict[str, set[Path]] = collections.defaultdict(set)
 
     if not root.exists():
@@ -149,6 +164,10 @@ def run(root: Path) -> Audit:
         if album_uuid:
             by_directory[path.parent].add(album_uuid)
             directory_files[path.parent].append((path, album_uuid))
+            if path.parent not in directory_key:
+                # One file per folder: they are one album, and reading
+                # every file's names would double the walk.
+                directory_key[path.parent] = _album_key(path)
             album_directories[album_uuid].add(path.parent)
         else:
             audit.missing_album_uuid.append(relative)
@@ -156,6 +175,11 @@ def run(root: Path) -> Audit:
     # One directory is one album. Two album UUIDs in a directory means two
     # copies of the same record that Navidrome will keep showing separately,
     # however tidy the folder looks.
+    audit.album_keys = {
+        str(directory.relative_to(root)): (directory_key[directory], next(iter(uuids)))
+        for directory, uuids in by_directory.items()
+        if len(uuids) == 1 and directory_key.get(directory)
+    }
     audit.split_albums = [
         str(directory.relative_to(root))
         for directory, uuids in sorted(by_directory.items())

@@ -46,3 +46,13 @@ def test_an_album_whose_files_disagree_is_still_split(tmp_path):
           album="Geogaddi", title="Two")
 
     assert diskaudit.run(tmp_path).split_albums == [str(Path("Boards/Geogaddi"))]
+
+
+def test_the_audit_records_each_folders_key_and_uuid(tmp_path):
+    album_uuid = str(uuid.uuid4())
+    folder = tmp_path / "Boards" / "Geogaddi"
+    _file(folder, "1.mp3", album_uuid, albumartist="Boards", album="Geogaddi", title="One")
+
+    keys = diskaudit.run(tmp_path).album_keys
+
+    assert keys == {str(Path("Boards/Geogaddi")): ("boards\x1fgeogaddi", album_uuid)}

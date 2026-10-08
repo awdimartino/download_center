@@ -422,3 +422,22 @@ def test_health_says_how_old_yt_dlp_is():
 
     assert fresh.value == __version__ and fresh.status == health.OK
     assert old.status == health.WARN and "days ago" in old.detail
+
+
+def test_health_shows_where_the_registry_and_the_files_disagree(state_db, monkeypatch):
+    """Three stores say what an album is, and nothing compared them (2D2)."""
+    from app import diskaudit, health, registry
+
+    registry.reassign(1, "boards\x1fgeogaddi", "registry-uuid")
+    registry.reassign(1, "boards\x1fcampfire", "shared")
+    registry.reassign(1, "boards\x1fcampfire (2)", "shared")
+    audit = diskaudit.Audit(album_keys={
+        "Boards/Geogaddi": ("boards\x1fgeogaddi", "disk-uuid"),
+        "Boards/Fine": ("boards\x1ffine", "fine-uuid")})
+    monkeypatch.setattr(diskaudit, "cached", lambda root: audit)
+
+    check = health._registry_check([{"id": 1, "path": "/music"}])
+
+    assert check.status == health.WARN
+    assert "Boards/Geogaddi" in check.detail
+    assert "more than one name" in check.detail

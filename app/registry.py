@@ -301,6 +301,23 @@ def reassign(library_id: int, key: str, album_uuid: str) -> str:
     return album_uuid
 
 
+def keys_for(library_id: int, album_uuid: str) -> list[str]:
+    """Every key in a library recorded against this album UUID. More than
+    one is the fusion the registry exists to prevent."""
+    rows = _store().execute(
+        "SELECT album_key FROM album_registry"
+        " WHERE library_id = ? AND album_uuid = ?",
+        (library_id, album_uuid)).fetchall()
+    return sorted(row[0] for row in rows)
+
+
+def rows_for(library_id: int) -> dict[str, str]:
+    """Every key in a library and the album UUID recorded for it."""
+    return dict(_store().execute(
+        "SELECT album_key, album_uuid FROM album_registry WHERE library_id = ?",
+        (library_id,)).fetchall())
+
+
 def forget(library_id: int, key: str) -> bool:
     """Drop one mapping. The next track of that album mints a fresh UUID."""
     store_ = _store()

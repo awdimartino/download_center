@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import diskaudit, heartbeat, inbox, memo, navidrome, uuidtags
+from . import diskaudit, heartbeat, inbox, memo, navidrome, registry, uuidtags
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.health")
@@ -475,6 +475,53 @@ def _inbox_section(username: str | None) -> Section | None:
     return section
 
 
+def _registry_check(libraries: list[dict[str, Any]]) -> Check | None:
+    """Where the album registry and the files on disk disagree.
+
+    Three stores say what an album is - the registry, the tags, Navidrome's
+    database - updated one after another, and nothing compared them. The
+    registry is what the filer obeys, so a row that has drifted from the
+    files is the next save rewriting them. Read from the disk audit, so it
+    costs nothing extra and is as fresh as the audit.
+    """
+    drifted: list[str] = []
+    fused: list[str] = []
+    seen = False
+    for library in libraries:
+        audit = diskaudit.cached(Path(library["path"]))
+        if audit is None:
+            continue
+        seen = True
+        try:
+            recorded = registry.rows_for(library["id"])
+        except Exception as exc:
+            log.debug("could not read the registry: %s", exc)
+            return None
+        for folder, (key, on_disk) in sorted(audit.album_keys.items()):
+            if recorded.get(key, on_disk) != on_disk:
+                drifted.append(folder)
+        counts: dict[str, int] = {}
+        for value in recorded.values():
+            counts[value] = counts.get(value, 0) + 1
+        fused.extend(value for value, n in counts.items() if n > 1)
+    if not seen:
+        return None
+    if not drifted and not fused:
+        return Check("registry", "Album registry agrees with the files",
+                     "yes", OK, secondary=True)
+    parts = []
+    if drifted:
+        parts.append(f"{len(drifted)} folder(s) whose files carry a different "
+                     f"album UUID from the registry: {', '.join(drifted[:5])}")
+    if fused:
+        parts.append(f"{len(fused)} album UUID(s) recorded under more than one name")
+    return Check(
+        "registry", "Album registry agrees with the files",
+        f"{len(drifted) + len(fused)} disagreement(s)", WARN, "; ".join(parts),
+        "Editing such an album rewrites its files to the registry's UUID "
+        "unless the files agree on theirs. unfuse --apply settles fused ones.")
+
+
 def _system_section(started_at: float) -> Section:
     section = Section("System")
 
@@ -714,6 +761,9 @@ def report(started_at: float,
         _attach(sections, "Identity", stale)
     if duplicates_check is not None:
         _attach(sections, "Libraries", duplicates_check)
+    registry_check = _registry_check(libraries)
+    if registry_check is not None:
+        _attach(sections, "Identity", registry_check)
 
     inbox_section = _inbox_section(getattr(identity, "username", None))
     if inbox_section is not None:

@@ -1222,3 +1222,31 @@ def test_a_numbered_copy_keeps_its_name_across_saves(space):
 
     assert sorted(m.path.name for m in moved) == sorted([first.path.name,
                                                         second.path.name])
+
+
+# --- the files win over a stale registry row (2D2) ---------------------------------
+
+def test_saving_an_album_keeps_the_uuid_its_files_agree_on(space):
+    """With the registry row pointed at a different UUID, Save album under
+    the same names rewrote every file to the registry's UUID: a new
+    Navidrome album, its history left behind on the old one."""
+    album = album_on_disk(space, "Boards", "Geogaddi", ["One", "Two"])
+    on_disk = album[0].album_uuid
+    registry.reassign(space.library_id, album[0].album_key,
+                      "99999999-9999-4999-8999-999999999999")
+
+    moved = filer.retag_album(space, album[0].path.parent, album="Geogaddi")
+
+    assert {m.album_uuid for m in moved} == {on_disk}
+    assert {uuidtags.read(m.path)[1] for m in moved} == {on_disk}
+
+
+def test_files_carrying_another_albums_uuid_do_not_take_it_over(space):
+    other = album_on_disk(space, "Boards", "Campfire", ["X"])[0]
+    album = album_on_disk(space, "Boards", "Geogaddi", ["One"])
+    recorded = album[0].album_uuid
+    uuidtags.write(album[0].path, None, other.album_uuid)
+
+    moved = filer.retag_album(space, album[0].path.parent, album="Geogaddi")
+
+    assert {m.album_uuid for m in moved} == {recorded}

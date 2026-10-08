@@ -542,6 +542,32 @@ def album_key_of(folder: Path) -> str:
     return next(iter(named))
 
 
+def _settle_on_disk(library_id: int, key: str, on_disk: str) -> None:
+    """Make the registry say what an album's files say, when they agree.
+
+    The tags are what Navidrome reads, so they are what the album's stars and
+    plays hang off. When the registry had a different UUID for the key - a
+    stale row, a retag elsewhere - it won, and the next save rewrote every
+    file to it: a new Navidrome album, and the old one's history left on a
+    record nothing showed any more. The files win now, unless their UUID
+    is another album's (the files were moved here from it): then nothing is
+    decided here, and the disagreement is left for Health to show.
+    """
+    recorded = registry.known(library_id, key)
+    if recorded is None:
+        registry.uuid_for_key(library_id, key, on_miss=on_disk)
+        return
+    if recorded == on_disk:
+        return
+    if [k for k in registry.keys_for(library_id, on_disk) if k != key]:
+        log.warning("%s's files carry album %s, which another album owns; "
+                    "keeping the registry's %s", key, on_disk, recorded)
+        return
+    log.info("registry had %s for %s but its files say %s; the files win",
+             recorded, key, on_disk)
+    registry.reassign(library_id, key, on_disk)
+
+
 def after_retag(space: workspace.Workspace, paths: list[Path],
                 old_key: str) -> str:
     """Follow a confirmed retag, and return the album UUID that settled.
@@ -581,8 +607,7 @@ def after_retag(space: workspace.Workspace, paths: list[Path],
     if old_key:
         carried = {album for _, album in map(_read_identity, live) if album}
         if len(carried) == 1:
-            registry.uuid_for_key(space.library_id, old_key,
-                                  on_miss=carried.pop())
+            _settle_on_disk(space.library_id, old_key, carried.pop())
 
     settled = registry.repoint(space.library_id, old_key or new_key, new_key)
 

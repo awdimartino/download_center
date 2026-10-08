@@ -2035,7 +2035,7 @@ R2 split of `library.js` lost nothing.
       (beets' import, rsgain) is waited for, not killed, because killing it
       mid-write is the damage this is avoiding. Each has its own timeout,
       and the compose file's two-minute grace covers an ordinary one.
-- [ ] **2D2. Three stores of album identity, updated in sequence, with
+- [x] **2D2. Three stores of album identity, updated in sequence, with
       nothing reconciling them.** The registry, the tags on disk and
       Navidrome's database. When registry and disk disagree, the registry
       silently wins on the next edit (verified: *Save album* rewrote every
@@ -2044,6 +2044,21 @@ R2 split of `library.js` lost nothing.
       *Direction:* a registry-against-disk comparison in the disk audit,
       shown in Health; one "disk wins unless ambiguous" function used by
       `file_track` and `after_retag`; 2M10's intent record.
+      **Done, in three parts.** (1) The disk wins unless ambiguous:
+      `filer._settle_on_disk`, used by `after_retag`, makes the registry say
+      what an album's files agree on, unless that UUID is recorded for
+      another album (the files came from it), in which case it keeps the
+      registry's and logs it. `file_track`'s miss case already adopts the
+      files' UUID (2M8). The verified probe (*Save album* rewriting every
+      file to a stale registry row) now keeps the files' UUID; its test
+      fails on the old code. (2) Health compares: the disk audit records
+      each single-UUID folder's key and UUID (one tag read per folder), and
+      a new Identity row, "Album registry agrees with the files", counts
+      folders whose files disagree with their registry row and UUIDs
+      recorded under more than one name. (3) 2M10's intent record is done.
+      Not done: a UNIQUE constraint on `(library_id, album_uuid)`. Existing
+      databases may already break it, so it would fail to apply; Health now
+      counts those instead, and `unfuse --apply` settles them.
 - [ ] **2D3. The folder lock covers where files leave from, never where
       they arrive.** A rename into an existing album, a combine's target and
       all inbox filing are unlocked; `inbox.receiving` is checked once, not
