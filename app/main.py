@@ -565,6 +565,9 @@ def same_origin(headers: Any) -> bool:
     return urllib.parse.urlsplit(origin).netloc in asked
 
 
+# How often an open socket asks whether its session still exists.
+SOCKET_RECHECK = 60
+
 UPLOAD_PATH = "/api/inbox/upload"
 # A form's own framing on top of the file: boundaries, part headers, the
 # path and batch fields.
@@ -2744,12 +2747,21 @@ async def websocket(ws: WebSocket) -> None:
         await ws.accept()
         await ws.close(code=4401)
         return
-    await broker.register(ws, session.identity.username,
-                          ws.cookies.get(auth.COOKIE))
+    cookie = ws.cookies.get(auth.COOKIE)
+    await broker.register(ws, session.identity.username, cookie)
     try:
         await ws.send_json({"type": "snapshot", "jobs": _visible_jobs(session)})
         while True:
-            await ws.receive_text()
+            try:
+                await asyncio.wait_for(ws.receive_text(), timeout=SOCKET_RECHECK)
+            except TimeoutError:
+                # A socket outlived its session - expired, the account
+                # removed, the password changed - and went on receiving that
+                # person's events. Asked again now and then; 4401 is what
+                # the page reads as "show the sign-in form".
+                if await asyncio.to_thread(auth.get, cookie) is None:
+                    await ws.close(code=4401)
+                    return
     except WebSocketDisconnect:
         pass
     except Exception:

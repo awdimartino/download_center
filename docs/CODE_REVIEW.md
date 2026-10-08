@@ -1818,9 +1818,19 @@ R2 split of `library.js` lost nothing.
       route already did; both callers prepare the workspace through
       `_prepare`, which turns the refusal into a 409 with its message. New
       tests fail on the old code.
-- [ ] **2L6. Sessions outlive a password change, and an open `/ws` outlives
+- [x] **2L6. Sessions outlive a password change, and an open `/ws` outlives
       sign-out.** A Navidrome password change does not end sessions here
       (up to 30 days); a socket keeps receiving events until it disconnects.
+      **Fixed.** A session records a fingerprint of the password Navidrome
+      stores (`navidrome.password_mark`, a hash, never the value) at sign-in;
+      the periodic account re-read compares it and signs the session out
+      when it changed. "Cannot tell" (no column, unreadable) is never read
+      as a change. Sign-out already closes the session's sockets (2M22); an
+      open socket now also asks every minute whether its session still
+      exists and closes with 4401 when it does not, covering expiry and a
+      removed account. New tests fail on the old code. Caveat: if Navidrome
+      ever re-encrypts stored passwords (a key change), everyone is signed
+      out once.
 - [ ] **2L7. yt-dlp's warnings are discarded and its age is invisible.**
       *Unverified.* `app/downloader.py:23-37`, `requirements.txt`. Warnings
       go to `log.debug`; the pin moves only with a commit; the image has no

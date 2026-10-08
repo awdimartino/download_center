@@ -638,3 +638,52 @@ def test_a_hand_written_table_survives_a_save(config_file, monkeypatch):
     written = tomllib.loads(config_file.read_text(encoding="utf-8"))
     assert written["extra"] == {"a": 1, "b": "two"}
     assert written["concurrency"] == 4
+
+
+# --- a password changed in Navidrome (2L6) ---------------------------------------
+
+def test_a_password_changed_in_navidrome_signs_out(monkeypatch):
+    """Every session went on for up to thirty days on the old password -
+    changing it is how somebody locks out a device they have lost."""
+    now = time.time()
+    me = _identity()
+    me.libraries = [{"id": 1, "name": "Music", "path": "/music"}]
+    session = auth.Session("here", me, now, now, password_mark="before")
+    _due(session)
+    monkeypatch.setattr(navidrome, "account", lambda identity: (False, me.libraries))
+    monkeypatch.setattr(navidrome, "password_mark", lambda identity: "after")
+
+    assert auth.get("here") is None
+    assert "here" not in auth._sessions
+
+
+def test_an_unknown_password_mark_is_not_a_change(monkeypatch):
+    now = time.time()
+    me = _identity()
+    me.libraries = [{"id": 1, "name": "Music", "path": "/music"}]
+    _due(auth.Session("here", me, now, now, password_mark="before"))
+    monkeypatch.setattr(navidrome, "account", lambda identity: (False, me.libraries))
+    monkeypatch.setattr(navidrome, "password_mark", lambda identity: None)
+
+    assert auth.get("here") is not None
+
+
+def test_the_password_mark_is_a_hash_of_what_navidrome_stores(navidrome_db, monkeypatch):
+    import sqlite3
+
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "navidrome_db", navidrome_db)
+    connection = sqlite3.connect(navidrome_db)
+    with connection:
+        connection.execute('ALTER TABLE "user" ADD COLUMN password TEXT')
+        connection.execute('UPDATE "user" SET password = \'secret-1\' WHERE id = \'u-alex\'')
+    connection.close()
+
+    first = navidrome.password_mark(_identity("alex"))
+    assert first and "secret-1" not in first
+    connection = sqlite3.connect(navidrome_db)
+    with connection:
+        connection.execute('UPDATE "user" SET password = \'secret-2\' WHERE id = \'u-alex\'')
+    connection.close()
+    assert navidrome.password_mark(_identity("alex")) != first

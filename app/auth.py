@@ -65,6 +65,8 @@ class Session:
     last_seen: float
     libraries_checked_at: float = 0.0
     cookie_sent_at: float = 0.0
+    # What Navidrome's stored password looked like at sign-in; see get().
+    password_mark: str | None = None
 
     @property
     def expired(self) -> bool:
@@ -88,13 +90,21 @@ def sign_in(username: str, password: str) -> Session:
     identity = navidrome.login(username, password)
     now = time.time()
     session = Session(secrets.token_urlsafe(32), identity, now, now, now,
-                      cookie_sent_at=now)
+                      cookie_sent_at=now, password_mark=_password_mark(identity))
     with _lock:
         _sessions[session.id] = session
     log.info("%s signed in (%d librar%s)", identity.username,
              len(identity.libraries),
              "y" if len(identity.libraries) == 1 else "ies")
     return session
+
+
+def _password_mark(identity: navidrome.Identity) -> str | None:
+    try:
+        return navidrome.password_mark(identity)
+    except Exception as exc:
+        log.debug("could not read %s's password mark: %s", identity.username, exc)
+        return None
 
 
 def cookie_age(session: Session) -> int:
@@ -173,6 +183,17 @@ def get(session_id: str | None) -> Session | None:
                 sign_out(session.id)
                 return None
             session.identity.is_admin, session.identity.libraries = current
+            # A password changed in Navidrome ended nothing here: every
+            # session went on for up to thirty days on the old one. Changing
+            # it is how somebody locks out a device they have lost.
+            mark = _password_mark(session.identity)
+            if session.password_mark is None:
+                session.password_mark = mark
+            elif mark is not None and mark != session.password_mark:
+                log.info("%s's password changed in Navidrome; signing out",
+                         session.identity.username)
+                sign_out(session.id)
+                return None
     return session
 
 

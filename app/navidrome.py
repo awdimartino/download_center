@@ -171,6 +171,26 @@ def account(identity: Identity) -> tuple[bool, list[dict[str, Any]]] | None:
     return is_admin, _libraries(current, open_db())
 
 
+def password_mark(identity: Identity) -> str | None:
+    """A fingerprint of the password Navidrome holds for this account, to
+    notice it change. Never the value itself: a hash of what is stored,
+    which is already Navidrome's own encryption of it.
+
+    None when the account is gone or this Navidrome keeps no such column -
+    "cannot tell", which a caller must not read as "changed". Raises
+    Unavailable when the database cannot be read.
+    """
+    connection = open_db()
+    with connection:
+        if "password" not in columns_of(connection, "user"):
+            return None
+        row = connection.execute('select password from "user" where id = ?',
+                                 (identity.user_id,)).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return hashlib.sha256(str(row[0]).encode()).hexdigest()
+
+
 def library_stamp(connection: sqlite3.Connection,
                   user_id: str | None = None) -> tuple | None:
     """A cheap answer to "has the library changed?".

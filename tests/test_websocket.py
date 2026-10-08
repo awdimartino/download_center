@@ -91,3 +91,33 @@ async def test_a_client_dropped_for_stalling_is_closed_not_just_forgotten(monkey
 
     assert stalled.closed_with == 1011
     assert list(broker._clients) == []
+
+
+@pytest.mark.asyncio
+async def test_a_socket_closes_once_its_session_is_gone(monkeypatch):
+    """A socket outlived its session - expired, the account removed - and
+    went on receiving that person's events (2L6)."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from app import main
+
+    class Socket(_Socket):
+        cookies = {main.auth.COOKIE: "session-1"}
+        headers = {}
+
+        async def receive_text(self):
+            await asyncio.Event().wait()
+
+    session = SimpleNamespace(identity=SimpleNamespace(username="alex"))
+    answers = iter([session, None])
+    monkeypatch.setattr(main.auth, "get", lambda cookie: next(answers))
+    monkeypatch.setattr(main, "same_origin", lambda headers: True)
+    monkeypatch.setattr(main, "_visible_jobs", lambda session: [])
+    monkeypatch.setattr(main, "SOCKET_RECHECK", 0.05)
+    monkeypatch.setattr(main, "broker", main.Broker())
+    ws = Socket()
+
+    await asyncio.wait_for(main.websocket(ws), 2)
+
+    assert ws.closed_with == 4401
