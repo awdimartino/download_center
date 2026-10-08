@@ -7,6 +7,7 @@ much the feature as the writing.
 
 from __future__ import annotations
 
+import json
 import sys
 
 import pytest
@@ -549,3 +550,35 @@ def test_an_empty_page_part_way_through_is_an_error_not_the_end(monkeypatch):
 def test_a_page_holding_a_single_track_is_read(monkeypatch):
     _fetch(monkeypatch, [_page(_scrobble("T1", 1), 1)])
     assert lastfm.scrobbles("u", "k") == [("A", "T1", 1)]
+
+
+# --- a copy set aside does not make a scrobble ambiguous (2M17) ----------------
+
+def _index_db(tmp_path, rows):
+    import sqlite3
+
+    db = sqlite3.connect(tmp_path / "nd.db")
+    db.executescript("""
+        create table folder (id text primary key, missing integer default 0);
+        create table media_file (id text, artist text, title text, tags text,
+                                 missing integer default 0, folder_id text,
+                                 library_id integer default 1);
+        insert into folder values ('f', 0);
+    """)
+    for n, (track_uuid, missing) in enumerate(rows):
+        db.execute("insert into media_file values (?, 'Queen', 'Jealousy', ?, ?, 'f', 1)",
+                   (str(n), json.dumps({"navidrome_uuid": [{"value": track_uuid}]}),
+                    missing))
+    return db
+
+
+def test_a_copy_set_aside_does_not_make_its_scrobbles_ambiguous(tmp_path):
+    """Navidrome keeps the row of a resolved duplicate, marked missing. Both
+    were candidates, so every scrobble of the track was dropped as ambiguous."""
+    index = lastfm.library_index(_index_db(tmp_path, [("kept", 0), ("gone", 1)]))
+    assert index[("queen", "jealousy")] == ["kept"]
+
+
+def test_a_track_no_longer_in_the_library_still_matches(tmp_path):
+    index = lastfm.library_index(_index_db(tmp_path, [("gone", 1)]))
+    assert index[("queen", "jealousy")] == ["gone"]

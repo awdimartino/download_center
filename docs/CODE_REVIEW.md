@@ -1554,7 +1554,7 @@ R2 split of `library.js` lost nothing.
       part-way raises `LastfmError`, a single object is read as a list.
       Temporary errors are still not retried: see 2L19.
 
-- [ ] **2M17. `library_index` counts missing files, so a resolved duplicate
+- [x] **2M17. `library_index` counts missing files, so a resolved duplicate
       makes its scrobbles "ambiguous".** *Verified.*
       `app/lastfm.py:200-212`. Navidrome keeps a set-aside copy's row as
       missing; with two UUIDs per title, every scrobble of that track is
@@ -1562,6 +1562,11 @@ R2 split of `library.js` lost nothing.
       assigned by hand.
       *Fix:* build the index from live rows (`navidrome.live_clause`),
       falling back to missing rows only where a key has no live candidate.
+      **Fixed** as suggested: the query marks each row live or not with
+      `navidrome.live_clause`, and a key's candidates are its live UUIDs,
+      or its missing ones only when it has no live file. New test fails on
+      the old code. The scrobbles already assigned by hand are untouched;
+      a re-import would now match them itself.
 
 - [ ] **2M18. A second plain Last.fm import adds rows instead of replacing
       them when a match has moved.** *Verified.* `app/lastfm.py:341-354`,

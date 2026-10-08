@@ -215,20 +215,30 @@ def library_index(connection: sqlite3.Connection) -> dict[tuple[str, str], list[
     files of one recording, and choosing between them by row order would be
     arbitrary. Where the list has more than one entry the scrobble is
     ambiguous and is reported rather than assigned.
+
+    Live files first. Navidrome keeps the row of a copy set aside as a
+    duplicate, marked missing, and counting it made every scrobble of a
+    de-duplicated track ambiguous between the copy kept and the one gone. A
+    title with no live file still matches its missing one, so history for
+    music that has left the library is not dropped.
     """
+    live = navidrome.live_clause(connection)
     rows = connection.execute(f"""
         select json_extract(mf.tags, '{playcounts.UUID_TAG}') as track_uuid,
-               mf.artist, mf.title
+               mf.artist, mf.title, ({live}) as present
           from media_file mf
          where json_extract(mf.tags, '{playcounts.UUID_TAG}') is not null
     """).fetchall()
 
-    index: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
-    for track_uuid, artist, title in rows:
+    present: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
+    gone: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
+    for track_uuid, artist, title, is_live in rows:
         if not artist or not title:
             continue
-        index[(normalise(artist), normalise(title))].add(track_uuid)
-    return {key: sorted(value) for key, value in index.items()}
+        key = (normalise(artist), normalise(title))
+        (present if is_live else gone)[key].add(track_uuid)
+    return {key: sorted(present.get(key) or gone[key])
+            for key in present.keys() | gone.keys()}
 
 
 # --- putting the two together -----------------------------------------------
