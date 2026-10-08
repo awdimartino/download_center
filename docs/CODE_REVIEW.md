@@ -2022,10 +2022,19 @@ R2 split of `library.js` lost nothing.
 
 ## Design
 
-- [ ] **2D1. A job's lifetime is its asyncio task, but the work lives in
+- [x] **2D1. A job's lifetime is its asyncio task, but the work lives in
       threads and subprocesses nobody tracks.** "Stopped", the gate count
       and `RUNNING` describe the task. 2H2, 2M2 and 2M3 all follow from
       this; fixing it is the root fix for them.
+      **Addressed by 2H2, 2M2 and 2M3** rather than by one new mechanism:
+      long work runs on its own pool (`app/threads.py`); a job's task now
+      waits for each thread step to return before its cancellation goes on
+      (`worker._until_done`), so "stopped", the gate count and `RUNNING`
+      describe the work again; and shutdown stops jobs and asks operations
+      to stop. What remains, deliberately: a subprocess inside a step
+      (beets' import, rsgain) is waited for, not killed, because killing it
+      mid-write is the damage this is avoiding. Each has its own timeout,
+      and the compose file's two-minute grace covers an ordinary one.
 - [ ] **2D2. Three stores of album identity, updated in sequence, with
       nothing reconciling them.** The registry, the tags on disk and
       Navidrome's database. When registry and disk disagree, the registry
@@ -2055,11 +2064,18 @@ R2 split of `library.js` lost nothing.
       (2M21). Cache invalidation is spread over four modules (2L22, 2L25).
       Duplicated helpers have drifted: `plural` three times, two album
       drawers, four Escape handlers (2M25). `call()` in `core.js` is dead.
-- [ ] **2D6. Three definitions of "a track in the library" already
+- [x] **2D6. Three definitions of "a track in the library" already
       disagree.** `playcounts._current` hard-codes the missing flags,
       `navidrome.live_clause` probes the schema, and `lastfm.library_index`
       has no filter (2M17). `UUID_TAG` is defined twice. `history_version`
       cannot see an in-place `UPDATE`.
+      **Fixed:** `navidrome.live_clause` is now the one definition: the
+      play-count reader uses it, as the Last.fm matcher does since 2M17.
+      `UUID_TAG` and `ALBUM_UUID_TAG` live in `navidrome.py`, and Health and
+      play counts name them from there. `history_version` adds sqlite's
+      `data_version`, which changes when another connection commits, so an
+      edit from the sqlite shell or a command-line tool is seen. New test
+      fails on the old code.
 
 ### R1 advice
 

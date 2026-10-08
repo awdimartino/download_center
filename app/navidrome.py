@@ -265,6 +265,13 @@ def columns_of(connection: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in connection.execute(f"pragma table_info({table})")}
 
 
+# Where Navidrome keeps the two UUIDs it derives persistent ids from, parsed,
+# in media_file.tags. Defined once: Health and the play-count reader each
+# had their own copy of the same string.
+UUID_TAG = "$.navidrome_uuid[0].value"
+ALBUM_UUID_TAG = "$.navidrome_album_uuid[0].value"
+
+
 def live_clause(connection: sqlite3.Connection,
                 library_ids: list[int] | None = None) -> str:
     """SQL for the `media_file` rows Navidrome still believes are there.

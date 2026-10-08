@@ -34,8 +34,8 @@ log = logging.getLogger("navidrome_companion.health")
 # The tag whose value Navidrome is configured to use as its persistent track
 # identity. Stored parsed in media_file.tags, so it can be queried directly
 # rather than by reading several thousand files.
-UUID_TAG = "$.navidrome_uuid[0].value"
-ALBUM_UUID_TAG = "$.navidrome_album_uuid[0].value"
+UUID_TAG = navidrome.UUID_TAG
+ALBUM_UUID_TAG = navidrome.ALBUM_UUID_TAG
 
 OK, WARN, FAIL, INFO = "ok", "warn", "fail", "info"
 

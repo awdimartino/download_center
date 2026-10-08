@@ -55,7 +55,7 @@ log = logging.getLogger("navidrome_companion.playcounts")
 
 # The tag Navidrome derives a track's persistent id from. Stored parsed in
 # media_file.tags, so it can be read in the same query.
-UUID_TAG = "$.navidrome_uuid[0].value"
+UUID_TAG = navidrome.UUID_TAG
 
 # A track can carry more than one genre; only the first is read, the same
 # choice already made for every other multi-valued tag this app reads.
@@ -188,6 +188,11 @@ def _current(connection: sqlite3.Connection) -> tuple[dict, int]:
     # library that is 49 tracks left behind by the migration - their plays
     # are real history, but of tracks that no longer exist, and carrying
     # them forward for ever would quietly inflate every later statistic.
+    #
+    # Through navidrome.live_clause, the one definition of "still there" -
+    # it covers the folder too, and probes the columns rather than assuming
+    # them. This query used to spell its own, and the Last.fm matcher had
+    # none at all, so the three disagreed.
     rows = connection.execute(f"""
         select a.user_id,
                u.user_name,
@@ -196,12 +201,10 @@ def _current(connection: sqlite3.Connection) -> tuple[dict, int]:
                a.play_date
           from annotation a
           join media_file mf on mf.id = a.item_id
-          join folder f on f.id = mf.folder_id
           join user u on u.id = a.user_id
          where a.item_type = 'media_file'
            and a.play_count > 0
-           and mf.missing = 0
-           and f.missing = 0
+           and {navidrome.live_clause(connection)}
     """).fetchall()
 
     counts: dict[tuple[str, str], dict[str, Any]] = {}
@@ -472,13 +475,20 @@ def history_version() -> tuple:
     in the sqlite shell (the documented undo for the Last.fm import is one)
     moves it too. `INSERT OR REPLACE` deletes and re-inserts, so a rewritten
     reading still raises the highest rowid; a delete lowers the count.
+
+    An UPDATE in place moved neither - reassigning imported plays to another
+    copy of a track by hand, which has been done, left every cached
+    statistic stale until the next play. sqlite's data_version changes
+    whenever another connection commits to the file, which is exactly the
+    hand edit and the command-line tools.
     """
     db = store.connection()
     snapshots = db.execute(
         "SELECT MAX(rowid), COUNT(*) FROM play_snapshot").fetchone()
     imported = db.execute(
         "SELECT MAX(rowid), COUNT(*) FROM play_imported").fetchone()
-    return (store.generation, tuple(snapshots), tuple(imported))
+    elsewhere = db.execute("PRAGMA data_version").fetchone()[0]
+    return (store.generation, tuple(snapshots), tuple(imported), elsewhere)
 
 
 # What Navidrome calls each track, read in one pass and kept until its

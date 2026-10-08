@@ -870,3 +870,23 @@ async def test_a_range_without_leading_zeros_finds_the_same_plays(wired):
 
     assert padded["plays"] == 3
     assert unpadded["plays"] == padded["plays"]
+
+
+# --- an edit made from outside the app (2D6) --------------------------------------
+
+def test_an_in_place_edit_from_another_connection_moves_the_history_version(state_db):
+    """Reassigning imported plays to another copy by hand is an UPDATE: the
+    rowids and the count stay put, so every cached statistic stayed stale
+    until the next play."""
+    store.connection().execute(
+        "INSERT INTO play_imported (played_at, track_uuid, user_id, username,"
+        " plays, source) VALUES ('2025-01-01', 'old', 'u', 'alex', 2, 'lastfm')")
+    store.connection().commit()
+    before = playcounts.history_version()
+
+    shell = sqlite3.connect(state_db)
+    shell.execute("UPDATE play_imported SET track_uuid = 'new'")
+    shell.commit()
+    shell.close()
+
+    assert playcounts.history_version() != before
