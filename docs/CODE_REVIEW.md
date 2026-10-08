@@ -1859,10 +1859,13 @@ R2 split of `library.js` lost nothing.
       numbers when the site gave none. A list of unrelated videos is left
       as singles. The stale comment is gone. New test fails on the old code;
       tried on the item shape only, not on live yt-dlp output.
-- [ ] **2L9. A numbered duplicate is renamed on every save of its album.**
+- [x] **2L9. A numbered duplicate is renamed on every save of its album.**
       *Verified.* `app/filer.py:628-642,717-727`. `Same (2).mp3` goes to
       `(3)`, then back. *Fix:* leave a file that is already one of its
       target's numbered variants in the same folder.
+      **Fixed** as suggested (`filer._already_there`), and the file's own
+      path is what `file_track` reports when it stays. New test fails on
+      the old code.
 - [ ] **2L10. Unbounded dicts.** `_offered` (`app/main.py:2089`) and
       `_sign_in_failures` (`app/main.py:517`) are never pruned.
 - [ ] **2L11. Transitive dependencies float.** Only top-level requirements

@@ -1205,3 +1205,20 @@ def test_without_the_marker_two_names_are_still_refused(space):
 
     with pytest.raises(filer.NotEditable):
         filer.retag_album(space, folder, album="Geogaddi")
+
+
+# --- a numbered copy stays put (2L9) ----------------------------------------------
+
+def test_a_numbered_copy_keeps_its_name_across_saves(space):
+    """It was never "already in place", so each save moved it to the next
+    free number and the next one moved it back."""
+    first, second = [filer.file_track(space, track(
+        tmp_of(space), name=f"same-{n}.mp3", albumartist="Boards",
+        album="Geogaddi", title="Same", tracknumber="1")) for n in (1, 2)]
+    assert second.path.name == "01 - Same (2).mp3"
+
+    for _ in range(2):
+        moved = filer.retag_album(space, first.path.parent, album="Geogaddi")
+
+    assert sorted(m.path.name for m in moved) == sorted([first.path.name,
+                                                        second.path.name])

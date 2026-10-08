@@ -740,6 +740,21 @@ def unused_name(target: Path) -> Path:
     raise _all_taken(target)
 
 
+def _already_there(source: Path, target: Path) -> bool:
+    """Whether a file is already where it belongs: the target itself, or one
+    of its numbered variants in the same folder.
+
+    A second "Same.mp3" is filed as "Same (2).mp3". Asked only "is it the
+    target", that file never was, so every save of its album moved it to
+    "(3)" - "(2)" being its own name, and taken - and the next save back.
+    """
+    if source.resolve() == target.resolve():
+        return True
+    if source.parent.resolve() != target.parent.resolve():
+        return False
+    return source.name in {variant.name for variant in _variants(target)}
+
+
 def _variants(target: Path):
     yield target
     stem, suffix = target.stem, target.suffix
@@ -897,7 +912,7 @@ def file_track(space: workspace.Workspace, source: Path,
         None if had_track else track_uuid,
         None if had_album == album_uuid else album_uuid)
 
-    if source.resolve() != target.resolve():
+    if not _already_there(source, target):
         # Only from a folder that belongs to the music. Downloads are filed
         # from the inbox root, so a stray cover.jpg there was copied into
         # every later album with no folder cover of its own - and Navidrome
@@ -907,6 +922,9 @@ def file_track(space: workspace.Workspace, source: Path,
                 space.inbox_dir.resolve(), space.library_path.resolve()):
             _carry_cover(source.parent, target.parent, source, key)
         target = _move_into_place(source, target)
+    else:
+        # Staying put, under whatever number it already has.
+        target = source
 
     return Filed(path=target, track_uuid=track_uuid, album_uuid=album_uuid,
                  album_key=key, identified=identified)
