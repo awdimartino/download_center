@@ -198,6 +198,7 @@ function todoSection({ title, count, why, albums, actions = [], sub }) {
 }
 
 export async function loadAttention() {
+  const mine = ++libraryState.load;
   librarySuggest.replaceChildren();
   libraryMore.hidden = true;
   libraryCount.hidden = true;
@@ -207,9 +208,12 @@ export async function loadAttention() {
   try {
     data = await fetchAttention();
   } catch (err) {
+    if (mine !== libraryState.load) return;
     libraryEl.replaceChildren(el("p", "empty", `Could not read your library: ${err.message}`));
     return;
   }
+  // Another tab, or a newer load of this one, was asked for meanwhile.
+  if (mine !== libraryState.load) return;
 
   const groups = suggestedGroups();
   const { section: together, body: groupList } = sectionShell({

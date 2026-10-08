@@ -500,3 +500,12 @@ def test_operations_are_caught_up_on_every_socket_open():
     assert "connect(onSessionExpired, onOpen)" in JS_FILES["ws.js"]
     assert "connect(handleSessionExpired, resumeOperations)" in JS_FILES["main.js"]
     assert "watching.has(op.name)" in JS_FILES["operations.js"]
+
+
+def test_every_library_loader_shares_one_latest_load():
+    """M5's counter covered albums against albums only, so a slow albums
+    answer drew the grid under the Artists or Needs attention tab, and the
+    reverse (2M21). Checked in Chromium; this pins the wiring."""
+    assert "albumsRequest" not in JS
+    assert JS_FILES["library.js"].count("const mine = ++libraryState.load;") == 2
+    assert "const mine = ++libraryState.load;" in JS_FILES["library-attention.js"]

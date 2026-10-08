@@ -308,13 +308,12 @@ export async function loadLibrary(mode = "reset", anchor = null) {
   return loadAlbums(mode, anchor);
 }
 
-// Which load is the latest. Typing a search starts one per pause, and a
-// slow early answer used to arrive last and replace the list for what was
-// typed after it - or append a stale "more" page to a new search.
-let albumsRequest = 0;
-
+// Typing a search starts one load per pause, and a slow early answer used to
+// arrive last and replace the list for what was typed after it - or append a
+// stale "more" page to a new search. `libraryState.load` says which is the
+// latest, shared with the other tabs' loaders.
 async function loadAlbums(mode, anchor) {
-  const mine = ++albumsRequest;
+  const mine = ++libraryState.load;
   const keepScroll = mode === "refresh";
   const anchorNode = anchor
     ? libraryEl.querySelector(`[data-key="${CSS.escape(anchor)}"]`) : null;
@@ -342,7 +341,7 @@ async function loadAlbums(mode, anchor) {
       } while (albums.length < want && albums.length < data.total
                && (data.albums || []).length);
     }
-    if (mine !== albumsRequest) return;
+    if (mine !== libraryState.load) return;
 
     if (mode === "more") {
       listEl.append(...albums.map(renderAlbum));
@@ -398,7 +397,7 @@ async function loadAlbums(mode, anchor) {
     showSuggestions();
     surveyCovers();
   } catch (err) {
-    if (mine !== albumsRequest) return;
+    if (mine !== libraryState.load) return;
     if (mode !== "more") {
       libraryEl.replaceChildren();
       libraryShownCount = 0;
@@ -421,14 +420,18 @@ export function refreshLibrary(album) {
 /* --- artists ------------------------------------------------------------- */
 
 async function loadArtists() {
+  const mine = ++libraryState.load;
   librarySuggest.replaceChildren();
   libraryMore.hidden = true;
   libraryCount.hidden = true;
   if (!libraryState.artistsCache) {
     libraryEl.replaceChildren(el("p", "empty", "Reading…"));
     try {
-      libraryState.artistsCache = (await getJSON("/api/library/artists")).artists;
+      const artists = (await getJSON("/api/library/artists")).artists;
+      libraryState.artistsCache = artists;
+      if (mine !== libraryState.load) return;
     } catch (err) {
+      if (mine !== libraryState.load) return;
       libraryEl.replaceChildren();
       libraryEmpty.textContent = `Could not read your artists: ${err.message}`;
       libraryEmpty.hidden = false;

@@ -1626,7 +1626,7 @@ R2 split of `library.js` lost nothing.
 
 ### Frontend
 
-- [ ] **2M21. The Library tabs race each other; M5's counter covers only
+- [x] **2M21. The Library tabs race each other; M5's counter covers only
       albums against albums.** *Verified in Chromium, all four directions.*
       `app/static/js/library.js:304-345,423-439`,
       `app/static/js/library-attention.js:68-72,151-223`. A slow albums
@@ -1634,6 +1634,12 @@ R2 split of `library.js` lost nothing.
       reverse.
       *Fix:* one request token owned by `loadLibrary`, checked by all three
       loaders.
+      **Fixed:** the counter is now `libraryState.load`, shared. The albums,
+      artists and attention loaders each take the next number when they
+      start, including `loadAttention` when it is called directly, and draw
+      only if no load has started since. Verified in Chromium with the
+      same four scenarios that showed the bug (all four BUG on the old code,
+      all four clean now); a static test pins the wiring.
 
 - [ ] **2M22. A session that ends while the socket stays open never shows
       the sign-in form.** *Verified.* `app/static/js/main.js:129-136`,

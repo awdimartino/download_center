@@ -180,6 +180,11 @@ export const libraryState = {
   barredKeys: new Set(),
   // Every artist, for the Artists tab; dropped when a change can move one.
   artistsCache: null,
+  // Which load of the list is the latest, whichever tab it is for. Each
+  // loader takes the next number and draws only if nothing has taken one
+  // since: a slow albums answer used to land under the Artists tab, and the
+  // reverse.
+  load: 0,
 };
 
 export function isBarred(album) {
