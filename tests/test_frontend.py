@@ -556,3 +556,14 @@ def test_inline_track_saves_run_in_order_and_undo_a_refusal():
     drawer = JS_FILES["library-drawer.js"]
     assert "trackEdits = trackEdits.then(" in drawer
     assert 'input.value = previous || "";' in drawer
+
+
+def test_a_squared_cover_is_stamped_after_the_rescan_not_before():
+    """Bulk Square covers stamped the art URL at once, so it was fetched
+    while Navidrome still served the barred picture, and cached for a week.
+    The listing's art_version makes a new cover survive a reload (2M28)."""
+    attention = JS_FILES["library-attention.js"]
+    square = attention[attention.index("export async function squareCovers"):]
+    square = square[:square.index("\n}\n")]
+    assert "RESCAN_WAIT_MS" in square
+    assert "album.art_version" in JS_FILES["library-shared.js"]

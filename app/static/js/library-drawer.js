@@ -13,6 +13,7 @@ import {
   albumKey,
   albumName,
   artStamps,
+  RESCAN_WAIT_MS,
   editField,
   getJSON,
   isBarred,
@@ -595,9 +596,6 @@ function albumEditor(album) {
    move the files. Most of the time only the picture is wrong - a YouTube
    download arrives with the video frame, bars and all - so this offers
    covers and changes only that. */
-
-// How long Navidrome takes to notice a changed file and serve its new art.
-const RESCAN_WAIT_MS = 20000;
 
 async function applyCover(album, candidate, button, picker) {
   button.disabled = true;

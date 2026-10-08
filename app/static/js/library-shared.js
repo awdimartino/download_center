@@ -123,8 +123,14 @@ export function editField(label, value, extra = {}) {
 
 // When each album's cover was last replaced here. The art URL is keyed on a
 // track id, which does not change when the picture does, and it is cached
-// for a week - so without a stamp the old cover stays on screen.
+// for a week - so without a stamp the old cover stays on screen. Only for
+// this page's life: the listing's own art_version is what survives a reload.
 export const artStamps = new Map();
+
+// How long Navidrome takes to notice a changed file and serve its new art.
+// A stamp taken sooner is fetched while Navidrome still has the old picture,
+// and that answer is what the browser then keeps for a week.
+export const RESCAN_WAIT_MS = 20000;
 
 // Navidrome resizes, and the embedded images behind these are often a
 // megabyte each. Lazy, so scrolling past two thousand albums does not fetch
@@ -138,14 +144,16 @@ export function libraryArt(trackId, size, stamp, className = "") {
   img.decoding = "async";
   img.alt = "";
   img.src = `/api/library/art?id=${encodeURIComponent(trackId)}&size=${size}`
-    + (stamp ? `&v=${stamp}` : "");
+    + (stamp ? `&v=${encodeURIComponent(stamp)}` : "");
   img.addEventListener("error", () => img.remove());
   box.append(img);
   return box;
 }
 
 export function albumArt(album, size, className) {
-  return libraryArt(album.art_id, size, artStamps.get(albumKey(album)), className);
+  const version = [album.art_version, artStamps.get(albumKey(album))]
+    .filter(Boolean).join(".");
+  return libraryArt(album.art_id, size, version, className);
 }
 
 /* --- selection ----------------------------------------------------------- */

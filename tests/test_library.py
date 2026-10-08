@@ -852,3 +852,24 @@ def test_navidromes_database_is_closed_after_use(db):
 
     with pytest.raises(sqlite3.ProgrammingError):
         connection.execute("select 1")
+
+
+# --- the cover's version (2M28) --------------------------------------------------
+
+def test_an_albums_art_carries_the_version_navidrome_last_read(db, identity):
+    """The art URL was keyed on a track id alone and cached for a week, so a
+    new cover showed the old picture after any reload. When Navidrome last
+    read the art track changes once it rescans the rewritten file."""
+    import sqlite3
+
+    connection = sqlite3.connect(db)
+    with connection:
+        connection.execute("alter table media_file add column updated_at TEXT")
+    connection.close()
+    add_track(db, "t1", path="A/B/01.mp3", album="B", album_artist="A",
+              updated_at="2026-10-08T10:00:00Z")
+
+    [album] = library.listing(identity)["albums"]
+
+    assert album["art_id"] == "t1"
+    assert album["art_version"] == "2026-10-08T10:00:00Z"

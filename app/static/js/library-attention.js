@@ -14,6 +14,7 @@ import {
   albumKey,
   artStamps,
   getJSON,
+  RESCAN_WAIT_MS,
   libraryCount,
   libraryEl,
   libraryEmpty,
@@ -345,7 +346,7 @@ async function eachAlbum(albums, button, verb, work) {
 }
 
 export async function squareCovers(albums, button) {
-  let changed = 0;
+  const squared = [];
   const { failed } = await eachAlbum(albums, button, "Squaring", async (album) => {
     const result = await postJSON("/api/library/cover/apply",
       { library_id: album.library_id, folder: album.folder, url: null });
@@ -353,11 +354,19 @@ export async function squareCovers(albums, button) {
       libraryState.barredKeys.delete(albumKey(album));
       album.barred = false;
     }
-    if (result.written) {
-      changed += 1;
-      artStamps.set(albumKey(album), Date.now());
-    }
+    if (result.written) squared.push(album);
   });
+  const changed = squared.length;
+  if (changed) {
+    // Stamped once Navidrome has had time to rescan, as a single cover is.
+    // Stamped at once, the new URL was fetched while Navidrome still served
+    // the barred picture, and the browser kept that for a week.
+    setTimeout(() => {
+      const now = Date.now();
+      squared.forEach((album) => artStamps.set(albumKey(album), now));
+      refreshLibrary();
+    }, RESCAN_WAIT_MS);
+  }
   setNote("library-op",
     `Squared ${plural(changed, "cover")}.`
     + (failed.length ? ` Could not: ${failed.join("; ")}` : "")

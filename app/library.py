@@ -91,6 +91,11 @@ class Album:
     # Any one track in the album, so the row can ask Navidrome for its
     # cover. Navidrome keys art on a track or album id, not on a folder.
     art_id: str = ""
+    # When Navidrome last read that track, which changes once it has
+    # rescanned a file whose art was replaced. Part of the art URL, so a new
+    # cover is fetched afresh - after a reload too - instead of the old one
+    # being served from a week-long browser cache under the same URL.
+    art_version: str = ""
     # Navidrome's album ids for the files in this folder - normally one.
     # Derived from the album UUID through PID.Album, so it survives a rename
     # and is what "somebody has reviewed this" is keyed on.
@@ -123,6 +128,7 @@ class Album:
             "tracks": self.tracks, "untagged": self.untagged,
             "no_gain": self.no_gain,
             "art_id": self.art_id,
+            "art_version": self.art_version,
             # Three states, not two: an album nobody has confirmed reads very
             # differently from one where a download joined a matched record.
             "matched": self.untagged == 0,
@@ -176,6 +182,7 @@ def _load(connection: sqlite3.Connection,
 
     columns = navidrome.columns_of(connection, "media_file")
     added = "mf.created_at" if "created_at" in columns else "''"
+    updated = "mf.updated_at" if "updated_at" in columns else "''"
     album_id = "mf.album_id" if "album_id" in columns else "''"
     # Null is "never measured"; 0.0 is a real answer. FIXES item 22.
     gained = ("mf.rg_track_gain is not null" if "rg_track_gain" in columns
@@ -196,7 +203,7 @@ def _load(connection: sqlite3.Connection,
                coalesce(mf.mbz_recording_id, ''), mf.library_id,
                coalesce({added}, ''), mf.id, coalesce({album_id}, ''),
                {gained}, coalesce({year}, 0), coalesce({duration}, 0),
-               {plays}
+               {plays}, coalesce({updated}, '')
           from media_file mf
          where {navidrome.live_clause(connection, allowed)}""",
         params).fetchall()
@@ -204,7 +211,7 @@ def _load(connection: sqlite3.Connection,
     albums: dict[tuple[int, str], Album] = {}
     for (path, album, album_artist, artist, mbid, library_id, when,
          track_id, navidrome_album, has_gain, track_year, length,
-         track_plays) in rows:
+         track_plays, track_updated) in rows:
         key = (library_id, folder_of(path))
         found = albums.get(key)
         if found is None:
@@ -215,6 +222,7 @@ def _load(connection: sqlite3.Connection,
         found.tracks += 1
         if not found.art_id:
             found.art_id = track_id
+            found.art_version = str(track_updated or "")
         if not mbid:
             found.untagged += 1
         if not has_gain:

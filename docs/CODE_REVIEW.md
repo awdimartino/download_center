@@ -1730,7 +1730,7 @@ R2 split of `library.js` lost nothing.
       finishes). The page sees an ordinary close and reconnects for a fresh
       snapshot. New test fails on the old code.
 
-- [ ] **2M28. Bulk *Square covers* caches the old picture for a week.**
+- [x] **2M28. Bulk *Square covers* caches the old picture for a week.**
       *Verified in Chromium; unverified against Navidrome.*
       `app/static/js/library-attention.js:306-317`,
       `app/static/js/library-shared.js:127,140-141`, `app/main.py:1956`.
@@ -1740,6 +1740,15 @@ R2 split of `library.js` lost nothing.
       change a reload shows the old art for up to a week.
       *Fix:* the same wait; better, a cover version (file mtime) from the
       listing as `v=`.
+      **Fixed, both.** The listing now gives each album an `art_version`:
+      the art track's `updated_at` in Navidrome, which changes once
+      Navidrome has rescanned the rewritten file. It is part of the art URL,
+      so a new cover is fetched afresh after a reload too (a file mtime was
+      not used: it changes before Navidrome serves the new art, which is
+      the bug). `squareCovers` now stamps after the same rescan wait as a
+      single cover; the constant moved to `library-shared.js`. New server
+      test fails on the old code; in Chromium, S11 no longer sees a stamped
+      fetch straight after squaring.
 
 - [ ] **2M29. The Combine dialog rebuilds itself under the user.**
       *Verified.* `app/static/js/library-combine.js:120-129,264-269,336`.
