@@ -71,6 +71,29 @@ export function pageEscape(event) {
            && (target.isContentEditable || target.matches(TYPING)));
 }
 
+// A request whose answer is used: a 4xx or 5xx is thrown, with the
+// server's own reason, rather than read as an empty answer.
+export async function getJSON(path, options) {
+  const response = await apiFetch(path, options);
+  const data = await response.json().catch(() => ({}));
+  // fetch does not throw on 4xx or 5xx, and an error body is a {detail}
+  // with nothing else - which used to fall through to "your library is
+  // empty", the most alarming possible way to be wrong.
+  if (!response.ok || data.available === false) {
+    throw new Error(data.reason || data.detail
+                    || `the server answered ${response.status}`);
+  }
+  return data;
+}
+
+export function postJSON(path, body) {
+  return getJSON(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;

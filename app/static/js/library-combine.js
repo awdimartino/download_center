@@ -5,20 +5,18 @@
    rename per album, typed exactly right each time, and a move per loose
    track from behind "More". Nothing changes until Combine is pressed. */
 
-import { el, setNote } from "./core.js";
+import { el, getJSON, postJSON, setNote } from "./core.js";
 import { registerOperation, startOperation } from "./operations.js";
 import {
   actionButton,
   albumArt,
   albumKey,
   editField,
-  getJSON,
   isBarred,
   libraryDialog,
   libraryState,
   looseTracks,
   plural,
-  postJSON,
   selection,
   showProgress
 } from "./library-shared.js";

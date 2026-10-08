@@ -12,7 +12,7 @@
    runs; nothing at a module's top level may use another library module's
    `const` or `let`. */
 
-import { apiFetch, el, setNote } from "./core.js";
+import { apiFetch, el, getJSON, setNote } from "./core.js";
 
 export const libraryView = document.getElementById("view-library");
 export const libraryEl = document.getElementById("library");
@@ -76,27 +76,6 @@ export function albumName(album) {
 
 export function plural(n, word) {
   return `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
-}
-
-export async function getJSON(path, options) {
-  const response = await apiFetch(path, options);
-  const data = await response.json().catch(() => ({}));
-  // fetch does not throw on 4xx or 5xx, and an error body is a {detail}
-  // with nothing else - which used to fall through to "your library is
-  // empty", the most alarming possible way to be wrong.
-  if (!response.ok || data.available === false) {
-    throw new Error(data.reason || data.detail
-                    || `the server answered ${response.status}`);
-  }
-  return data;
-}
-
-export function postJSON(path, body) {
-  return getJSON(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
 }
 
 export function actionButton(label, className, onClick) {

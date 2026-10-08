@@ -4,7 +4,7 @@
 // quality alone, because stars are migrated onto it rather than protected in
 // place - so the better file wins even when the worse one is the starred one.
 
-import { action, apiFetch, el, setBanner, showError } from "./core.js";
+import { action, apiFetch, el, getJSON, postJSON, setBanner, showError } from "./core.js";
 import { registerOperation, startOperation } from "./operations.js";
 import { setBadge } from "./nav.js";
 
@@ -218,7 +218,7 @@ function quarantineRow(entry) {
 
 async function loadQuarantine() {
   try {
-    const data = await apiFetch("/api/duplicates/quarantined").then((r) => r.json());
+    const data = await getJSON("/api/duplicates/quarantined");
     const entries = data.entries || [];
     quarantineList.replaceChildren(...entries.map(quarantineRow));
 
@@ -261,21 +261,31 @@ export async function loadDupes() {
 document.getElementById("dupe-auto").addEventListener("click", async (event) => {
   const button = event.currentTarget;
   button.disabled = true;
+  let preview;
   try {
-    const preview = await apiFetch("/api/duplicates/auto", { method: "POST" })
-      .then((r) => r.json());
-    if (!preview.eligible) {
-      showError("Nothing is confident enough to resolve unattended.");
-      return;
-    }
-    if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/ inside its own library. This cannot be undone from here.`)) return;
-    // Exactly the groups just previewed: anything that has appeared since
-    // is left for the next look rather than resolved unseen.
-    await startOperation("dupes-auto", "/api/duplicates/auto/apply",
-                         { groups: preview.groups });
-  } finally {
+    // A refusal or an outage is said as one, not as "nothing is confident
+    // enough" - which is what any failure used to read as.
+    preview = await postJSON("/api/duplicates/auto", {});
+  } catch (err) {
+    showError(`Could not check which groups are confident: ${err.message}`);
     button.disabled = false;
+    return;
   }
+  if (!preview.eligible) {
+    showError("Nothing is confident enough to resolve unattended.");
+    button.disabled = false;
+    return;
+  }
+  if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/ inside its own library. This cannot be undone from here.`)) {
+    button.disabled = false;
+    return;
+  }
+  // Exactly the groups just previewed: anything that has appeared since
+  // is left for the next look rather than resolved unseen. From here the
+  // button follows the operation, so it stays disabled while it runs.
+  const payload = await startOperation("dupes-auto", "/api/duplicates/auto/apply",
+                                       { groups: preview.groups });
+  if (!payload || payload.detail) button.disabled = false;
 });
 
 // The result arrives over the socket. Reported rather than discarded: a run

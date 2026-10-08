@@ -5,7 +5,7 @@
    in place, and everything done to it - renaming and merging, a new cover,
    choosing a MusicBrainz match by hand, setting it aside. */
 
-import { el, setNote } from "./core.js";
+import { el, getJSON, postJSON, setNote } from "./core.js";
 import { registerOperation, startOperation } from "./operations.js";
 import {
   actionButton,
@@ -15,7 +15,6 @@ import {
   artStamps,
   RESCAN_WAIT_MS,
   editField,
-  getJSON,
   isBarred,
   isPicked,
   libraryDrawer,
@@ -23,7 +22,6 @@ import {
   libraryStatus,
   libraryView,
   plural,
-  postJSON,
   selection
 } from "./library-shared.js";
 import {

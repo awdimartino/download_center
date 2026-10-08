@@ -1958,11 +1958,17 @@ R2 split of `library.js` lost nothing.
 
 ### Frontend
 
-- [ ] **2L20. Duplicates shows failures as "nothing there".** *Verified.*
+- [x] **2L20. Duplicates shows failures as "nothing there".** *Verified.*
       `app/static/js/duplicates.js:219-270`. A 503, 401 or 500 on the
       preview reads "Nothing is confident enough"; a 500 on the set-aside
       list reads "Nothing has been set aside"; the button re-enables while
       its operation runs.
+      **Fixed:** the checked `getJSON`/`postJSON` moved from
+      `library-shared.js` to `core.js` (a step of 2D5), and Duplicates uses
+      them, so a failed preview or set-aside list shows the server's reason.
+      The auto-resolve button is re-enabled only on the paths that never
+      start the operation; once it starts, the button follows it. Verified
+      in Chromium (S8, S8b); every other scenario still passes.
 - [ ] **2L21. The Library's caches survive a change of account.**
       *Verified.* `app/static/js/main.js:90-92,129-136`,
       `library-shared.js:155-183`. After a 4401, a second person sees the
