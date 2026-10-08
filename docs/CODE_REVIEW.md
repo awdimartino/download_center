@@ -1789,11 +1789,16 @@ R2 split of `library.js` lost nothing.
       over `MAX_TRACKS_PER_JOB` returned without clearing `RUNNING`, so
       Retry said "still running" for the life of the process; every path
       that will not run now clears it. Both new tests fail on the old code.
-- [ ] **2L3. A Settings save that fails still changes the live settings.**
+- [x] **2L3. A Settings save that fails still changes the live settings.**
       *Verified.* `app/config.py:204-214`. Invalid TOML or a read-only
       `/config` gives a 500 with the change in force until restart. A
       hand-written TOML table is rewritten as a string.
       *Fix:* write from a copy; apply live only after `os.replace`.
+      **Fixed, both.** `config.save` builds the file from the changes
+      without touching the live settings, and applies them only after
+      `os.replace`. The serialiser now writes tables (inline), arrays and
+      dates, and quotes keys that need it, so a hand-written table comes
+      back as a table. Both new tests fail on the old code.
 - [ ] **2L4. The upload size check runs after the body is stored.**
       `app/main.py:954-958`. Starlette spools the multipart body to `/tmp`
       first; one request can fill the SD card.

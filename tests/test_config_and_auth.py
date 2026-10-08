@@ -608,3 +608,33 @@ async def test_a_saved_setting_is_stored_as_the_model_reads_it(
 
     assert config.settings.audio_bitrate == "320"
     assert 'audio_bitrate = "320"' in config_file.read_text(encoding="utf-8")
+
+
+def test_a_save_that_fails_changes_nothing_live(config_file, monkeypatch):
+    """The live settings were changed first: a config.toml that would not
+    parse answered with an error while the change was already in force,
+    until the next restart quietly undid it (2L3)."""
+    import tomllib
+
+    monkeypatch.setattr(config, "FROM_ENV", set())
+    monkeypatch.setattr(config.settings, "concurrency", 3)
+    config_file.write_text("this is = = not toml", encoding="utf-8")
+
+    with pytest.raises(tomllib.TOMLDecodeError):
+        config.save({"concurrency": 9})
+
+    assert config.settings.concurrency == 3
+
+
+def test_a_hand_written_table_survives_a_save(config_file, monkeypatch):
+    """It came back from the next save as the string of a Python dict."""
+    import tomllib
+
+    monkeypatch.setattr(config, "FROM_ENV", set())
+    config_file.write_text('[extra]\na = 1\nb = "two"\n', encoding="utf-8")
+
+    config.save({"concurrency": 4})
+
+    written = tomllib.loads(config_file.read_text(encoding="utf-8"))
+    assert written["extra"] == {"a": 1, "b": "two"}
+    assert written["concurrency"] == 4

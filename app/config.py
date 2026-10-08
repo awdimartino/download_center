@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
 import os
+import re
 import tomllib
 from typing import Any
 from pathlib import Path
@@ -175,11 +177,29 @@ def _toml_string(text: str) -> str:
     return '"' + "".join(out) + '"'
 
 
+_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _toml_key(key: str) -> str:
+    return key if _BARE_KEY.match(key) else _toml_string(key)
+
+
 def _toml_value(value: Any) -> str:
+    """A value as TOML. Tables, arrays and dates too: a hand-written table in
+    config.toml used to come back from the next save as the string of a
+    Python dict, and whatever read it then got text instead of a table."""
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return str(value)
+    if isinstance(value, dict):
+        inner = ", ".join(f"{_toml_key(str(k))} = {_toml_value(v)}"
+                          for k, v in value.items())
+        return "{ " + inner + " }" if inner else "{}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    if isinstance(value, (datetime.date, datetime.time)):
+        return value.isoformat()
     return _toml_string(str(value))
 
 
@@ -201,9 +221,11 @@ def save(updates: dict[str, Any]) -> None:
         raise ValueError(
             f"{locked[0]} is set by {env_var(locked[0])} in the container's "
             "environment; change it there.")
-    for key, value in updates.items():
-        if key in EDITABLE:
-            setattr(settings, key, value)
+    # Applied to the live settings only once the file has been written. They
+    # used to be applied first: a file that would not parse, or a /config
+    # that could not be written, answered with an error while the change was
+    # already in force - until the next restart quietly undid it.
+    changes = {key: value for key, value in updates.items() if key in EDITABLE}
 
     existing: dict[str, Any] = {}
     if CONFIG_FILE.exists():
@@ -217,14 +239,15 @@ def save(updates: dict[str, Any]) -> None:
     # if anything; its live value is never copied in.
     stored = {key: value for key, value in existing.items()
               if key not in EDITABLE or key in FROM_ENV}
-    stored.update({key: getattr(settings, key) for key in EDITABLE
-                   if key not in FROM_ENV})
+    stored.update({key: changes.get(key, getattr(settings, key))
+                   for key in EDITABLE if key not in FROM_ENV})
 
     lines = [
         "# Written by Navidrome Companion. Environment variables still take",
         "# precedence over anything set here.",
         "",
-        *(f"{key} = {_toml_value(value)}" for key, value in stored.items()),
+        *(f"{_toml_key(key)} = {_toml_value(value)}"
+          for key, value in stored.items()),
         "",
     ]
     text = "\n".join(lines)
@@ -235,6 +258,8 @@ def save(updates: dict[str, Any]) -> None:
     partial = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp")
     partial.write_text(text, encoding="utf-8")
     os.replace(partial, CONFIG_FILE)
+    for key, value in changes.items():
+        setattr(settings, key, value)
 
 
 def load() -> Settings:
