@@ -177,6 +177,17 @@ def stop(name: str, owner: str | None) -> Operation:
     return operation
 
 
+def stop_all() -> list[asyncio.Task]:
+    """Ask every running operation to finish, for a shutdown. Returns
+    their tasks, to wait on."""
+    tasks = []
+    for operation in _operations.values():
+        if operation.running and operation.task is not None:
+            operation.stop_requested = True
+            tasks.append(operation.task)
+    return tasks
+
+
 def stopping(name: str, owner: str | None) -> bool:
     """For the work to check between units."""
     return get(name, owner).stop_requested

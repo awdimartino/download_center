@@ -108,3 +108,40 @@ async def test_a_forced_snapshot_with_nothing_new_warms_nothing(monkeypatch):
     await main.playcount_snapshot(session=None)
 
     assert warmed == []
+
+
+@pytest.mark.asyncio
+async def test_shutting_down_stops_jobs_and_operations(monkeypatch):
+    """A shutdown cancelled the three loops and nothing else: downloads and
+    operations went on in their threads until Docker killed the process,
+    possibly part way through rewriting a library file (2M3)."""
+    import threading
+
+    from app import operations
+
+    async def idle():
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(main.store, "connect", lambda path: None)
+    monkeypatch.setattr(main.inbox, "clear_scratch", lambda: None)
+    for loop in ("_audit_loop", "_inbox_loop", "_snapshot_loop"):
+        monkeypatch.setattr(main, loop, idle)
+    operations.reset()
+
+    stopped = threading.Event()
+
+    def work():
+        while not operations.stopping("replaygain", "alex"):
+            threading.Event().wait(0.01)
+        stopped.set()
+        return {}
+
+    async with main.lifespan(main.app):
+        job = asyncio.create_task(idle())
+        monkeypatch.setitem(main.RUNNING, "job1", job)
+        operation, _ = operations.start("replaygain", "alex", work)
+        await asyncio.sleep(0.05)
+
+    assert job.cancelled()
+    assert stopped.is_set()
+    assert operation.task is None and operation.status == operations.DONE

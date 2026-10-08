@@ -7,6 +7,10 @@ services:
 
     container_name: navidrome-companion
     restart: unless-stopped
+    # Time to stop downloads and let an operation finish the file it is on
+    # before Docker kills the process. Docker's default is ten seconds, which
+    # can land part way through rewriting a file in the library.
+    stop_grace_period: 2m
 
     ports:
       - "${PORT:-8000}:8000"

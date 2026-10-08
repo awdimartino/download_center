@@ -245,6 +245,35 @@ async def lifespan(app: FastAPI):
         for task in background:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        await _wind_down()
+
+
+# How long a shutdown waits for operations to reach a stopping point. Docker
+# kills the process when its own grace period runs out, so the compose file
+# gives it longer than this.
+SHUTDOWN_GRACE = 60
+
+
+async def _wind_down() -> None:
+    """Stop in-flight work before the process exits.
+
+    A shutdown used to cancel the three loops and nothing else. Downloads
+    and operations went on in their threads, which kept the process alive
+    until Docker killed it - possibly part way through rewriting a file in
+    the library. Jobs are cancelled the way the Cancel button does it, which
+    stops each download and waits for anything being filed; operations are
+    asked to stop after the album or file they are on.
+    """
+    running = list(RUNNING)
+    operation_tasks = operations.stop_all()
+    if running or operation_tasks:
+        log.info("shutting down: stopping %d job(s) and %d operation(s)",
+                 len(running), len(operation_tasks))
+    await asyncio.gather(*(_stop_job(job_id) for job_id in running))
+    if operation_tasks:
+        _, late = await asyncio.wait(operation_tasks, timeout=SHUTDOWN_GRACE)
+        if late:
+            log.warning("%d operation(s) still running at shutdown", len(late))
 
 
 async def _inbox_loop() -> None:

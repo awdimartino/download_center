@@ -1304,7 +1304,7 @@ R2 split of `library.js` lost nothing.
       its path. New tests fail on the old code, including one against the
       real yt-dlp and a slow local HTTP server.
 
-- [ ] **2M3. Shutdown never stops in-flight work, so a redeploy ends in
+- [x] **2M3. Shutdown never stops in-flight work, so a redeploy ends in
       SIGKILL mid-write.** *Mechanism verified; file damage unverified.*
       `app/main.py:239-246`, `docker-compose.yml`. The lifespan cancels only
       the three loops; executor threads keep the process alive until Docker
@@ -1312,6 +1312,16 @@ R2 split of `library.js` lost nothing.
       rewriting a library file.
       *Fix:* on shutdown set `stop_requested` on operations, cancel jobs
       (with 2M2's flag) and wait a bounded time; `stop_grace_period: 2m`.
+      **Fixed:** the lifespan's shutdown now calls `_wind_down`: every
+      running job is stopped the way Cancel does it (2M2: downloads stop,
+      filing is waited for), and every running operation is asked to stop
+      (`operations.stop_all`) and waited for up to 60 s. `docker-compose.yml`
+      sets `stop_grace_period: 2m`. New test fails on the old code.
+      **On the Pi:** its compose file is its own
+      (`~/Docker/docker-compose.yml`), so `stop_grace_period: 2m` has to be
+      added there by hand. An operation that does not check `stopping()`
+      (combine, a cover apply) is waited for rather than stopped, which is
+      what the grace period is for.
 
 - [ ] **2M4. A move into the library that dies part-way leaves a truncated
       track under the real name, and the next attempt files a second copy.**
