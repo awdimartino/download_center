@@ -1986,10 +1986,16 @@ R2 split of `library.js` lost nothing.
       until loaded; M8 guarded Edit details only.
       **Fixed** with the same "still reading" guard as Edit details.
       Verified in Chromium (S12: no page error now).
-- [ ] **2L24. The selection goes stale after the thing selected moves.**
+- [x] **2L24. The selection goes stale after the thing selected moves.**
       `library-drawer.js:393-401,491-496,811-813`. A renamed or quarantined
       album stays selected under its old folder; a renamed track keeps its
       old key.
+      **Fixed:** a renamed album stays selected under its new folder and
+      name, a quarantined one leaves the selection with its tracks
+      (`forgetPicks`), and a ticked track is re-keyed by its new path, or
+      dropped when it moved to another album. The bar is redrawn each time.
+      Pinned by a static test; all 21 Chromium scenarios still pass, but
+      these flows are not driven there.
 - [ ] **2L25. A cover survey in flight can undo an invalidation.**
       `library-shared.js:192-211`. *Fix:* a generation counter.
 - [ ] **2L26. Silent failures when the server is unreachable.** Sign-in and

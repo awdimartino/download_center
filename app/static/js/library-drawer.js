@@ -400,7 +400,17 @@ function trackRow(album, track, allPicked) {
       { library_id: album.library_id, path: track.path, [key]: value },
       input, (data) => {
         track[key] = value;
+        const was = track.path;
         if (data.path) track.path = data.path;
+        // A ticked track is keyed by its path, which a title edit can
+        // rename: it showed unticked while still counted, and a move left
+        // it selected under the album it had left.
+        const picked = selection.tracks.get(was);
+        if (picked) {
+          selection.tracks.delete(was);
+          if (!data.moved) selection.tracks.set(track.path, picked);
+          renderBar();
+        }
         if (data.moved) {
           // It is in another folder now; listing it here would offer edits
           // against an album it has left.
@@ -457,6 +467,21 @@ function trackRow(album, track, allPicked) {
 
 /* --- editing ------------------------------------------------------------- */
 
+// Take an album that has moved or gone out of the selection, with its
+// tracks; `renamed`, when given, says what it is now and keeps it selected.
+function forgetPicks(album, renamed = null) {
+  const key = albumKey(album);
+  const wasPicked = selection.albums.delete(key);
+  for (const [path, picked] of [...selection.tracks]) {
+    if (albumKey(picked.album) === key) selection.tracks.delete(path);
+  }
+  if (wasPicked && renamed) {
+    const now = renamed();
+    selection.albums.set(albumKey(now), now);
+  }
+  renderBar();
+}
+
 // The chain of inline track saves; see saveField.
 let trackEdits = Promise.resolve();
 
@@ -510,6 +535,14 @@ function albumEditor(album) {
               `Renamed, and ${plural(data.moved, "file")} moved to match.`
               + (failed.length ? ` Problems: ${failed.join("; ")}` : ""),
               failed.length ? "warn" : "notice");
+      // Still selected under its old folder, a later Combine was refused
+      // for an album that was not there. Kept selected, under where it is.
+      forgetPicks(album, () => {
+        album.folder = data.folder || album.folder;
+        album.artist = wantArtist;
+        album.album = wantAlbum;
+        return album;
+      });
       closeDrawer();
       refreshLibrary(album);
     });
@@ -847,6 +880,8 @@ async function quarantineAlbum(album, button) {
       album: album.album, artist: album.artist,
     });
     reportQuarantine(data);
+    // Set aside, so no longer anything to combine.
+    forgetPicks(album);
     closeDrawer();
     refreshLibrary();
   } catch (err) {

@@ -624,3 +624,12 @@ def test_quarantine_waits_for_a_stub_albums_tracks():
     drawer = JS_FILES["library-drawer.js"]
     body = drawer[drawer.index("async function quarantineAlbum"):]
     assert body.index("album.tracks === undefined") < body.index("confirm(")
+
+
+def test_the_selection_follows_what_moved():
+    """A renamed or quarantined album stayed selected under its old folder,
+    and a renamed track kept its old key (2L24)."""
+    drawer = JS_FILES["library-drawer.js"]
+    assert "function forgetPicks(album, renamed = null)" in drawer
+    assert drawer.count("forgetPicks(album") >= 2
+    assert "selection.tracks.set(track.path, picked);" in drawer
