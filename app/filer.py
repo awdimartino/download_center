@@ -649,29 +649,50 @@ def claim(target: Path) -> Path:
 
 
 def _move_into_place(source: Path, target: Path) -> Path:
-    """Move a file to target, never overwriting silently.
+    """Move a file to target, never overwriting silently, and never leaving
+    part of one under a real name.
 
-    `os.replace` is tried first because it is atomic, but the scratch space a
-    download is built in and the library it is filed into are separate bind
-    mounts under Docker, so most real moves cross a filesystem boundary and
-    land on the copy-and-delete fallback.
+    The scratch space a download is built in and the library it is filed
+    into are separate bind mounts under Docker, so most real moves cross a
+    filesystem boundary and have to be a copy. That copy used to be made
+    onto the claimed name: a full disk or a restart part way through left a
+    truncated track there, and the next attempt filed a second copy beside
+    it. Now the file arrives next to its destination under a hidden name -
+    Navidrome skips names starting with a dot - and only then is renamed
+    onto the claimed name, which is one atomic step within a folder.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
-    target = claim(target)
+    staged = target.parent / f".{uuid.uuid4().hex}.part"
+    copied = False
     try:
+        os.replace(source, staged)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
         try:
-            os.replace(source, target)
-        except OSError as exc:
-            if exc.errno != errno.EXDEV:
-                raise
-            shutil.move(str(source), str(target))
+            shutil.copy2(source, staged)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                staged.unlink()
+            raise
+        copied = True
+
+    try:
+        claimed = claim(target)
+        os.replace(staged, claimed)
     except BaseException:
-        # Only the placeholder: a move that failed has not written over it.
+        # Put things back as they were: a rename goes back where it came
+        # from, a copy is dropped and its source is still there.
         with contextlib.suppress(OSError):
-            if target.stat().st_size == 0 and source.exists():
-                target.unlink()
+            if copied:
+                staged.unlink()
+            else:
+                os.replace(staged, source)
         raise
-    return target
+    if copied:
+        with contextlib.suppress(FileNotFoundError):
+            source.unlink()
+    return claimed
 
 
 def _read_identity(path: Path) -> tuple[str | None, str | None]:

@@ -1323,7 +1323,7 @@ R2 split of `library.js` lost nothing.
       (combine, a cover apply) is waited for rather than stopped, which is
       what the grace period is for.
 
-- [ ] **2M4. A move into the library that dies part-way leaves a truncated
+- [x] **2M4. A move into the library that dies part-way leaves a truncated
       track under the real name, and the next attempt files a second copy.**
       *Verified by simulation.* `app/filer.py:645-668`. `claim` creates the
       name, `shutil.move` copies onto it across filesystems; on failure the
@@ -1332,6 +1332,15 @@ R2 split of `library.js` lost nothing.
       track UUID. A kill between claim and move leaves a zero-byte file.
       *Fix:* copy to a hidden temp name in the target folder, then
       `os.replace` onto the claim; remove both on failure.
+      **Fixed:** `_move_into_place` now brings the file into the target
+      folder first, under a hidden `.<random>.part` name (a rename where it
+      can, a copy across filesystems), and only then claims the real name
+      and renames onto it in one step. A failure puts things back: a rename
+      goes back to its source, a copy is dropped. The claim and the final
+      rename are now microseconds apart, so the zero-byte placeholder a kill
+      could leave is close to gone too. A `.part` left by a kill mid-copy is
+      hidden from Navidrome. New test fails on the old code; the existing
+      cross-device test now fakes EXDEV only across folders, as it is.
 
 - [ ] **2M5. One unreadable workspace marker stops the inbox for every
       account.** *Verified.* `app/workspace.py:209-249`,

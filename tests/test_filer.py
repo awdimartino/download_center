@@ -302,8 +302,13 @@ def test_a_move_across_filesystems_still_works(space, tmp_path, monkeypatch):
     import errno
     import os as real_os
 
+    real_replace = real_os.replace
+
     def cross_device(source, target):
-        raise OSError(errno.EXDEV, "Invalid cross-device link")
+        # A rename within one folder never crosses a filesystem.
+        if Path(source).parent != Path(target).parent:
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        real_replace(source, target)
 
     monkeypatch.setattr(filer.os, "replace", cross_device)
     source = track(tmp_path, albumartist="Artist", album="Album",
@@ -1005,3 +1010,42 @@ def test_a_single_leading_dot_is_not_left_to_hide_the_folder(name, filed_as):
 def test_two_or_more_leading_dots_are_kept(name):
     """Navidrome scans these: an ellipsis is a title, not a hidden file."""
     assert filer.sanitize(name) == name
+
+
+def test_a_copy_that_dies_part_way_leaves_nothing_under_the_real_name(
+        tmp_path, monkeypatch):
+    """A full disk or a restart mid-copy left a truncated track under its
+    real name, and the next attempt filed "01 - Song (2).mp3" beside it,
+    both carrying one track UUID (2M4)."""
+    import errno
+    import os
+    import shutil
+
+    real_replace = os.replace
+
+    def cross_device(source, target):
+        if Path(source).parent != Path(target).parent:
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        real_replace(source, target)
+
+    def half_copy(source, target, **kwargs):
+        Path(target).write_bytes(Path(source).read_bytes()[:3])
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(os, "replace", cross_device)
+    monkeypatch.setattr(shutil, "copy2", half_copy)
+    source = tmp_path / "scratch" / "job.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"the whole track")
+    target = tmp_path / "lib" / "01 - Song.mp3"
+
+    with pytest.raises(OSError):
+        filer._move_into_place(source, target)
+
+    assert source.read_bytes() == b"the whole track"
+    assert list(target.parent.iterdir()) == []
+
+    monkeypatch.undo()
+    monkeypatch.setattr(os, "replace", cross_device)
+    assert filer._move_into_place(source, target) == target
+    assert target.read_bytes() == b"the whole track"
