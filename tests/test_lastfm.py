@@ -582,3 +582,36 @@ def test_a_copy_set_aside_does_not_make_its_scrobbles_ambiguous(tmp_path):
 def test_a_track_no_longer_in_the_library_still_matches(tmp_path):
     index = lastfm.library_index(_index_db(tmp_path, [("gone", 1)]))
     assert index[("queen", "jealousy")] == ["gone"]
+
+
+# --- a second import whose matches moved (2M18) --------------------------------
+
+def _planned(rows):
+    return {"user_id": "u-alex", "username": "alex", "rows": rows}
+
+
+def _imported():
+    from app import store
+
+    return sorted(tuple(row) for row in store.connection().execute(
+        "SELECT played_at, track_uuid, plays FROM play_imported"))
+
+
+def test_a_second_import_whose_match_moved_does_not_double_the_plays(state_db):
+    """The old row under the old track stayed beside the new one: four
+    plays for two."""
+    lastfm.write(_planned([("2025-01-01", "uuid-old", 2)]))
+
+    with pytest.raises(lastfm.StaleRows):
+        lastfm.write(_planned([("2025-01-01", "uuid-new", 2)]))
+    assert _imported() == [("2025-01-01", "uuid-old", 2)]
+
+    lastfm.write(_planned([("2025-01-01", "uuid-new", 2)]), replace=True)
+    assert _imported() == [("2025-01-01", "uuid-new", 2)]
+
+
+def test_the_same_import_twice_is_still_idempotent(state_db):
+    rows = [("2025-01-01", "uuid-a", 2), ("2025-01-02", "uuid-b", 1)]
+    lastfm.write(_planned(rows))
+    lastfm.write(_planned(rows))
+    assert _imported() == sorted(rows)

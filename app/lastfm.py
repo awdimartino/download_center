@@ -367,19 +367,56 @@ def audit_unmatched(planned: dict[str, Any],
     return out
 
 
-def write(planned: dict[str, Any]) -> int:
-    """Store the matched rows. Idempotent: the key is (day, track, user,
-    source), so running twice replaces rather than doubles anyone's history."""
+class StaleRows(Exception):
+    """An earlier import wrote rows this one would not, so writing this one
+    beside them would count those plays twice."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(count)
+        self.count = count
+
+
+def write(planned: dict[str, Any], replace: bool = False) -> int:
+    """Store the matched rows.
+
+    Idempotent while every scrobble resolves to the same track as last time:
+    the key is (day, track, user, source), so running twice replaces rather
+    than doubles. It did not hold once a match moved - a duplicate resolved,
+    a title fixed - because the old row, under the old track, stayed beside
+    the new one: four plays for two. Rows from an earlier import that this
+    plan does not reproduce are now refused, unless `replace` says to drop
+    them. Refused rather than dropped by default because a row assigned by
+    hand looks exactly like one this plan has no answer for.
+    """
     db = store.connection()
     rows = [(when, track_uuid, planned["user_id"], planned["username"],
              plays, SOURCE)
             for when, track_uuid, plays in planned["rows"]]
+    wanted = {(when, track_uuid) for when, track_uuid, *_ in rows}
     with store._lock:
-        db.executemany(
-            "INSERT OR REPLACE INTO play_imported"
-            " (played_at, track_uuid, user_id, username, plays, source)"
-            " VALUES (?, ?, ?, ?, ?, ?)", rows)
-        db.commit()
+        try:
+            # Day rows only: --times rows carry a time and are refused
+            # wholesale by the caller.
+            stale = [key for key in db.execute(
+                "SELECT played_at, track_uuid FROM play_imported"
+                " WHERE user_id = ? AND source = ? AND played_at NOT LIKE '%T%'",
+                (planned["user_id"], SOURCE)).fetchall()
+                if tuple(key) not in wanted]
+            if stale and not replace:
+                raise StaleRows(len(stale))
+            db.executemany(
+                "DELETE FROM play_imported WHERE played_at = ? AND track_uuid = ?"
+                " AND user_id = ? AND source = ?",
+                [(when, track_uuid, planned["user_id"], SOURCE)
+                 for when, track_uuid in stale])
+            db.executemany(
+                "INSERT OR REPLACE INTO play_imported"
+                " (played_at, track_uuid, user_id, username, plays, source)"
+                " VALUES (?, ?, ?, ?, ?, ?)", rows)
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
     return len(rows)
 
 
@@ -611,6 +648,11 @@ def main() -> int:
                              "[artist, track, unix time] instead of "
                              "fetching them, so that what was checked in a "
                              "dry run is exactly what gets applied")
+    parser.add_argument("--replace", action="store_true",
+                        help="with --apply, drop rows an earlier import wrote "
+                             "that this one would not (their match moved or "
+                             "became ambiguous), including any assigned by "
+                             "hand")
     parser.add_argument("--times", action="store_true",
                         help="do not import; instead give the plays already "
                              "imported the times they actually happened, by "
@@ -713,7 +755,15 @@ def main() -> int:
         print("\nDRY RUN. Nothing written. Re-run with --apply.")
         return 0
 
-    written = write(planned)
+    try:
+        written = write(planned, replace=args.replace)
+    except StaleRows as exc:
+        raise SystemExit(
+            f"An earlier import wrote {exc.count} row(s) for {args.user} that "
+            "this one would not - their track moved or became ambiguous. "
+            "Writing beside them would count those plays twice, so nothing "
+            "was written. Re-run with --replace to drop them; any you "
+            "assigned by hand would go too.") from None
     print(f"\nwrote {written} day/track rows for {args.user}.")
     return 0
 

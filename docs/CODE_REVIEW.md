@@ -1568,12 +1568,21 @@ R2 split of `library.js` lost nothing.
       the old code. The scrobbles already assigned by hand are untouched;
       a re-import would now match them itself.
 
-- [ ] **2M18. A second plain Last.fm import adds rows instead of replacing
+- [x] **2M18. A second plain Last.fm import adds rows instead of replacing
       them when a match has moved.** *Verified.* `app/lastfm.py:341-354`,
       guard at `:638-642`. Re-run after a duplicate resolve or a retitle and
       both the old-UUID and new-UUID rows remain: 4 plays for 2.
       *Fix:* in one transaction, delete this user's and source's bare-date
       rows before inserting the new plan.
+      **Fixed, more cautiously than suggested.** Deleting every earlier row
+      would also delete rows assigned by hand, which look exactly like rows
+      this plan cannot reproduce. So `write` now finds the earlier day rows
+      the new plan does not reproduce and refuses (`StaleRows`), writing
+      nothing, unless `--replace` is given, which drops them in the same
+      transaction. It also rolls back on any failure now. On the Pi this
+      path is already refused while `--times` rows exist (M2). New test
+      fails on the old code; running the same import twice still changes
+      nothing.
 
 - [x] **2M19. The smart playlist editor drops `order` (and `offset`) on
       save.** *Verified.* `app/playlists.py` (`to_form`, `to_rules`). A rule
