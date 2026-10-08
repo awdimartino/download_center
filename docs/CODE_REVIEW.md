@@ -1981,9 +1981,11 @@ R2 split of `library.js` lost nothing.
       `library.js:427,684`, `library-combine.js:390`. *Fix:* drop it in
       `refreshLibrary()`.
       **Fixed** as suggested; a static test pins it.
-- [ ] **2L23. Quarantine on an album opened from song search throws.**
+- [x] **2L23. Quarantine on an album opened from song search throws.**
       *Verified.* `library-drawer.js:798-800`. `album.tracks` is undefined
       until loaded; M8 guarded Edit details only.
+      **Fixed** with the same "still reading" guard as Edit details.
+      Verified in Chromium (S12: no page error now).
 - [ ] **2L24. The selection goes stale after the thing selected moves.**
       `library-drawer.js:393-401,491-496,811-813`. A renamed or quarantined
       album stays selected under its old folder; a renamed track keeps its

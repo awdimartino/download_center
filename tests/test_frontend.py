@@ -616,3 +616,11 @@ def test_any_library_change_drops_the_artists_list():
     library = JS_FILES["library.js"]
     refresh = library[library.index("export function refreshLibrary"):]
     assert "libraryState.artistsCache = null;" in refresh[:refresh.index("\n}\n")]
+
+
+def test_quarantine_waits_for_a_stub_albums_tracks():
+    """It threw before asking anything when opened from a song search (2L23).
+    Checked in Chromium; this pins the wiring."""
+    drawer = JS_FILES["library-drawer.js"]
+    body = drawer[drawer.index("async function quarantineAlbum"):]
+    assert body.index("album.tracks === undefined") < body.index("confirm(")

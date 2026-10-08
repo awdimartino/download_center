@@ -826,6 +826,14 @@ function reportQuarantine(data) {
 // Set aside every file in an album folder by hand - the wrong record
 // entirely, not a worse copy of a right one.
 async function quarantineAlbum(album, button) {
+  if (album.tracks === undefined) {
+    // The same song-search stub Edit details waits for: with no track count
+    // yet, the question below threw before it was asked, and nothing at all
+    // happened.
+    setNote("library-op", "Still reading this album; try again in a moment.",
+            "warn");
+    return;
+  }
   if (!confirm(
     `Move ${plural(album.tracks, "file")} to duplicates-removed/ inside `
     + `${album.library || "this library"}?\n\n${albumName(album)}\n\n`
