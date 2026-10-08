@@ -493,7 +493,39 @@ def _system_section(started_at: float) -> Section:
         f"{100 * free_fraction:.0f}% of {usage.total / 1e9:.0f} GB",
     ))
     section.add(*_loop_checks())
+    section.add(_ytdlp_check())
     return section
+
+
+# How old a yt-dlp release can be before it is worth a look. YouTube changes
+# under it every few weeks, and the version only moves with a new image.
+YTDLP_STALE_DAYS = 60
+
+
+def _ytdlp_check(today: datetime | None = None) -> Check:
+    """Which yt-dlp is installed, and how old it is.
+
+    Nothing showed it. When YouTube changes, every download fails with an
+    extractor error, and nothing pointed at a release that had simply aged.
+    Its versions are dates, so the age is read off the version itself.
+    """
+    try:
+        from yt_dlp.version import __version__ as version
+    except Exception:
+        return Check("ytdlp", "yt-dlp", "missing", FAIL,
+                     "Downloads cannot run without it.")
+    try:
+        released = datetime.strptime(".".join(version.split(".")[:3]), "%Y.%m.%d")
+    except ValueError:
+        return Check("ytdlp", "yt-dlp", version, INFO, secondary=True)
+    age = ((today or datetime.now()) - released).days
+    if age > YTDLP_STALE_DAYS:
+        return Check("ytdlp", "yt-dlp", version, WARN,
+                     f"Released {age} days ago. When YouTube changes, an old "
+                     "release is the usual reason every download fails.",
+                     "Rebuild the image with a newer yt-dlp.")
+    return Check("ytdlp", "yt-dlp", version, OK, f"Released {age} days ago",
+                 secondary=True)
 
 
 # The background loops, by heartbeat name: what they are called here, and

@@ -1831,12 +1831,20 @@ R2 split of `library.js` lost nothing.
       removed account. New tests fail on the old code. Caveat: if Navidrome
       ever re-encrypts stored passwords (a key change), everyone is signed
       out once.
-- [ ] **2L7. yt-dlp's warnings are discarded and its age is invisible.**
+- [x] **2L7. yt-dlp's warnings are discarded and its age is invisible.**
       *Unverified.* `app/downloader.py:23-37`, `requirements.txt`. Warnings
       go to `log.debug`; the pin moves only with a commit; the image has no
       JavaScript runtime, which recent yt-dlp wants for full YouTube
       support. *Fix:* log warnings at WARNING (deduplicated), show the
       version in Health, add Dependabot or a scheduled rebuild.
+      **Fixed, all three.** yt-dlp's warnings are logged at WARNING, each
+      message once per process. Health's System section has a yt-dlp row
+      with the version and its age, read off the version (they are dates),
+      and WARN past 60 days. `.github/dependabot.yml` opens a weekly pull
+      request for new pip releases, which rebuilds the image once merged.
+      New tests fail on the old code. Not done: installing a JavaScript
+      runtime in the image for yt-dlp's full YouTube support. That changes
+      the image's size on the Pi and wants a decision first.
 - [ ] **2L8. A direct-link album splits on guest tracks and loses its
       order (M22 incomplete).** *Verified on the item shape only.*
       `app/generic.py:95-122`. `album_artist` is each track's own artist and

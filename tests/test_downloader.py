@@ -49,3 +49,21 @@ def test_the_extraction_sets_its_bitrate_once_it_sees_the_source(monkeypatch):
     step.run({"id": "b", "abr": 256, "filepath": "b.m4a", "ext": "m4a"})
 
     assert seen == [192.0, 320.0]
+
+
+# --- what yt-dlp warns about (2L7) ------------------------------------------------
+
+def test_yt_dlps_warnings_reach_the_log_once_each(caplog, monkeypatch):
+    """They went to debug, which is off, so yt-dlp saying extraction was
+    degraded - the warning before every download starts failing - was
+    never seen."""
+    import logging
+
+    monkeypatch.setattr(downloader, "_warned", set())
+    logger = downloader._QuietLogger()
+    with caplog.at_level(logging.WARNING, logger=downloader.log.name):
+        logger.warning("YouTube extraction is degraded")
+        logger.warning("YouTube extraction is degraded")
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "yt-dlp: YouTube extraction is degraded"]

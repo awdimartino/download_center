@@ -26,6 +26,12 @@ class Cancelled(Exception):
     """The download was asked to stop and did. Never retried."""
 
 
+# Warnings already logged, so a notice yt-dlp gives for every download is
+# written once rather than once per track. Bounded: a restart clears it.
+_warned: set[str] = set()
+_WARNED_MAX = 500
+
+
 class _QuietLogger:
     """yt-dlp is chatty on stdout; route it into our logger instead."""
 
@@ -37,7 +43,14 @@ class _QuietLogger:
         log.debug(message)
 
     def warning(self, message: str) -> None:
-        log.debug(message)
+        # Kept, once each. They went to debug, which is off, so yt-dlp saying
+        # that YouTube extraction was degraded - the warning that comes
+        # before every download starts failing - never reached the log.
+        if message in _warned:
+            return
+        if len(_warned) < _WARNED_MAX:
+            _warned.add(message)
+        log.warning("yt-dlp: %s", message)
 
     def error(self, message: str) -> None:
         log.warning(message)

@@ -407,3 +407,18 @@ def test_health_names_what_the_inbox_could_not_file(monkeypatch):
     assert check.value == "2 not filed"
     assert "a.mp3" in check.detail and "b.wma" in check.detail
     assert health._inbox_section(None) is None
+
+
+def test_health_says_how_old_yt_dlp_is():
+    """Nothing showed which yt-dlp was installed or how old it was (2L7)."""
+    from datetime import datetime
+
+    from app import health
+    from yt_dlp.version import __version__
+
+    released = datetime.strptime(".".join(__version__.split(".")[:3]), "%Y.%m.%d")
+    fresh = health._ytdlp_check(released)
+    old = health._ytdlp_check(released.replace(year=released.year + 1))
+
+    assert fresh.value == __version__ and fresh.status == health.OK
+    assert old.status == health.WARN and "days ago" in old.detail

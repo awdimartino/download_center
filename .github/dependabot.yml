@@ -1,0 +1,14 @@
+# yt-dlp has to keep up with YouTube, and it only moves when requirements.txt
+# does. A weekly pull request for each new release, rather than a pin that
+# ages until every download fails. The other pins come along for the ride.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
