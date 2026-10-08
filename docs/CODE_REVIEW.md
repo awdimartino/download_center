@@ -1452,12 +1452,17 @@ R2 split of `library.js` lost nothing.
       Without the marker two names are still refused. New tests; the
       rollback one fails on the old code.
 
-- [ ] **2M11. Health fails permanently once an artist has two album-less
+- [x] **2M11. Health fails permanently once an artist has two album-less
       tracks.** *Verified.* `app/diskaudit.py:137-140`,
       `app/health.py:381-384`. Loose tracks are each their own record in
       `Artist/Unknown Album/` by design; the audit counts the folder as a
       split album.
       *Fix:* leave files with no album tag out of `by_directory`.
+      **Fixed:** the audit's fast pass is unchanged; a directory that looks
+      split is then re-read (`diskaudit._split`), and files that name no
+      album are left out of the count. Only directories that already look
+      split are re-read, so the cost is small. An unreadable file still
+      counts. New test fails on the old code; a real split is still caught.
 
 - [ ] **2M12. Folder covers are recognised only in lower case.** *Verified
       for `covers._look`; the rest by reading.*

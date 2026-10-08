@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import uuidtags, walk
+from . import filer, uuidtags, walk
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +88,26 @@ _walking: dict[str, threading.Event] = {}
 WALK_TIMEOUT = 600
 
 
+def _split(files: list[tuple[Path, str]]) -> bool:
+    """Whether a directory with several album UUIDs really holds a split album.
+
+    A file that names no album is its own record by design, with an album
+    UUID of its own, and is filed to Artist/Unknown Album/. Two of those in
+    one directory are two records, not one record split, and counting them
+    failed Health for good. Only directories that already look split get
+    here, so re-reading their tags is cheap.
+    """
+    named = set()
+    for path, album_uuid in files:
+        try:
+            if not filer.read_meta(path).names_album:
+                continue
+        except Exception:
+            pass   # unreadable: counted as it was, rather than excused
+        named.add(album_uuid)
+    return len(named) > 1
+
+
 def run(root: Path) -> Audit:
     """Walk one library and report what identity tags are actually present."""
     started = time.time()
@@ -95,6 +115,7 @@ def run(root: Path) -> Audit:
 
     by_uuid: dict[str, int] = collections.Counter()
     by_directory: dict[Path, set[str]] = collections.defaultdict(set)
+    directory_files: dict[Path, list[tuple[Path, str]]] = collections.defaultdict(list)
     album_directories: dict[str, set[Path]] = collections.defaultdict(set)
 
     if not root.exists():
@@ -127,6 +148,7 @@ def run(root: Path) -> Audit:
 
         if album_uuid:
             by_directory[path.parent].add(album_uuid)
+            directory_files[path.parent].append((path, album_uuid))
             album_directories[album_uuid].add(path.parent)
         else:
             audit.missing_album_uuid.append(relative)
@@ -136,7 +158,8 @@ def run(root: Path) -> Audit:
     # however tidy the folder looks.
     audit.split_albums = [
         str(directory.relative_to(root))
-        for directory, uuids in sorted(by_directory.items()) if len(uuids) > 1
+        for directory, uuids in sorted(by_directory.items())
+        if len(uuids) > 1 and _split(directory_files[directory])
     ]
     # The inverse of a split album: one album UUID appearing in several
     # directories, which fuses unrelated tracks into a single record. Happens
