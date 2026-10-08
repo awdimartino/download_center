@@ -1845,12 +1845,20 @@ R2 split of `library.js` lost nothing.
       New tests fail on the old code. Not done: installing a JavaScript
       runtime in the image for yt-dlp's full YouTube support. That changes
       the image's size on the Pi and wants a decision first.
-- [ ] **2L8. A direct-link album splits on guest tracks and loses its
+- [x] **2L8. A direct-link album splits on guest tracks and loses its
       order (M22 incomplete).** *Verified on the item shape only.*
       `app/generic.py:95-122`. `album_artist` is each track's own artist and
       `track_no` is always `None`; the comment at `:118-119` is stale.
       *Fix:* first of `artists` (or `album_artist`) for the album artist,
       `track_number or playlist_index` for the number.
+      **Fixed.** Each item takes the site's album artist where it gives one,
+      else the first credited artist, and the site's track number where it
+      gives one. A playlist whose entries all name one album is then treated
+      as that album (`_as_album`): one album artist (the most common), the
+      album's length as its total, and the playlist's order as the track
+      numbers when the site gave none. A list of unrelated videos is left
+      as singles. The stale comment is gone. New test fails on the old code;
+      tried on the item shape only, not on live yt-dlp output.
 - [ ] **2L9. A numbered duplicate is renamed on every save of its album.**
       *Verified.* `app/filer.py:628-642,717-727`. `Same (2).mp3` goes to
       `(3)`, then back. *Fix:* leave a file that is already one of its

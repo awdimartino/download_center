@@ -11,6 +11,7 @@ video title and a channel name. Tags are written from what is available.
 
 from __future__ import annotations
 
+import collections
 import concurrent.futures
 import logging
 import re
@@ -106,6 +107,14 @@ def _to_item(info: dict[str, Any]) -> dict[str, Any] | None:
     duration = info.get("duration")
     year = info.get("release_year")
     extractor = (info.get("extractor_key") or info.get("ie_key") or "web").lower()
+    # The album's artist where the site gives one, else the track's first
+    # credited artist - not the whole credit. "A, B" for a guest track filed
+    # that one track under its own folder and album UUID (see `_as_album`).
+    named = info.get("album_artists") or (
+        [info["album_artist"]] if info.get("album_artist") else [])
+    artists = info.get("artists") or []
+    album_artist = (named[0] if named else artists[0] if artists else artist_name)
+    number = info.get("track_number")
 
     return {
         # Namespaced so it can never collide with a bare Spotify id.
@@ -113,13 +122,11 @@ def _to_item(info: dict[str, Any]) -> dict[str, Any] | None:
         "isrc": None,
         "title": title or "Unknown Title",
         "artist": artist_name,
-        "album_artist": artist_name,
+        "album_artist": album_artist,
         "album": info.get("album") or title or "Unknown Title",
-        # No album grouping: without a reliable track count there is no way to
-        # know a release is complete, so these are always filed as singles.
         "album_id": None,
         "album_total": None,
-        "track_no": None,
+        "track_no": int(number) if isinstance(number, int | float) else None,
         "disc_no": 1,
         "release_date": str(year) if year else None,
         "duration_ms": int(duration * 1000) if duration else None,
@@ -175,6 +182,28 @@ def _in_full(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return list(pool.map(one, entries))
 
 
+def _as_album(items: list[dict[str, Any]]) -> None:
+    """Give an album read from a site one album artist and a running order.
+
+    A YouTube Music or Bandcamp album arrives as a playlist whose entries all
+    name the same album. Each was filed under its own track's artist, so a
+    guest track went to a folder of its own with a second album UUID; and
+    with no track numbers the album played in alphabetical order. A list of
+    unrelated videos is left alone: those really are singles.
+    """
+    if len(items) < 2 or len({item["album"] for item in items}) != 1:
+        return
+    counts = collections.Counter(item["album_artist"] for item in items)
+    album_artist = counts.most_common(1)[0][0]
+    numbered = all(item["track_no"] for item in items)
+    for position, item in enumerate(items, start=1):
+        item["album_artist"] = album_artist
+        item["album_total"] = len(items)
+        if not numbered:
+            # The playlist's own order is the album's.
+            item["track_no"] = position
+
+
 def resolve(url: str, limit: int | None = None) -> tuple[str, list[dict[str, Any]]]:
     """Return (job title, items) for any yt-dlp supported URL.
 
@@ -208,6 +237,7 @@ def resolve(url: str, limit: int | None = None) -> tuple[str, list[dict[str, Any
                 "Queue it in parts - by album, say.")
         entries = _in_full(entries)
         items = [item for item in (_to_item(e) for e in entries) if item]
+        _as_album(items)
         title = info.get("title") or "Playlist"
     else:
         item = _to_item(info)

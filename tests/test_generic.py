@@ -121,3 +121,30 @@ def test_a_playlist_over_the_limit_is_refused_from_the_flat_list(monkeypatch):
         generic.resolve(PLAYLIST, limit=1)
 
     assert seen == [PLAYLIST]
+
+
+# --- one album, one artist, its own order (2L8) -----------------------------------
+
+def test_a_guest_track_stays_on_the_album_and_the_order_is_kept(monkeypatch):
+    """album_artist was each track's own artist and track_no always None: a
+    guest track was filed under "Artist, Guest" as an album of its own, and
+    the rest played alphabetically."""
+    guest = dict(FULL["https://www.youtube.com/watch?v=v2"],
+                 artist="Artist, Guest", artists=["Artist", "Guest"])
+    monkeypatch.setitem(FULL, "https://www.youtube.com/watch?v=v2", guest)
+
+    _, items = generic.resolve(PLAYLIST)
+
+    assert [i["album_artist"] for i in items] == ["Artist", "Artist"]
+    assert [i["artist"] for i in items] == ["Artist", "Artist, Guest"]
+    assert [i["track_no"] for i in items] == [1, 2]
+    assert {i["album_total"] for i in items} == {2}
+
+
+def test_a_list_of_unrelated_videos_stays_singles(monkeypatch):
+    other = dict(FULL["https://www.youtube.com/watch?v=v2"], album="Elsewhere")
+    monkeypatch.setitem(FULL, "https://www.youtube.com/watch?v=v2", other)
+
+    _, items = generic.resolve(PLAYLIST)
+
+    assert [i["track_no"] for i in items] == [None, None]
