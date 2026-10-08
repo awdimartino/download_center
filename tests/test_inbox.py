@@ -982,3 +982,46 @@ def test_an_uploaded_names_single_dot_survives_for_refusal_and_dots_are_kept():
     assert main._relpath_segments("Album/._01.mp3", None)[-1] == "._01.mp3"
     assert main._relpath_segments("Album/... (Continued).mp3", None)[-1] \
         == "... (Continued).mp3"
+
+
+# --- one bad workspace is its own problem (2M5) -------------------------------
+
+def test_an_unreadable_marker_does_not_stop_anybody_elses_inbox(space):
+    """A root-owned or damaged .owner raised out of workspace.existing(), and
+    nobody's inbox was filed - every fifteen seconds, for ever."""
+    from app import workspace
+
+    broken = space.staging.parent / "kelly-2"
+    broken.mkdir()
+    (broken / ".owner").write_bytes(b"\xff\xfe not text")
+    drop(space, albumartist="Artist", album="Album", title="Song",
+         tracknumber="1")
+
+    results = inbox.drain_all()
+
+    assert results["alex"].changed
+    assert workspace.unreadable() == 1
+
+
+def test_a_drain_that_raises_is_that_workspaces_failure_alone(space, monkeypatch):
+    from app import workspace
+
+    other = workspace.Workspace(username="kelly", library_id=2,
+                                library_name="Music",
+                                library_path=space.library_path)
+    other.prepare()
+    real = inbox.drain
+
+    def drain(which):
+        if which.username == "kelly":
+            raise PermissionError("cannot list the inbox")
+        return real(which)
+
+    monkeypatch.setattr(inbox, "drain", drain)
+    drop(space, albumartist="Artist", album="Album", title="Song",
+         tracknumber="1")
+
+    results = inbox.drain_all()
+
+    assert results["alex"].changed
+    assert "PermissionError" in results["kelly"].broken

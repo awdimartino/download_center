@@ -1342,13 +1342,23 @@ R2 split of `library.js` lost nothing.
       hidden from Navidrome. New test fails on the old code; the existing
       cross-device test now fakes EXDEV only across folders, as it is.
 
-- [ ] **2M5. One unreadable workspace marker stops the inbox for every
+- [x] **2M5. One unreadable workspace marker stops the inbox for every
       account.** *Verified.* `app/workspace.py:209-249`,
       `app/inbox.py:415-427,483-491`, `app/main.py:258-267`. A root-owned or
       damaged `.owner` makes `existing()` raise out of `drain_all`; nothing
       is filed for anyone and only the log says so, every 15 s.
       *Fix:* try/except per workspace; record each loop's last success and
       last error and show them in Health.
+      **Fixed:** `workspace.existing()` skips a directory whose marker
+      cannot be read, logs it once rather than every pass, and counts it
+      (`workspace.unreadable()`); `inbox.drain_all()` catches a drain that
+      raises and records it on that workspace's `Result.broken`. New
+      `app/heartbeat.py` keeps each background loop's last good pass, last
+      failure and anything a good pass had to say; Health's System section
+      shows one row per loop: FAIL when the last pass raised, WARN when it
+      has a problem to report or has not completed for a while. The inbox
+      row counts unreadable or broken workspaces without naming them, since
+      Health is shown to every account. New tests fail on the old code.
 
 - [ ] **2M6. What the poller cannot file is still thrown away (M18 half
       fixed).** *Traced by reading; dot-folder case run.*

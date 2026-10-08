@@ -92,6 +92,8 @@ class Result:
     filed: list[Path] = field(default_factory=list)
     waiting: int = 0
     failures: list[str] = field(default_factory=list)
+    # The drain itself raised: nothing in this workspace was looked at.
+    broken: str | None = None
 
     @property
     def changed(self) -> bool:
@@ -517,7 +519,13 @@ def drain_all() -> dict[str, Result]:
                         space.username, exc)
             continue
 
-        result = drain(space)
-        if result.changed or result.failures:
+        # One workspace's failure is its own. A directory that could not be
+        # listed used to raise out of here, and nobody's inbox was filed.
+        try:
+            result = drain(space)
+        except Exception as exc:
+            log.exception("could not drain %s's inbox", space.username)
+            result = Result(broken=f"{type(exc).__name__}: {exc}"[:300])
+        if result.changed or result.failures or result.broken:
             results[space.username] = result
     return results

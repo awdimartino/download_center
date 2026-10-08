@@ -27,7 +27,7 @@ from . import auth, beets_runner, combine, covers, diskaudit, duplicates
 from . import generic, navidrome, operations, playcounts, store
 from . import playlists as smart_playlists
 from . import filer, inbox, library, netguard, overview, registry, replaygain, spotify
-from . import folderlock, uuidtags
+from . import folderlock, heartbeat, uuidtags
 from . import threads, worker, workspace
 from . import config
 from . import health as health_checks
@@ -276,6 +276,19 @@ async def _wind_down() -> None:
             log.warning("%d operation(s) still running at shutdown", len(late))
 
 
+def _inbox_problem(results: dict[str, inbox.Result]) -> str | None:
+    """What a completed pass still has to say, without naming anybody: Health
+    is shown to every account."""
+    unreadable = workspace.unreadable()
+    broken = sum(1 for result in results.values() if result.broken)
+    parts = []
+    if unreadable:
+        parts.append(f"{unreadable} workspace(s) could not be read")
+    if broken:
+        parts.append(f"{broken} inbox(es) could not be looked at")
+    return "; ".join(parts) + ". See the log." if parts else None
+
+
 async def _inbox_loop() -> None:
     """File whatever has been dropped into an inbox, as soon as it settles.
 
@@ -292,8 +305,10 @@ async def _inbox_loop() -> None:
             # used to wait for Navidrome's own schedule instead.
             if any(result.changed for result in results.values()):
                 await threads.run(navidrome.notify)
-        except Exception:
+            heartbeat.ok("inbox", _inbox_problem(results))
+        except Exception as exc:
             log.exception("draining the inbox failed")
+            heartbeat.failed("inbox", exc)
         await asyncio.sleep(inbox.POLL_SECONDS)
 
 
@@ -335,8 +350,10 @@ async def _snapshot_loop() -> None:
                 await threads.run(
                     overview.warm, None if first else taken["users"])
             first = False
-        except Exception:
+            heartbeat.ok("snapshot")
+        except Exception as exc:
             log.exception("play-count snapshot failed")
+            heartbeat.failed("snapshot", exc)
         await asyncio.sleep(SNAPSHOT_MINUTES * 60)
 
 
@@ -353,14 +370,19 @@ async def _audit_loop() -> None:
         # fail too (a locked database), and an exception escaping here ended
         # the task for the life of the process while Health's audit aged.
         try:
+            failed = 0
             for root in await threads.run(_library_roots):
                 if await threads.run(diskaudit.stale, root):
                     try:
                         await threads.run(diskaudit.refresh, root)
                     except Exception:
+                        failed += 1
                         log.exception("disk audit failed for %s", root)
-        except Exception:
+            heartbeat.ok("audit", f"{failed} library audit(s) failed. See the "
+                                  "log." if failed else None)
+        except Exception as exc:
             log.exception("disk audit pass failed")
+            heartbeat.failed("audit", exc)
         await asyncio.sleep(600)
 
 

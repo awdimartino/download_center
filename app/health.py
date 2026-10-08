@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import diskaudit, memo, navidrome, uuidtags
+from . import diskaudit, heartbeat, memo, navidrome, uuidtags
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.health")
@@ -447,7 +447,47 @@ def _system_section(started_at: float) -> Section:
         OK if free_fraction > 0.10 else (WARN if free_fraction > 0.05 else FAIL),
         f"{100 * free_fraction:.0f}% of {usage.total / 1e9:.0f} GB",
     ))
+    section.add(*_loop_checks())
     return section
+
+
+# The background loops, by heartbeat name: what they are called here, and
+# how long without a completed pass is too long. Generous: each runs far
+# more often than this, so missing it means something is wrong.
+LOOPS = {
+    "inbox": ("Filing the inbox", 10 * 60),
+    "snapshot": ("Reading play counts", 60 * 60),
+    "audit": ("Auditing the disk", 3 * 60 * 60),
+}
+
+
+def _loop_checks() -> list[Check]:
+    """One row per background loop: when it last worked, and whether its
+    last pass failed. They catch everything so they cannot die, which also
+    meant a loop failing every pass for days said so only in the log."""
+    beats = heartbeat.snapshot()
+    checks = []
+    now = time.time()
+    for name, (label, too_long) in LOOPS.items():
+        beat = beats.get(name)
+        if beat is None:
+            continue  # not run yet since the restart
+        ok_at, failed_at = beat["ok_at"], beat["failed_at"]
+        value = f"{_duration(now - ok_at)} ago" if ok_at else "never"
+        if failed_at and (not ok_at or failed_at > ok_at):
+            checks.append(Check(f"loop_{name}", label, value, FAIL,
+                                f"Its last pass failed: {beat['error']}",
+                                "The log has the traceback."))
+        elif ok_at and now - ok_at > too_long:
+            checks.append(Check(f"loop_{name}", label, value, WARN,
+                                "It has not completed a pass for a while."))
+        elif beat["problem"]:
+            checks.append(Check(f"loop_{name}", label, value, WARN,
+                                beat["problem"]))
+        else:
+            checks.append(Check(f"loop_{name}", label, value, OK,
+                                secondary=True))
+    return checks
 
 
 def _since(stamp: str | None) -> tuple[str, str]:

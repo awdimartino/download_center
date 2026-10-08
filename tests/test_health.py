@@ -347,3 +347,44 @@ def test_the_stamped_count_is_asked_once(wired, tmp_path, identity,
     add_track(wired, "indexed", tags=UUID_JSON)
     health.report(0.0, _libraries(tmp_path), identity)
     assert len(calls) == 1
+
+
+# --- the background loops (2M5) -------------------------------------------------
+
+def test_a_loop_whose_last_pass_failed_is_a_failure(monkeypatch):
+    """They catch everything so they cannot die, which also meant a loop
+    failing every pass for days said so only in the log."""
+    from app import heartbeat, health
+
+    heartbeat.reset()
+    heartbeat.ok("inbox")
+    heartbeat.failed("inbox", PermissionError("cannot read .owner"))
+    heartbeat.ok("snapshot", "something to say")
+    heartbeat.ok("audit")
+
+    rows = {check.key: check for check in health._loop_checks()}
+    assert rows["loop_inbox"].status == health.FAIL
+    assert "PermissionError" in rows["loop_inbox"].detail
+    assert rows["loop_snapshot"].status == health.WARN
+    assert rows["loop_audit"].status == health.OK
+
+
+@pytest.mark.asyncio
+async def test_the_inbox_loop_reports_an_unreadable_workspace(monkeypatch):
+    import asyncio
+
+    from app import heartbeat, main, workspace
+
+    heartbeat.reset()
+    monkeypatch.setattr(main.inbox, "drain_all", lambda: {})
+    monkeypatch.setattr(workspace, "unreadable", lambda: 1)
+
+    async def stop(_seconds):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(main.asyncio, "sleep", stop)
+    with pytest.raises(asyncio.CancelledError):
+        await main._inbox_loop()
+
+    beat = heartbeat.snapshot()["inbox"]
+    assert "1 workspace(s) could not be read" in beat["problem"]

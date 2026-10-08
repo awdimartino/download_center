@@ -206,47 +206,80 @@ def require_mounted(space: Workspace) -> None:
     )
 
 
+# Workspace directories whose marker could not be read on the last pass, and
+# why. Logged once each rather than every fifteen seconds, and counted for
+# Health.
+_unreadable: dict[Path, str] = {}
+
+
+def unreadable() -> int:
+    """How many workspaces the last `existing()` could not read."""
+    return len(_unreadable)
+
+
 def existing() -> list[Workspace]:
     """Workspaces already on disk, for work that runs with nobody signed in.
 
     The inbox poller has no session - it runs on a timer - so it reads back
     what previous sessions created. A person who has never signed in has no
     workspace and so no inbox to drain.
+
+    One directory that cannot be read is skipped, not fatal. A root-owned or
+    damaged marker used to raise out of here, and nobody's inbox was filed.
     """
     root = settings.output_dir
     if not root.is_dir():
         return []
 
     found = []
+    seen: set[Path] = set()
     for directory in sorted(root.iterdir()):
-        if not directory.is_dir() or directory.name.startswith("."):
+        try:
+            space = _read_marker(directory)
+        except (OSError, UnicodeDecodeError) as exc:
+            seen.add(directory)
+            reason = f"{type(exc).__name__}: {exc}"
+            if _unreadable.get(directory) != reason:
+                log.warning("cannot read the workspace at %s, so its inbox is "
+                            "not being filed: %s", directory, reason)
+            _unreadable[directory] = reason
             continue
-        marker = directory / ".owner"
-        if not marker.exists():
-            continue
-        lines = marker.read_text(encoding="utf-8").splitlines()
-        username = lines[0].strip() if lines else directory.name
-        library_name = lines[1].strip() if len(lines) > 1 else ""
-        recorded = lines[2].strip() if len(lines) > 2 else ""
-        library_id = lines[3].strip() if len(lines) > 3 else ""
-
-        # A marker that does not say which library, or where it is, is not
-        # enough to act on. It used to be: the missing id became 0 and the
-        # missing path became `music_dir`. The inbox poller passes this
-        # workspace to the filer, so a guessed id partitions the album
-        # registry under a library that does not exist - the same album
-        # filed twice, once by the poller and once by the signed-in session,
-        # with two UUIDs - and a guessed path files one person's inbox into
-        # somebody else's library.
-        if not recorded or not library_id.isdigit():
-            log.warning(
-                "%s does not say which library it belongs to, so nothing in "
-                "it can be filed. Sign in once to rewrite the marker.",
-                directory)
-            continue
-        found.append(Workspace(username, int(library_id), library_name,
-                               Path(recorded)))
+        if space is not None:
+            found.append(space)
+    for directory in list(_unreadable):
+        if directory not in seen:
+            del _unreadable[directory]
     return found
+
+
+def _read_marker(directory: Path) -> Workspace | None:
+    if not directory.is_dir() or directory.name.startswith("."):
+        return None
+    marker = directory / ".owner"
+    if not marker.exists():
+        return None
+    lines = marker.read_text(encoding="utf-8").splitlines()
+    username = lines[0].strip() if lines else directory.name
+    library_name = lines[1].strip() if len(lines) > 1 else ""
+    recorded = lines[2].strip() if len(lines) > 2 else ""
+    library_id = lines[3].strip() if len(lines) > 3 else ""
+
+    # A marker that does not say which library, or where it is, is not
+    # enough to act on. It used to be: the missing id became 0 and the
+    # missing path became `music_dir`. The inbox poller passes this
+    # workspace to the filer, so a guessed id partitions the album
+    # registry under a library that does not exist - the same album
+    # filed twice, once by the poller and once by the signed-in session,
+    # with two UUIDs - and a guessed path files one person's inbox into
+    # somebody else's library.
+    if not recorded or not library_id.isdigit():
+        log.warning(
+            "%s does not say which library it belongs to, so nothing in "
+            "it can be filed. Sign in once to rewrite the marker.",
+            directory)
+        return None
+    return Workspace(username, int(library_id), library_name,
+                     Path(recorded))
 
 
 def _owner_of(marker: Path) -> tuple[str, Path] | None:
