@@ -10,7 +10,7 @@
    it in the library, queued, downloading, failed - painted from the same
    jobs the Downloads panel draws, so nobody has to go and look. */
 
-import { apiFetch, duration, el, libraryPicker, remoteArt, showError, songRow, targetLibrary } from "./core.js";
+import { apiFetch, duration, el, libraryPicker, pageEscape, remoteArt, showError, songRow, targetLibrary } from "./core.js";
 import { jobs, onJobs } from "./ws.js";
 import { MOVING, expectJob, jobGroup, jobProgress, settledCount } from "./downloads.js";
 
@@ -573,7 +573,7 @@ async function openAlbum(id) {
 }
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && openAlbumId && !drawerEl.hidden) closeAlbum();
+  if (pageEscape(event) && openAlbumId && !drawerEl.hidden) closeAlbum();
 });
 
 /* --- the box ---------------------------------------------------------------- */

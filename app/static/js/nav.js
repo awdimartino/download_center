@@ -63,9 +63,13 @@ menuToggle.addEventListener("click", () => {
 });
 menuBackdrop.addEventListener("click", closeMenu);
 
+// Capturing, so it runs before the panels' own Escape handlers, and marks
+// the key used: closing the menu over the Library also closed the album
+// panel or ended select mode behind it.
 document.addEventListener("keydown", (event) => {
   if (menu.hidden) return;
   if (event.key === "Escape") {
+    event.preventDefault();
     closeMenu();
     return;
   }
@@ -84,7 +88,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     first.focus();
   }
-});
+}, true);
 
 export function showView(view) {
   // Driven off the buttons themselves rather than a hand-kept list: a view

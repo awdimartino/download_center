@@ -56,6 +56,21 @@ export async function apiFetch(path, options) {
   return response;
 }
 
+// Whether Escape is the page's to act on. Not when a text box has it - in a
+// search field it clears the text, and the page also took it as "back out",
+// so Escape in the search box wiped a selection built across several
+// searches, and in the editor's "Merge into" box closed the unsaved editor.
+// Not when something above has already used it either: the menu, when open.
+const TYPING = "input:not([type=checkbox]):not([type=radio]):not([type=button])"
+  + ":not([type=submit]):not([type=range]), textarea, select";
+
+export function pageEscape(event) {
+  if (event.key !== "Escape" || event.defaultPrevented) return false;
+  const target = event.target;
+  return !(target instanceof HTMLElement
+           && (target.isContentEditable || target.matches(TYPING)));
+}
+
 export function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;

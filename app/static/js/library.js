@@ -23,7 +23,7 @@
    are library-attention.js, library-drawer.js and library-combine.js; what
    they share is library-shared.js. */
 
-import { apiFetch, el, setNote, songRow } from "./core.js";
+import { apiFetch, el, pageEscape, setNote, songRow } from "./core.js";
 import { barRows } from "./charts.js";
 import { setBadge } from "./nav.js";
 import {
@@ -629,7 +629,7 @@ librarySearch.addEventListener("input", () => {
 // Escape backs out one layer at a time: the combine, then the panel, then
 // select mode.
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape" || libraryView.hidden) return;
+  if (!pageEscape(event) || libraryView.hidden) return;
   if (!libraryDialog.hidden) closeCombine();
   else if (openAlbum) closeDrawer();
   else if (selection.on) setSelecting(false);

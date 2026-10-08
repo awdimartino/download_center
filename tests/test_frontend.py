@@ -537,3 +537,13 @@ def test_a_drop_goes_to_the_library_chosen_when_it_was_dropped():
     drop = JS_FILES["drop.js"]
     assert drop.count("targetLibrary()") == 1
     assert "dropRunBatch(items, rows, card, skipped, library)" in drop
+
+
+def test_escape_belongs_to_a_text_box_and_to_the_menu_first():
+    """Escape in the search box wiped the selection, in the merge box closed
+    the editor, and closing the menu also closed the panel behind (2M25).
+    Checked in Chromium; this pins the wiring."""
+    for name in ("library.js", "browse.js", "downloads.js"):
+        assert "pageEscape(event)" in JS_FILES[name], name
+    assert 'event.key === "Escape"' not in JS_FILES["library.js"] + JS_FILES["browse.js"]
+    assert "}, true);" in JS_FILES["nav.js"]

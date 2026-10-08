@@ -1688,13 +1688,22 @@ R2 split of `library.js` lost nothing.
       the drop is queued, and every upload and the finish of that drop use
       it. Verified in Chromium: S10 now sends `1, 1, 1, finish:1`.
 
-- [ ] **2M25. Escape in a text box discards the selection or closes the
+- [x] **2M25. Escape in a text box discards the selection or closes the
       album panel.** *Verified.* `app/static/js/library.js:628-633`. Escape
       in the search box exits select mode and wipes the selection; in the
       "Merge into" box it closes the unsaved editor. `nav.js:66` handles
       Escape too, unaware of this one.
       *Fix:* ignore Escape from inputs, selects and textareas, and while
       the menu is open.
+      **Fixed:** `core.js`'s `pageEscape(event)` says whether Escape is the
+      page's: not when a text box (or select, textarea, contenteditable) has
+      it, and not when something has already used it. The Library, Browse
+      and Downloads handlers all use it. The menu's handler now runs in the
+      capture phase and marks the key used, so closing the menu leaves the
+      panel behind it open. Verified in Chromium: S3, S3b and a new S15 for
+      the menu, all BUG on the old code. Side effect: Escape typed in one of
+      the combine dialog's fields no longer closes the dialog; Escape
+      elsewhere in it still does.
 
 - [ ] **2M26. A refused inline track edit leaves the unsaved text in the
       field.** *Verified for the page; frequency on the Pi unverified.*

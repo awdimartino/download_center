@@ -11,7 +11,7 @@
    anything anywhere. On a phone the whole thing folds into a pill at the
    bottom of the screen and opens as a sheet. */
 
-import { apiFetch, el, remoteArt, showError } from "./core.js";
+import { apiFetch, el, pageEscape, remoteArt, showError } from "./core.js";
 import { jobs, onJobs } from "./ws.js";
 
 const view = document.getElementById("view-browse");
@@ -355,7 +355,7 @@ pillEl.addEventListener("click", () => openSheet(true));
 closeEl.addEventListener("click", () => openSheet(false));
 scrimEl.addEventListener("click", () => openSheet(false));
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && view.classList.contains("downloads-open")) openSheet(false);
+  if (pageEscape(event) && view.classList.contains("downloads-open")) openSheet(false);
 });
 
 onJobs(render);
