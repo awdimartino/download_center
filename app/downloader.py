@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
@@ -19,6 +20,10 @@ ProgressHook = Callable[[float], None]
 
 class DownloadError(Exception):
     pass
+
+
+class Cancelled(Exception):
+    """The download was asked to stop and did. Never retried."""
 
 
 class _QuietLogger:
@@ -104,19 +109,30 @@ class _MatchedQuality(FFmpegExtractAudioPP):
         return super().run(information)
 
 
-def download(url: str, destination: Path, on_progress: ProgressHook | None = None) -> Path:
+def download(url: str, destination: Path, on_progress: ProgressHook | None = None,
+             stop: threading.Event | None = None) -> Path:
     """Download `url` and leave an MP3 at `destination`.
 
     yt-dlp appends the extension itself after the audio is extracted, so the
     output template is given without one.
+
+    `stop` ends it early: checked on every chunk and at each post-processing
+    step, the only places yt-dlp lets a caller in. Cancelling the job's task
+    used to end only the wait for this thread, which went on downloading
+    into a scratch folder already deleted, past the concurrency limit.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
+
+    def check(_status: dict[str, Any]) -> None:
+        if stop is not None and stop.is_set():
+            raise yt_dlp.utils.DownloadCancelled("stopped")
 
     options: dict[str, Any] = {
         "format": "bestaudio/best",
         "outtmpl": str(destination.with_suffix("")) + ".%(ext)s",
         "logger": _QuietLogger(),
-        "progress_hooks": [_make_hook(on_progress)],
+        "progress_hooks": [check, _make_hook(on_progress)],
+        "postprocessor_hooks": [check],
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
@@ -140,7 +156,11 @@ def download(url: str, destination: Path, on_progress: ProgressHook | None = Non
                                 preferredquality=settings.audio_bitrate),
                 when="post_process")
             ydl.download([url])
+    except yt_dlp.utils.DownloadCancelled as exc:
+        raise Cancelled() from exc
     except yt_dlp.utils.DownloadError as exc:
+        if stop is not None and stop.is_set():
+            raise Cancelled() from exc
         raise DownloadError(str(exc).replace("\n", " ")[:300]) from exc
     except Exception as exc:
         raise DownloadError(f"{type(exc).__name__}: {exc}"[:300]) from exc

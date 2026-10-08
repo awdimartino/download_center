@@ -1279,7 +1279,7 @@ R2 split of `library.js` lost nothing.
       **Fixed** (`26d24da`): the values stored are the validated model's.
       New test fails on the old code.
 
-- [ ] **2M2. Cancelling a job does not stop its threads.** *Verified with
+- [x] **2M2. Cancelling a job does not stop its threads.** *Verified with
       the real `_run`/`_stop_job` and a threaded fake downloader.*
       `app/worker.py:126,234`, `app/main.py:664-684,812-839`, comment at
       `app/main.py:71-74`. `task.cancel()` ends only the asyncio task.
@@ -1293,6 +1293,16 @@ R2 split of `library.js` lost nothing.
       *Fix:* a per-job `threading.Event` the yt-dlp progress hook raises on;
       release the gate when the thread returns; never mark an item cancelled
       once delivery has started.
+      **Fixed:** `downloader.download` takes a `stop` event, checked by a
+      progress hook and a post-processing hook that raise yt-dlp's own
+      `DownloadCancelled` (it re-raises that out of `download()`); it
+      surfaces as `downloader.Cancelled`, never retried. The worker runs
+      each thread step through `_until_done`, which on cancellation sets the
+      event and waits for the thread to return before the cancellation goes
+      on, so the gate slot and the scratch folder outlive the thread. Filing
+      is waited for, not stopped, and the item is recorded as complete with
+      its path. New tests fail on the old code, including one against the
+      real yt-dlp and a slow local HTTP server.
 
 - [ ] **2M3. Shutdown never stops in-flight work, so a redeploy ends in
       SIGKILL mid-write.** *Mechanism verified; file damage unverified.*

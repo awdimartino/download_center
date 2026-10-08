@@ -69,8 +69,9 @@ MAX_ACTIVE_JOBS = 5
 FINISHED = ("complete", "failed", "partial", "cancelled")
 
 # How long to wait for a cancelled job to unwind before deleting its files
-# anyway. Cancellation lands at the next suspension point, so a download
-# mid-chunk stops promptly; this only bounds the pathological case.
+# anyway. A download is asked to stop and gives up at its next chunk, and
+# filing is waited for, since it moves the file whatever happens; this only
+# bounds the pathological case.
 STOP_TIMEOUT = 10
 
 

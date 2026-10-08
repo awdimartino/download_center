@@ -62,7 +62,7 @@ async def test_a_download_leaves_the_default_pool_free(one_default_thread, monke
     release = threading.Event()
     started = threading.Event()
 
-    def download(url, temp, progress):
+    def download(url, temp, progress, stop=None):
         started.set()
         release.wait(10)
         return temp

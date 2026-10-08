@@ -180,7 +180,7 @@ def library(tmp_path, monkeypatch, state_db):
                                 library_path=tmp_path / "music")
     space.prepare()
 
-    def download(url, destination, on_progress=None):
+    def download(url, destination, on_progress=None, stop=None):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(SILENCE, destination)
         return destination
@@ -300,7 +300,7 @@ async def test_a_download_that_fails_leaves_nothing_behind(library,
                                                            monkeypatch):
     from app import inbox
 
-    def boom(url, destination, on_progress=None):
+    def boom(url, destination, on_progress=None, stop=None):
         raise worker.downloader.DownloadError("no audio")
 
     monkeypatch.setattr(worker.downloader, "download", boom)
@@ -327,7 +327,7 @@ async def test_a_retry_does_not_re_download_what_already_finished(library,
     real = worker.downloader.download
     broken = {"i2"}
 
-    def counting(url, destination, on_progress=None):
+    def counting(url, destination, on_progress=None, stop=None):
         fetched.append(destination.stem)
         if destination.stem in broken:
             raise worker.downloader.DownloadError("no audio")
@@ -366,7 +366,7 @@ async def test_an_unexpected_error_fails_one_item_and_the_job_finishes(
         library, monkeypatch):
     real = worker.downloader.download
 
-    def download(url, destination, on_progress=None):
+    def download(url, destination, on_progress=None, stop=None):
         if destination.stem == "item1":
             raise OSError("No space left on device")
         return real(url, destination, on_progress)
@@ -460,7 +460,7 @@ async def test_a_retry_that_succeeds_leaves_no_error_behind(library, monkeypatch
     real = worker.downloader.download
     attempts = []
 
-    def flaky(url, destination, on_progress=None):
+    def flaky(url, destination, on_progress=None, stop=None):
         attempts.append(1)
         if len(attempts) == 1:
             raise worker.downloader.DownloadError("HTTP Error 429")

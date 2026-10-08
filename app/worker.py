@@ -15,7 +15,9 @@ rather than a directory nobody is allowed to look at.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import threading
 from typing import Any
 from collections.abc import Awaitable, Callable
 
@@ -86,6 +88,27 @@ Push = Callable[[dict[str, Any]], Awaitable[None]]
 Progress = Callable[[dict[str, Any], list], Awaitable[None]]
 
 
+async def _until_done(func: Callable[..., Any], *args: Any,
+                      stop: threading.Event | None = None) -> Any:
+    """Run `func` on the work pool and, if this task is cancelled, wait for
+    the thread to actually finish before letting the cancellation through.
+
+    Cancelling only the await left the thread running: the gate slot was
+    given to the next download while this one carried on, and the job's
+    scratch folder was deleted under it. `stop`, when given, asks the
+    thread to give up early; without it the work is simply waited for.
+    """
+    future = asyncio.ensure_future(threads.run(func, *args))
+    try:
+        return await asyncio.shield(future)
+    except asyncio.CancelledError:
+        if stop is not None:
+            stop.set()
+        with contextlib.suppress(Exception):
+            await future
+        raise
+
+
 def _mark(item: dict[str, Any], status: str, **fields: Any) -> None:
     item["status"] = status
     item.update(fields)
@@ -115,6 +138,8 @@ async def _retrying(item: dict[str, Any], what: str,
 
 async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
     """Download, retrying only failures that could plausibly succeed later."""
+    stop = threading.Event()
+
     def progress(fraction: float) -> None:
         # Called from yt-dlp's thread. Mutating the dict is enough; the
         # periodic pusher picks the value up on its next tick.
@@ -123,7 +148,8 @@ async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
     async def attempt(n: int) -> Any:
         item["attempts"] = n
         _mark(item, "downloading")
-        return await threads.run(downloader.download, url, temp, progress)
+        return await _until_done(downloader.download, url, temp, progress,
+                                 stop, stop=stop)
 
     return await _retrying(item, "download", downloader.DownloadError, attempt)
 
@@ -139,7 +165,7 @@ async def _match_with_retries(item: dict[str, Any]) -> Any:
     YouTube's catalogue for a problem with the connection.
     """
     async def attempt(n: int) -> Any:
-        return await threads.run(matcher.find, item)
+        return await _until_done(matcher.find, item)
 
     return await _retrying(item, "search", matcher.SearchUnavailable, attempt)
 
@@ -213,7 +239,7 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
 
         _mark(item, "tagging", progress=1.0)
         try:
-            await threads.run(tagger.tag, path, item)
+            await _until_done(tagger.tag, path, item)
         except Exception as exc:
             # Fatal. These tags are what the file is filed by and what
             # Navidrome shows, so an untagged download went in as
@@ -230,26 +256,39 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
         # than waiting for the poller to work out what it already knows.
         # Its own status, which Browse and Downloads show as Filing.
         _mark(item, "filing")
+        delivery = asyncio.ensure_future(threads.run(inbox.deliver, space, path))
         try:
-            filed = await threads.run(inbox.deliver, space, path)
+            filed = await asyncio.shield(delivery)
+        except asyncio.CancelledError:
+            # Cancelled while filing. The move goes ahead whatever happens
+            # here, so wait for it and say where the file went: an item
+            # marked cancelled with no path, while the thread filed it, was
+            # filed a second time by Retry with a second track UUID.
+            with contextlib.suppress(Exception):
+                _filed(item, await delivery)
+            raise
         except Exception as exc:
             log.exception("could not file %s", item["title"])
             _mark(item, "failed", error=f"Could not file the download: {exc}"[:200])
             return
 
-        # error=None: a retry along the way left its message behind, shown
-        # as a tooltip on a row that says Done.
-        _mark(item, "complete", file_path=str(filed.path), error=None)
-        if not filed.identified:
-            # Filed and playable, but nothing can follow it: stars, play
-            # counts and the Library's album records all hang off the UUIDs.
-            # The inbox reports the same thing for a hand-dropped file.
-            item["warning"] = ("Filed, but its identity tags could not be "
-                               "written, so stars and play counts cannot "
-                               "follow it.")
+        _filed(item, filed)
 
         if settings.rate_limit_sleep:
             await asyncio.sleep(settings.rate_limit_sleep)
+
+
+def _filed(item: dict[str, Any], filed: Any) -> None:
+    # error=None: a retry along the way left its message behind, shown as a
+    # tooltip on a row that says Done.
+    _mark(item, "complete", file_path=str(filed.path), error=None)
+    if not filed.identified:
+        # Filed and playable, but nothing can follow it: stars, play counts
+        # and the Library's album records all hang off the UUIDs. The inbox
+        # reports the same thing for a hand-dropped file.
+        item["warning"] = ("Filed, but its identity tags could not be "
+                           "written, so stars and play counts cannot "
+                           "follow it.")
 
 
 def _item_state(item: dict[str, Any]) -> tuple:
