@@ -520,3 +520,11 @@ def test_a_401_from_any_api_call_shows_the_sign_in_form():
     assert raw == []
     assert "if (response.status === 401 && signedOut) signedOut();" in JS_FILES["core.js"]
     assert "whenSignedOut(handleSessionExpired);" in JS_FILES["main.js"]
+
+
+def test_an_operation_that_did_not_start_is_not_treated_as_started():
+    """Combine closed its dialog and cleared the selection, and Use this
+    closed the drawer, when the server answered started: false (2M23).
+    Checked in Chromium; this pins the wiring."""
+    assert "if (!payload.started) {" in JS_FILES["library-combine.js"]
+    assert "if (!payload || payload.detail || !payload.started) {" in JS_FILES["library-drawer.js"]

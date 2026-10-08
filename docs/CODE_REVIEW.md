@@ -1660,7 +1660,7 @@ R2 split of `library.js` lost nothing.
       form); new tests fail on the old code. This is the first piece of
       2D5's shared fetch layer.
 
-- [ ] **2M23. Combine and *Use this* treat "not started" as success.**
+- [x] **2M23. Combine and *Use this* treat "not started" as success.**
       *Verified for combine; Use this by reading.*
       `app/static/js/library-combine.js:356-374`,
       `app/static/js/library-drawer.js:763-778`,
@@ -1670,6 +1670,14 @@ R2 split of `library.js` lost nothing.
       same way.
       *Fix:* treat `!payload.started` as a refusal; keep the dialog and
       selection and say why.
+      **Fixed** as suggested. Combine keeps the dialog and the selection and
+      says in the dialog that another combine is running. *Use this* now
+      starts the retag before closing anything; when it is refused or not
+      started, the drawer stays open and the reason appears in the
+      candidates list, since the panel's status line is behind the drawer.
+      Verified in Chromium (S4, and a new S14 for *Use this*; both BUG on
+      the old code); a static test pins the wiring. Changing what
+      `startOperation` returns is left to 2D5.
 
 - [ ] **2M24. A drop is split across two libraries if the Into picker
       changes mid-upload.** *Verified.* A gap in L11.

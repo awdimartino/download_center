@@ -370,6 +370,15 @@ async function submitCombine(go) {
     renderCombine();
     return;
   }
+  if (!payload.started) {
+    // Another combine is running, and this one was not queued behind it.
+    // Closing the dialog and clearing the selection here read as success,
+    // and the combine set up so carefully was simply never run.
+    c.error = "Another combine is still running, so this one was not "
+      + "started. Try again when it finishes.";
+    renderCombine();
+    return;
+  }
   closeCombine();
   setSelecting(false);
 }
