@@ -643,3 +643,12 @@ def test_a_survey_in_flight_cannot_undo_an_invalidation():
     assert "if (asked !== libraryState.surveyGeneration) return survey;" in shared
     assert "libraryState.coverSurvey = null;" not in JS.replace(
         shared[shared.index("export function forgetCoverSurvey"):], "")
+
+
+def test_an_unreachable_server_is_said_at_sign_in_and_in_settings():
+    """Sign-in and Settings had no catch: the button came back and nothing
+    was said (2L26). Checked in Chromium; this pins the wiring."""
+    assert "Could not reach the server. Is it running?" in JS_FILES["main.js"]
+    settings = JS_FILES["settings.js"]
+    assert "Could not read the settings:" in settings
+    assert "Could not reach the server; nothing was saved." in settings

@@ -98,6 +98,11 @@ signinForm.addEventListener("submit", async (event) => {
     }
     applySession({ signed_in: true, ...body });
     start();
+  } catch {
+    // The server itself could not be reached. The button came back and
+    // nothing at all was said, which reads as a wrong password typed
+    // without an error.
+    setBanner(signinError, "Could not reach the server. Is it running?", "error");
   } finally {
     button.disabled = false;
   }

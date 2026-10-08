@@ -1,6 +1,6 @@
 "use strict";
 
-import { apiFetch, setBanner, warnEl } from "./core.js";
+import { apiFetch, getJSON, setBanner, warnEl } from "./core.js";
 
 const settingsForm = document.getElementById("settings");
 const settingsNote = document.getElementById("settings-note");
@@ -18,7 +18,14 @@ const NUMBERS = { concurrency: parseInt, max_attempts: parseInt,
 // appeared above a list of duplicates and left you with no clear way back.
 export async function loadSettings() {
   settingsNote.textContent = "";
-  const values = await apiFetch("/api/settings").then((r) => r.json());
+  let values;
+  try {
+    values = await getJSON("/api/settings");
+  } catch (err) {
+    // Said, rather than an empty form that looks like nothing is set.
+    settingsNote.textContent = `Could not read the settings: ${err.message}`;
+    return;
+  }
   const secrets = ["spotify_client_secret", "navidrome_password", "acoustid_key"];
   // A non-admin is sent nothing but `editable: false` - these settings hold
   // the service credentials and decide where every library lives, so there
@@ -66,11 +73,24 @@ settingsForm.addEventListener("submit", async (event) => {
   settingsForm.querySelectorAll('input[type="checkbox"]').forEach((box) => {
     if (!box.disabled) payload[box.name] = box.checked;
   });
-  const response = await apiFetch("/api/settings", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  // One save at a time, and a server that cannot be reached is said: the
+  // button did nothing visible either way.
+  const button = settingsForm.querySelector('button[type="submit"], button:not([type])');
+  if (button) button.disabled = true;
+  settingsNote.textContent = "Saving…";
+  let response;
+  try {
+    response = await apiFetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    settingsNote.textContent = "Could not reach the server; nothing was saved.";
+    return;
+  } finally {
+    if (button) button.disabled = false;
+  }
   if (response.ok) {
     settingsNote.textContent = "Saved.";
     // Every secret field, not just the Spotify one. A value left sitting in

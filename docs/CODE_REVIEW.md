@@ -2002,9 +2002,13 @@ R2 split of `library.js` lost nothing.
       `forgetCoverSurvey()`, which bumps `libraryState.surveyGeneration`,
       and a survey that answers after a bump is used for that call but not
       stored. All Chromium scenarios still pass.
-- [ ] **2L26. Silent failures when the server is unreachable.** Sign-in and
+- [x] **2L26. Silent failures when the server is unreachable.** Sign-in and
       Settings load and save have no `catch` (`main.js:75-95`,
       `settings.js:19-21,69`).
+      **Fixed:** sign-in says the server could not be reached; Settings
+      reads through `getJSON` and says why it could not; a save disables its
+      button while it runs, shows "Saving…", and says when nothing was
+      saved. Verified in Chromium with a new S18 (silent on the old code).
 - [ ] **2L27. One hung upload stalls every later drop.** `drop.js:123-133`.
       `JSON.parse` can throw in `onload`, and there is no `onabort` or
       `ontimeout`, so `dropChain` never advances.
