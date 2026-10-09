@@ -487,8 +487,12 @@ def history_version() -> tuple:
         "SELECT MAX(rowid), COUNT(*) FROM play_snapshot").fetchone()
     imported = db.execute(
         "SELECT MAX(rowid), COUNT(*) FROM play_imported").fetchone()
+    # An alias moves plays between tracks without touching either table.
+    aliased = db.execute(
+        "SELECT MAX(rowid), COUNT(*) FROM play_alias").fetchone()
     elsewhere = db.execute("PRAGMA data_version").fetchone()[0]
-    return (store.generation, tuple(snapshots), tuple(imported), elsewhere)
+    return (store.generation, tuple(snapshots), tuple(imported),
+            tuple(aliased), elsewhere)
 
 
 # What Navidrome calls each track, read in one pass and kept until its
@@ -618,8 +622,9 @@ def increments(user_id: str) -> list[tuple[str, str, int]]:
                        lambda: _read_increments(user_id))
 
 
-def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
-    """Every play this person made, as (when, track uuid, how many).
+def _read_increments_raw(user_id: str) -> list[tuple[str, str, int]]:
+    """Every play this person made, as (when, track uuid, how many), under
+    the UUID each was recorded against.
 
     Both sources flattened into the same shape, so everything downstream is
     a sum over one list rather than two special cases.
@@ -689,6 +694,41 @@ def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
 
     plays.extend((day, track_uuid, n) for day, track_uuid, n in imported if n)
     return plays
+
+
+def _read_increments(user_id: str) -> list[tuple[str, str, int]]:
+    """Every play, credited to each track's current identity.
+
+    Only after each UUID's counter has been read as its own series (see
+    `play_alias` in store.py): reading the two as one would invent or lose
+    the plays where one counter stops and the other starts.
+    """
+    plays = _read_increments_raw(user_id)
+    alias = aliases()
+    if alias:
+        plays = [(when, alias.get(track_uuid, track_uuid), n)
+                 for when, track_uuid, n in plays]
+    return plays
+
+
+def aliases() -> dict[str, str]:
+    """Old track UUID -> the one its plays are credited to now.
+
+    Followed to the end, so a song re-identified twice credits its first
+    UUID's plays to its latest. A loop - which nothing writes, but a hand
+    edit could - stops where it would repeat.
+    """
+    pairs = dict(store.connection().execute(
+        "SELECT old_uuid, new_uuid FROM play_alias").fetchall())
+    resolved = {}
+    for old in pairs:
+        seen = {old}
+        current = pairs[old]
+        while current in pairs and current not in seen:
+            seen.add(current)
+            current = pairs[current]
+        resolved[old] = current
+    return resolved
 
 
 def plays_between(start: str, end: str,

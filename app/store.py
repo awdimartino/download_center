@@ -9,7 +9,8 @@ nowhere else.
   maps to. The one thing that genuinely cannot be derived, because a UUID is
   invented rather than observed.
 - `play_snapshot`, `play_anomaly`, `play_imported`, `play_snapshot_run` -
-  listening history. Navidrome keeps a cumulative count and one date, so
+  listening history; `play_alias` credits an old track UUID's plays to a
+  song's current one. Navidrome keeps a cumulative count and one date, so
   anything not captured here is gone for good. This is the only copy.
 - `duplicate_dismissed`, `duplicate_quarantined` - decisions a person made
   about duplicate copies, and where the losing files were put.
@@ -184,6 +185,19 @@ CREATE TABLE IF NOT EXISTS album_reviewed (
 CREATE TABLE IF NOT EXISTS play_collection (
     id     INTEGER PRIMARY KEY CHECK (id = 1),
     began  TEXT NOT NULL
+);
+
+-- One track's listening credited to another: the same song, given a new
+-- track UUID by a re-download or a refile, whose plays stayed on the old
+-- one. The readings themselves are never rewritten - each UUID's counter is
+-- its own series, and splicing two would invent or lose plays - so plays are
+-- worked out per UUID as recorded and only then credited to `new_uuid`.
+-- Deleting a row undoes it. Written by `python -m app.relink`.
+CREATE TABLE IF NOT EXISTS play_alias (
+    old_uuid    TEXT PRIMARY KEY,
+    new_uuid    TEXT NOT NULL,
+    reason      TEXT,
+    created_at  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS play_anomaly (

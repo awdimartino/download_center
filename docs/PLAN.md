@@ -127,6 +127,17 @@ finished; what is left here is checking the deploy on the Pi.
       EJS challenge solver and browser impersonation. Health shows a
       *JavaScript for YouTube* row. Keeping yt-dlp current is Dependabot's
       weekly pull request; Health warns past 60 days.
+- [x] **The files Navidrome can no longer find.** Checked 2026-10-09: 814
+      rows. 154 are quarantined duplicates (kept on purpose), 197 are gone
+      with nothing like them left, and 460 are songs still in the library
+      under a newer track UUID, mostly from the late-September stamping and
+      refiling. Their listening history is credited to the live copies by
+      `python -m app.relink` (aliases in `state.db`; nothing rewritten).
+      **Left for Alex, by hand:** 10 stars and 6 ratings, on 11 songs, that
+      only the old rows carry; and Navidrome's own play counts on the old
+      rows (174), which its API can only add to as new plays. Then the old
+      rows can be cleared from Navidrome's Missing Files page - except the
+      quarantined ones, until the duplicates are settled.
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
       tally alone. Reuse the album editor's merge-search pattern: a debounced
       search across the genre tally, picking a target folds the source

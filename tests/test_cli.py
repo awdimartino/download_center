@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-COMMANDS = ["backfill", "lastfm", "reindex", "separate", "survey", "unfuse"]
+COMMANDS = ["backfill", "lastfm", "reindex", "relink", "separate", "survey", "unfuse"]
 
 
 @pytest.mark.parametrize("name", COMMANDS)
