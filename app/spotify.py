@@ -314,6 +314,9 @@ def album_card(album: dict[str, Any]) -> dict[str, Any]:
         "primary_artist": _primary_artist(album.get("artists")),
         "artist_id": _first_artist_id(album.get("artists")),
         "year": _year(album.get("release_date")),
+        # The whole date, for "released in the last ninety days". As precise
+        # as Spotify knows it: a bare year for some old records.
+        "released": album.get("release_date"),
         "cover": _cover(album),
         "total": album.get("total_tracks"),
         "type": album.get("album_type"),

@@ -22,6 +22,7 @@ const kindsEl = document.getElementById("browse-kinds");
 const resultsEl = document.getElementById("results");
 const emptyEl = document.getElementById("browse-empty");
 const drawerEl = document.getElementById("browse-drawer");
+const forYouEl = document.getElementById("for-you");
 
 const KINDS = ["all", "album", "track", "artist"];
 let kind = "all";
@@ -46,6 +47,9 @@ function looksLikeUrl(text) {
 
 let painters = [];          // repaint callbacks for the results on screen
 let drawerPainters = [];    // and for the open album
+// And for the recommendation shelves (foryou.js), which outlive any one
+// search. Emptied in place by whoever rebuilds the shelves.
+export const shelfPainters = [];
 const asked = new Set();    // links pressed whose job has not arrived yet
 
 function repaint() {
@@ -54,6 +58,7 @@ function repaint() {
   }
   painters.forEach((paint) => paint());
   drawerPainters.forEach((paint) => paint());
+  shelfPainters.forEach((paint) => paint());
 }
 onJobs(repaint);
 
@@ -244,6 +249,16 @@ function paintCover(album, overlay) {
 }
 
 function albumCard(album) {
+  return buildAlbumCard(album, painters);
+}
+
+// A cover on a shelf: the same card, repainted with the shelves, and with
+// its line under the title chosen by the shelf ("released 12 Sep").
+export function shelfAlbum(album, sub) {
+  return buildAlbumCard(album, shelfPainters, sub);
+}
+
+function buildAlbumCard(album, list, sub) {
   const card = el("div", "lib-card br-card");
   card.tabIndex = 0;
   card.setAttribute("role", "button");
@@ -255,19 +270,27 @@ function albumCard(album) {
     cover,
     el("span", "lib-card-title", album.name),
     el("span", "lib-card-sub",
-       [album.artist, album.year, releaseKind(album)].filter(Boolean).join(" · ")));
+       sub || [album.artist, album.year, releaseKind(album)].filter(Boolean).join(" · ")));
   card.addEventListener("click", () => openAlbum(album.id));
   card.addEventListener("keydown", (event) => {
     if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
     openAlbum(album.id);
   });
-  return painted(painters, card, () => paintCover(album, overlay));
+  return painted(list, card, () => paintCover(album, overlay));
 }
 
 /* --- songs ----------------------------------------------------------------- */
 
 function trackRow(track) {
+  return buildTrackRow(track, painters);
+}
+
+export function shelfTrack(track) {
+  return buildTrackRow(track, shelfPainters);
+}
+
+function buildTrackRow(track, list) {
   const albumLink = el("button", "br-link", track.album || "");
   albumLink.type = "button";
   albumLink.addEventListener("click", () => openAlbum(track.album_id));
@@ -279,7 +302,7 @@ function trackRow(track) {
                       [track.artist, " · ", albumLink],
                       [state, el("span", "br-dur", duration(track.duration_ms)), button]);
   row.classList.add("br-song");
-  return painted(painters, row, () => {
+  return painted(list, row, () => {
     state.replaceChildren(stateBadge(trackState(track)));
     paint();
   });
@@ -295,12 +318,16 @@ function followers(n) {
 }
 
 function artistTile(artist) {
+  return shelfArtist(artist, followers(artist.followers));
+}
+
+export function shelfArtist(artist, sub) {
   const tile = el("button", "lib-artist");
   tile.type = "button";
   const mosaic = el("div", "lib-mosaic");
   mosaic.append(remoteArt(artist.cover));
   tile.append(mosaic, el("span", "lib-card-title", artist.name),
-              el("span", "lib-card-sub", followers(artist.followers)));
+              el("span", "lib-card-sub", sub));
   tile.addEventListener("click", () => openArtist(artist.id));
   return tile;
 }
@@ -314,7 +341,18 @@ let lastResults = null;     // what the last search returned, for Back
 function setMessage(text) {
   emptyEl.textContent = text || "";
   emptyEl.hidden = !text;
+  syncForYou();
 }
+
+// The recommendations (foryou.js) fill the page while there is nothing
+// else on it: no search typed, no results, no artist, no message. Watched
+// rather than called from every place the results change, of which there
+// are many and will be more.
+function syncForYou() {
+  forYouEl.hidden = Boolean(input.value.trim()) || resultsEl.childElementCount > 0
+    || !emptyEl.hidden;
+}
+new MutationObserver(syncForYou).observe(resultsEl, { childList: true });
 
 function section(title, count, body, more) {
   const head = el("h3", "lib-section-title", title);
@@ -493,7 +531,7 @@ function albumActions(album, box) {
     note.textContent = `${held} of ${total} are already in your library and would arrive as second copies. `
       + "To fetch only the rest, use the buttons below.";
   } else if (group === "attention") {
-    note.textContent = "Some of the last attempt failed. Retry those from Downloads, or start again.";
+    note.textContent = "Some of the last attempt failed. Retry those from the Queue, or start again.";
   }
   box.replaceChildren(download, note);
 }
@@ -594,6 +632,7 @@ function syncBox() {
 let typing = null;
 input.addEventListener("input", () => {
   syncBox();
+  syncForYou();
   clearTimeout(typing);
   const text = input.value.trim();
   if (!text) {
@@ -638,6 +677,7 @@ kindsEl.querySelectorAll("button").forEach((button) => {
 libraryPicker(document.getElementById("browse-library"));
 syncKinds();
 syncBox();
+syncForYou();
 
 // Focus the search box only where a keyboard is already there. On a phone
 // this summoned the on-screen one the instant the tab was tapped, covering

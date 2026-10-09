@@ -51,8 +51,10 @@
       <span class="nav-label">Library</span>
       <span id="library-badge" class="badge" hidden></span>
     </button>
+    <!-- "browse" inside the code: the tab was called that until it gained
+         the recommendations, and every id and class still says so. -->
     <button class="nav-item" data-view="browse" type="button">
-      <span class="nav-label">Browse</span>
+      <span class="nav-label">Download</span>
     </button>
     <button class="nav-item" data-view="drop" type="button">
       <span class="nav-label">Drop</span>
@@ -254,26 +256,39 @@
           </div>
         </div>
         <div id="results"></div>
-        <p id="browse-empty" class="empty">Find an album, a song or an artist
-          on Spotify and download it straight into your library. Or paste a
-          link.</p>
+        <p id="browse-empty" class="empty" hidden></p>
+
+        <!-- What to download next, while nothing is searched: shelves picked
+             from what you play (foryou.js). Shown and hidden by browse.js. -->
+        <div id="for-you" class="fy">
+          <div class="fy-head">
+            <p class="fy-intro">Search Spotify for an album, a song or an
+              artist, or paste a link. Below is picked from what you play.</p>
+            <span id="fy-when" class="fy-when"></span>
+            <button id="fy-refresh" class="ghost fy-refresh" type="button" hidden>Refresh</button>
+          </div>
+          <div id="fy-shelves"></div>
+        </div>
       </div>
 
       <!-- What is downloading, what needs a look, and what finished. On a
            phone this is a sheet, opened from the pill below. -->
-      <aside class="dl-rail" aria-label="Downloads">
+      <aside class="dl-rail" aria-label="Queue">
         <div class="dl-head">
-          <h2>Downloads</h2>
+          <h2>Queue</h2>
           <small id="downloads-summary"></small>
           <button id="downloads-close" class="ghost dl-close" type="button"
-                  aria-label="Close downloads">✕</button>
+                  aria-label="Close the queue">✕</button>
         </div>
         <div id="jobs"></div>
       </aside>
     </div>
 
+    <!-- "Hidden. Undo" after a shelf's ✕. -->
+    <div id="fy-toast" class="fy-toast" role="status" hidden></div>
+
     <button id="downloads-pill" class="dl-pill" type="button"
-            aria-label="Show downloads" aria-expanded="false" hidden></button>
+            aria-label="Show the queue" aria-expanded="false" hidden></button>
     <div id="downloads-scrim" class="dl-scrim" hidden></div>
     <!-- One album, opened beside the results - the Library's drawer. -->
     <aside id="browse-drawer" class="lib-drawer" hidden aria-label="Album"></aside>

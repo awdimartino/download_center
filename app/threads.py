@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import functools
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 from collections.abc import Callable
 
@@ -27,6 +27,13 @@ from collections.abc import Callable
 MAX_WORKERS = 32
 
 _pool = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="work")
+
+
+def submit[T](func: Callable[..., T], /, *args: Any, **kwargs: Any) -> Future[T]:
+    """Start long work on this pool without waiting for it - for work a
+    request begins and a later request asks after."""
+    call = functools.partial(contextvars.copy_context().run, func, *args, **kwargs)
+    return _pool.submit(call)
 
 
 async def run[T](func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:

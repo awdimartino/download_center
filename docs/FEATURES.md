@@ -16,7 +16,7 @@ Written 2026-10-04 against the code as it stands.
 2. [How it fits together](#2-how-it-fits-together)
 3. [Accounts, sign-in and navigation](#3-accounts-sign-in-and-navigation)
 4. [Home and listening history](#4-home-and-listening-history)
-5. [Browse and downloading](#5-browse-and-downloading)
+5. [Download: search, recommendations, the queue](#5-download-search-recommendations-the-queue)
 6. [Drop and the inbox](#6-drop-and-the-inbox)
 7. [Filing and identity](#7-filing-and-identity)
 8. [Library](#8-library)
@@ -143,7 +143,7 @@ changing Settings, and forcing a play-count reading.
 ### Navigation
 
 One menu button at every width opens a full-height panel: Home, Library,
-Browse, Drop, Playlists, Duplicates, Health, then Settings, your name and
+Download, Drop, Playlists, Duplicates, Health, then Settings, your name and
 the libraries you can see, and Sign out. The header shows the current
 view's name and a connection pill (live/offline, from the WebSocket).
 
@@ -305,11 +305,12 @@ about 15 ms on the Pi, against about 2 s uncached.
 
 ---
 
-## 5. Browse and downloading
+## 5. Download: search, recommendations, the queue
 
 ### Search, or paste a link
 
-Browse has one box: **"Search Spotify, or paste a link"**. Text that starts
+The Download tab (called Browse until 2026-10-08; it is still `browse`
+in the code) has one box: **"Search Spotify, or paste a link"**. Text that starts
 with `http://` or `https://`, or is a Spotify link without it
 (`open.spotify.com/…`, `spotify.link/…`, `spotify:album:…`), is a link —
 the button reads **Download** and a hint says what kind of link it looks
@@ -330,6 +331,44 @@ An account with more than one library gets an **Into** choice under the box
 two pages share it and the browser remembers it. With one library there is
 no choice to make, and nothing is shown. The "in library" markers below
 still read the first library.
+
+### Recommendations
+
+While nothing is searched, the tab shows shelves of things to download
+next (`app/recommend.py`, drawn by `foryou.js`). Each card is an ordinary
+result: it opens, downloads and shows its state the same way.
+
+- **New from your artists**: releases from the last 90 days by your
+  favourite artists.
+- **Missing from your artists**: their albums (not singles) that your
+  library has no edition of. "OK Computer (Collector's Edition)" counts as
+  the OK Computer you have. Up to three per artist, taken in turns.
+- **Artists like yours**: Last.fm's similar artists for your top eight,
+  minus anyone already in the library, ranked by how many of your
+  favourites point at them ("Like Radiohead and Björk").
+- **Because you played "…"**: Last.fm's similar tracks for up to three
+  songs on repeat in the last 30 days, by other artists, skipping songs you
+  hold.
+- **More *genre***: Last.fm's top albums for your three most played
+  genres, one per artist, not in the library.
+
+*Favourites* are the last year of plays per track artist, plus stars and
+ratings of 4 or 5 (a starred artist counts as 40 plays, a starred album 20,
+a starred track 5). The last three shelves need `lastfm_api_key`. Spotify
+withdrew its recommendation and related-artist endpoints from new apps, so
+the judgement of "similar" is Last.fm's, and Spotify only supplies the
+cards.
+
+A pass costs about a hundred requests, so it runs **in the background, at
+most once a day per person**, and is stored in `state.db`
+(`recommendation_cache`). A visit after a day serves the old pass and starts
+a new one. **Refresh** starts one now. What the library holds and what you
+dismissed are applied when the shelves are read, so a just-downloaded album
+leaves its shelf on the next load.
+
+**✕ (not interested)** hides a card for you only (`recommendation_dismissed`).
+The toast offers **Undo** and **Hide all by *artist***, which hides that
+artist from every shelf.
 
 ### "In library" markers
 
@@ -428,7 +467,7 @@ title doubles as the album.
 - **Up to five active jobs per person**; finished jobs beyond the latest 40
   are forgotten.
 
-### The Downloads rail
+### The Queue rail
 
 Beside the results (a pill and bottom sheet on a phone) are your jobs, in
 three groups: **active**, **needs a look** (failed, partial or cancelled,

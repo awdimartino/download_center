@@ -16,6 +16,7 @@ import { loadDupes } from "./duplicates.js";
 import { loadPlaylists } from "./playlists.js";
 import { loadSettings, checkSpotify } from "./settings.js";
 import { focusSearchIfPointer } from "./browse.js";
+import { loadForYou } from "./foryou.js";
 // No bindings needed from this one - it wires its own DOM listeners as a
 // side effect of being imported, the same as every other panel module.
 import "./drop.js";
@@ -121,7 +122,7 @@ document.getElementById("signout").addEventListener("click", async () => {
 
 Object.assign(viewHandlers, {
   home: () => { loadHome(); loadListening(); },
-  browse: focusSearchIfPointer,
+  browse: () => { focusSearchIfPointer(); loadForYou(); },
   library: loadLibrary,
   health: loadHealth,
   dupes: loadDupes,

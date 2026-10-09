@@ -1192,6 +1192,150 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
   .br-quick, .br-veil-fill, .dl-job-fill { transition: none; }
 }
 
+/* --- download: what to get next ---------------------------------------------
+   Shelves under the search box while nothing is searched. The cards are the
+   search results' own; a shelf is a row of them that scrolls sideways. */
+
+.fy[hidden] { display: none; }
+.fy-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1) var(--s-3);
+  margin-top: var(--s-2);
+}
+.fy-intro { flex: 1 1 30ch; margin: 0; color: var(--muted); font-size: var(--t-md); }
+.fy-when { color: var(--faint); font-size: var(--t-sm); }
+.fy-refresh { min-height: 28px; }
+.fy-refresh[hidden] { display: none; }
+
+.fy-section .fy-title { margin-bottom: var(--s-2); }
+.fy-arrows { display: flex; gap: var(--s-1); margin-left: auto; }
+.fy-arrow { width: 28px; min-height: 28px; padding: 0; font-size: var(--t-lg); }
+@media (hover: none) { .fy-arrows { display: none; } }
+
+.fy-shelf {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 160px;
+  gap: var(--s-4);
+  /* Room for the lift on hover and the shadow under each sleeve, which
+     the scroller would otherwise clip. */
+  padding: var(--s-1) var(--s-1) var(--s-3);
+  margin: 0 calc(var(--s-1) * -1);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.fy-shelf > .fy-item { scroll-snap-align: start; }
+.fy-shelf:has(> .fy-artist) { grid-auto-columns: 136px; }
+.fy-item { position: relative; min-width: 0; }
+/* A button sizes itself to its text; in a shelf's column it has to fill it,
+   or a long "Like …" line makes one circle bigger than the rest. */
+.fy-item > .lib-artist { width: 100%; }
+
+/* Not interested: on the sleeve's corner, shown on hover like the download
+   button opposite it, always there on a touch screen. */
+.fy-dismiss {
+  position: absolute;
+  top: var(--s-2);
+  right: var(--s-2);
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--text);
+  font-size: var(--t-xs);
+  opacity: 0;
+  transition: opacity .15s ease, background .14s ease;
+}
+.fy-dismiss:hover { background: var(--panel-3); }
+.fy-item:hover .fy-dismiss,
+.fy-item:focus-within .fy-dismiss { opacity: 1; }
+@media (hover: none) { .fy-dismiss { opacity: 1; } }
+
+/* Songs: the row, and the ✕ after its download button. */
+.fy-because {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+  gap: 0 var(--s-6);
+}
+.fy-track { display: flex; align-items: center; gap: var(--s-1); }
+.fy-track > .lib-song { flex: 1; min-width: 0; }
+.fy-track .fy-dismiss {
+  position: static;
+  flex: none;
+  background: transparent;
+  backdrop-filter: none;
+  color: var(--faint);
+}
+.fy-track .fy-dismiss:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
+
+.fy-notes { margin-top: var(--s-5); }
+.fy-notes p { margin: 0 0 var(--s-1); color: var(--faint); font-size: var(--t-sm); }
+.fy-empty { max-width: 60ch; }
+
+.fy-waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-6) 0;
+  color: var(--muted);
+  font-size: var(--t-md);
+}
+.fy-spinner {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: fy-spin .9s linear infinite;
+}
+@keyframes fy-spin { to { transform: rotate(360deg); } }
+
+.fy-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--float-gap) + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: calc(100vw - var(--s-6));
+  padding: var(--s-1) var(--s-1) var(--s-1) var(--s-4);
+  border-radius: 999px;
+  background: var(--panel-3);
+  box-shadow: var(--float-shadow);
+  font-size: var(--t-md);
+  transform: translateX(-50%);
+}
+.fy-toast[hidden] { display: none; }
+.fy-toast-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fy-toast .ghost { flex: none; background: transparent; color: var(--accent); }
+.fy-toast .ghost:hover { background: var(--tint-accent); }
+
+@media (max-width: 980px) {
+  /* Above the queue's pill, which sits where the toast otherwise would. */
+  .fy-toast { bottom: calc(var(--float-gap) + 46px + var(--s-3) + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 640px) {
+  .fy-shelf { grid-auto-columns: 136px; gap: var(--s-3); }
+  /* A swipe scrolls the shelf, and with the note wrapped the arrows took a
+     line of their own. */
+  .fy-arrows { display: none; }
+  .fy-shelf:has(> .fy-artist) { grid-auto-columns: 116px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fy-spinner { animation-duration: 3s; }
+  .fy-dismiss { transition: none; }
+}
+
 /* --- shared blocks -------------------------------------------------------- */
 
 .stats { display: flex; gap: var(--s-3); margin-top: var(--s-4); flex-wrap: wrap; }

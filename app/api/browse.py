@@ -6,8 +6,10 @@ import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
-from .. import auth, navidrome, registry, spotify
+from .. import auth, navidrome, recommend, registry, spotify
+from ..config import settings
 from .deps import current_session
 
 # Every route here is for a signed-in person. Declared on the router as
@@ -138,6 +140,82 @@ async def album(album_id: str,
             track["held"] = False
     detail["held_count"] = sum(1 for t in detail["tracks"] if t["held"])
     return detail
+
+
+class Dismissal(BaseModel):
+    kind: str
+    key: str
+    label: str = ""
+    undo: bool = False
+
+
+def _shelves_held(data: dict[str, Any], library_id: int) -> dict[str, Any]:
+    """Mark the shelves the way search results are marked, and drop what is
+    now wholly in the library - downloaded since the pass, most likely from
+    the shelf itself."""
+    shelves = data["shelves"]
+    albums = shelves["new"] + shelves["missing"] + [
+        card for shelf in shelves["genres"] for card in shelf["albums"]]
+    tracks = [card for shelf in shelves["because"] for card in shelf["tracks"]]
+    _mark_albums_held(albums, library_id)
+    _mark_held(tracks, library_id)
+
+    def unheld(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [c for c in cards if not (c.get("total") and c["held_tracks"] >= c["total"])]
+
+    shelves["new"] = unheld(shelves["new"])
+    shelves["missing"] = unheld(shelves["missing"])
+    shelves["genres"] = [{**s, "albums": unheld(s["albums"])} for s in shelves["genres"]]
+    shelves["because"] = [{**s, "tracks": [t for t in s["tracks"] if not t["held"]]}
+                          for s in shelves["because"]]
+    return data
+
+
+@router.get("/api/recommendations")
+async def recommendations(session: auth.Session = Depends(current_session),
+                          ) -> dict[str, Any]:
+    """The Download tab's shelves, from the last daily pass.
+
+    Never waits for a pass: one that is due is started in the background
+    and the stored one is answered meanwhile (see recommend.view).
+    """
+    library_id = _browsing_library(session)
+    if library_id is None:
+        return {"status": "failed",
+                "reason": "Your account has no library to recommend for."}
+    if not settings.spotify_configured:
+        return {"status": "failed", "reason": "Spotify is not set up yet."}
+    user_id = session.identity.user_id
+    data = await asyncio.to_thread(recommend.view, user_id, library_id)
+    if data["status"] == "ready":
+        await asyncio.to_thread(_shelves_held, data, library_id)
+    return data
+
+
+@router.post("/api/recommendations/refresh")
+async def refresh_recommendations(session: auth.Session = Depends(current_session),
+                                  ) -> dict[str, Any]:
+    library_id = _browsing_library(session)
+    if library_id is None:
+        raise HTTPException(status_code=400, detail="Your account has no library.")
+    started = await asyncio.to_thread(
+        recommend.refresh, session.identity.user_id, library_id)
+    return {"started": started}
+
+
+@router.post("/api/recommendations/dismiss")
+async def dismiss_recommendation(body: Dismissal,
+                                 session: auth.Session = Depends(current_session),
+                                 ) -> dict[str, Any]:
+    if body.kind not in recommend.KINDS or not body.key:
+        raise HTTPException(status_code=400, detail="Nothing to dismiss.")
+    user_id = session.identity.user_id
+    if body.undo:
+        await asyncio.to_thread(recommend.undismiss, user_id, body.kind, body.key)
+    else:
+        await asyncio.to_thread(recommend.dismiss, user_id, body.kind, body.key,
+                                body.label[:200])
+    return {"ok": True}
 
 
 @router.get("/api/artists/{artist_id}/albums")

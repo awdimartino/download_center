@@ -261,7 +261,7 @@ copy environment secrets into the file; check yours if you set
 | `music_dir` | `/music` | no | fallback library root; where free space is measured |
 | `output_dir` | `/downloads` | no | where each person's inbox lives |
 | `acoustid_key` | | yes | for `tools/fingerprint.py` only |
-| `lastfm_api_key`, `lastfm_secret` | | no | for the one-off Last.fm import only |
+| `lastfm_api_key`, `lastfm_secret` | | no | the Last.fm import, and the Download tab's similar artists, songs and genre picks (only the API key is needed for those) |
 
 Set `play_day_timezone` to where you listen. Days, months and the hour of
 day in the listening statistics are cut in that zone; the default UTC puts
