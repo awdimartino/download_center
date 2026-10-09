@@ -714,7 +714,9 @@ is where a record downloaded song by song shows up as a pile.
 **Needs attention** collects:
 
 - **Singles that belong together** — two or more single-track folders by
-  one album artist. *Combine…* opens the combine dialog; *Not together*
+  one album artist that name the same record, once case, punctuation and a
+  trailing "(Single)" or "- EP" are set aside. An artist's separate singles
+  are not offered, nor are files that name no album. *Combine…* opens the combine dialog; *Not together*
   hides that exact group (remembered in your browser, so a new single
   arriving offers it again).
 - **Singles already on an album** — a single whose song is on one of that

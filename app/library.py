@@ -33,6 +33,7 @@ from __future__ import annotations
 import collections
 import dataclasses
 import logging
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -564,13 +565,34 @@ def _titles_by_artist(connection: sqlite3.Connection,
     return found
 
 
+# "Song (Single)", "Song - EP": what a store appends to a release's name,
+# and the one difference between two folders of one record.
+_RELEASE_KIND = re.compile(r"\s*(?:[-–(\[]\s*)?\b(?:single|ep|e\.p\.)\s*[)\]]?\s*$",
+                           re.I)
+UNNAMED_ALBUMS = {"", "[unknown album]"}
+
+
+def record_key(album: str) -> str | None:
+    """An album name in the form two folders of one record share, or None
+    for a file that names no album. Letters in any script are kept: an
+    ASCII-only key would make every Japanese title the same record."""
+    name = (album or "").strip().casefold()
+    if name in UNNAMED_ALBUMS:
+        return None
+    return re.sub(r"[\W_]+", "", _RELEASE_KIND.sub("", name)) or None
+
+
 def attention(identity: navidrome.Identity) -> dict[str, Any]:
     """What in this library wants a person, grouped by why.
 
     Singles that belong together come first, because they are what a
     YouTube download leaves behind: one folder per song, so a record
     downloaded track by track is a dozen "albums". Two or more singles by
-    one artist are offered as a group to combine.
+    one artist that name the same record are offered as a group to combine.
+    Only the same record: an artist's singles are usually just that, and
+    grouping on the artist alone offered 311 groups on this library of
+    which three were real. A file that names no album needs tagging, not
+    combining, and is left out.
 
     Except a single whose song is already on an album of that artist's -
     that is a duplicate beside its album, not a missing piece of one, and
@@ -608,7 +630,7 @@ def attention(identity: navidrome.Identity) -> dict[str, Any]:
                                  album.folder), ()):
             on_albums.setdefault(key, {}).setdefault(title, album.album)
 
-    groups: dict[tuple[int, str], list[Album]] = {}
+    groups: dict[tuple[int, str, str], list[Album]] = {}
     beside = []
     for album in albums:
         if album.kind != "single":
@@ -617,10 +639,11 @@ def attention(identity: navidrome.Identity) -> dict[str, Any]:
         song = next(iter(titles.get((album.library_id, album.artist.casefold(),
                                      album.folder), {album.album.casefold()})))
         holder = on_albums.get(key, {}).get(song)
+        record = record_key(album.album)
         if holder:
             beside.append({**album.as_dict(), "on_album": holder})
-        else:
-            groups.setdefault(key, []).append(album)
+        elif record:
+            groups.setdefault((*key, record), []).append(album)
 
     together = [
         {"library_id": key[0], "artist": members[0].artist,

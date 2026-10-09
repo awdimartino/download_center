@@ -123,17 +123,43 @@ def test_two_spellings_of_one_artist_are_one_artist(db, identity):
 
 # --- needs attention -------------------------------------------------------------
 
-def test_singles_by_one_artist_are_offered_together(db, identity):
-    for title in ("Motion Sickness", "Scott Street", "Funeral"):
-        single(db, "Phoebe Bridgers", title)
-    single(db, "Mitski", "Nobody")
+def test_singles_naming_one_record_are_offered_together(db, identity):
+    add_track(db, "a", path="Radiohead/OK Computer/05 - Let Down.mp3",
+              title="Let Down", album="OK Computer", artist="Radiohead",
+              album_artist="Radiohead", album_id="al-a")
+    add_track(db, "b", path="Non-Album/Radiohead/No Surprises.mp3",
+              title="No Surprises", album="OK Computer (Single)",
+              artist="Radiohead", album_artist="Radiohead", album_id="al-b")
+    single(db, "Radiohead", "Creep")
 
     together = library.attention(identity)["together"]
 
     assert len(together) == 1
-    assert together[0]["artist"] == "Phoebe Bridgers"
     assert sorted(a["album"] for a in together[0]["albums"]) == [
-        "Funeral", "Motion Sickness", "Scott Street"]
+        "OK Computer", "OK Computer (Single)"]
+
+
+def test_an_artists_separate_singles_are_not_one_album(db, identity):
+    """Every one of an artist's singles was once offered as one album."""
+    for title in ("Motion Sickness", "Scott Street", "Funeral"):
+        single(db, "Phoebe Bridgers", title)
+    for title in ("ワーストリグレット", "マージナルソウル"):
+        single(db, "youまん", title)
+    for n in (1, 2):
+        add_track(db, f"u{n}", path=f"Mitski/Unknown Album/{n}/x.mp3",
+                  title=f"Untitled {n}", album="[Unknown Album]",
+                  artist="Mitski", album_artist="Mitski", album_id=f"al-u{n}")
+
+    assert library.attention(identity)["together"] == []
+
+
+def test_a_record_key_drops_the_release_kind_and_keeps_any_script():
+    assert library.record_key("The Afterparty (Single)") == library.record_key(
+        "the afterparty")
+    assert library.record_key("Splice - EP") == library.record_key("splice")
+    assert library.record_key("ワーストリグレット") != library.record_key("マージナルソウル")
+    assert library.record_key("Deep") != library.record_key("De")
+    assert library.record_key("[Unknown Album]") is None
 
 
 def test_a_single_already_on_an_album_is_a_duplicate_not_a_piece(db, identity):

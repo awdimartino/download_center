@@ -218,8 +218,9 @@ export async function loadAttention() {
   const { section: together, body: groupList } = sectionShell({
     title: "Singles that belong together",
     count: groups.length,
-    why: "Songs downloaded one at a time arrive as an album each. "
-      + "Two or more by one artist are offered here to combine.",
+    why: "Pieces of one record filed apart, under names that differ only "
+      + "by \"(Single)\" or \"- EP\", or by case and punctuation. "
+      + "Offered here to combine.",
   });
   for (const group of groups) {
     const row = el("div", "lib-group");
