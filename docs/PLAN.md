@@ -58,7 +58,12 @@ Missing tracks in the album panel; the Quarantine page; and
 `duplicates-removed/` renamed `quarantine/`. Each is a checked item in
 Next, and in FEATURES.md.
 
-Open, in the order worth doing: the browser half of the Pi checks below;
+**Pushed but not deployed** (later on 2026-10-09; the Pi still runs
+`fd87b51`): the `DC_` fallback dropped, singles offered to combine only
+when they name one record, and Merge from Missing tracks. Deploy, then
+check the image's revision label and health.
+
+Open, in the order worth doing: deploy the above; the browser half of the Pi checks below;
 Alex's by-hand list (Operational backlog); Genre merge and rename; then
 Later.
 
@@ -173,6 +178,21 @@ old names are needed beyond migrating the Pi's own data.
       were left as history). The app still recognises the old name, only
       because folders buried by the old .ndignore bug sit inside the new
       one carrying it.
+      - [ ] **Retire the old name.** Checked 2026-10-09: 153 files sit in
+        `/music/quarantine/duplicates-removed/duplicates-removed/`, none
+        clashing with anything in `quarantine/`, each with a ledger row;
+        `/test` has only the marker files. Lift them to the path
+        `quarantine.original_path` gives, repoint their ledger rows, remove
+        the empty folders (state.db backed up first). Only then drop
+        `walk.OLD_QUARANTINE_NAMES`, `rename_old_folders` and its call in
+        `main.py`: before that, Restore of those files needs the old name.
+- [x] **Singles that belong together, fixed.** Done 2026-10-09 (not yet
+      deployed): every one-track folder by an artist was offered as one
+      album - 311 groups on the Pi, three real. Now they must name the same
+      record (`library.record_key`); FEATURES.md §8.
+- [x] **Merge from Missing tracks.** Done 2026-10-09 (not yet deployed):
+      a track in another album offers Merge…, opening the combine dialog
+      with this album and that copy (FEATURES.md §8).
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
       tally alone. Reuse the album editor's merge-search pattern: a debounced
       search across the genre tally, picking a target folds the source
@@ -266,9 +286,12 @@ September 2026 unless dated; verify before acting.
 - **5,572 imported plays are still day-granular**, because those tracks'
   artist tags changed since the import; `python -m app.lastfm <user>
   --times` after a tag cleanup picks up more.
-- **Playlist field vocabulary is unverified** end to end. `bpm` and
-  `compilation` are the least certain. A rejected field surfaces Navidrome's
-  own error naming it, so nothing fails silently.
+- **Playlist field vocabulary** checked against Navidrome's source
+  (`model/criteria/fields.go`, master, 2026-10-09): every field the editor
+  offers is accepted, `bpm` and `compilation` included; `genre` is a tag
+  and `artist` / `albumartist` are roles, added to the map at start-up. Not
+  yet a saved round trip against the Pi's own version. A rejected field
+  surfaces Navidrome's own error naming it, so nothing fails silently.
 
 ---
 
