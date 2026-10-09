@@ -13,7 +13,7 @@ spotipy==2.25.1
 # the matching one.
 yt-dlp[default,curl-cffi]==2026.8.19
 ytmusicapi==1.11.5
-mutagen==1.47.0
+mutagen==1.48.1
 
 # Squares cover art before it is embedded. A YouTube thumbnail is the video
 # frame, 16:9, with the album's square cover in the middle and bars either
