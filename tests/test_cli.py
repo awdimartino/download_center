@@ -21,7 +21,7 @@ def test_a_command_run_as_root_stops_before_doing_anything(name, monkeypatch):
     module = importlib.import_module(f"app.{name}")
     monkeypatch.setattr(cli.os, "geteuid", lambda: 0, raising=False)
     monkeypatch.delenv("NC_ALLOW_ROOT", raising=False)
-    monkeypatch.delenv("DC_ALLOW_ROOT", raising=False)
+    monkeypatch.delenv("NC_ALLOW_ROOT", raising=False)
     monkeypatch.setattr(sys, "argv", [name, "--help"])
 
     with pytest.raises(SystemExit) as stopped:
@@ -43,5 +43,5 @@ def test_the_apps_own_user_is_not_stopped(monkeypatch):
 
     monkeypatch.setattr(cli.os, "geteuid", lambda: 1000, raising=False)
     monkeypatch.delenv("NC_ALLOW_ROOT", raising=False)
-    monkeypatch.delenv("DC_ALLOW_ROOT", raising=False)
+    monkeypatch.delenv("NC_ALLOW_ROOT", raising=False)
     cli.not_as_root("survey")

@@ -2,7 +2,7 @@ services:
   navidrome-companion:
     # Pulls the published multi-arch image (amd64 + arm64).
     # To build from source instead, comment this out and uncomment `build`.
-    image: ${NC_IMAGE:-${DC_IMAGE:-ghcr.io/awdimartino/navidrome-companion:latest}}
+    image: ${NC_IMAGE:-ghcr.io/awdimartino/navidrome-companion:latest}
     # build: .
 
     container_name: navidrome-companion
@@ -25,13 +25,11 @@ services:
       # Where Navidrome answers, as seen from inside this container. Required
       # to sign in. Can be set in the Settings panel instead, except that
       # nobody can reach the Settings panel without signing in first.
-      # Each NC_ variable still falls back to its DC_ name from before
-      # 2026-10-09, so an older .env keeps working; rename them when you can.
-      NC_NAVIDROME_URL: ${NC_NAVIDROME_URL:-${DC_NAVIDROME_URL:-}}
+      NC_NAVIDROME_URL: ${NC_NAVIDROME_URL:-}
 
       # Optional: keeps credentials out of the config volume entirely.
-      NC_SPOTIFY_CLIENT_ID: ${NC_SPOTIFY_CLIENT_ID:-${DC_SPOTIFY_CLIENT_ID:-}}
-      NC_SPOTIFY_CLIENT_SECRET: ${NC_SPOTIFY_CLIENT_SECRET:-${DC_SPOTIFY_CLIENT_SECRET:-}}
+      NC_SPOTIFY_CLIENT_ID: ${NC_SPOTIFY_CLIENT_ID:-}
+      NC_SPOTIFY_CLIENT_SECRET: ${NC_SPOTIFY_CLIENT_SECRET:-}
 
     volumes:
       # config.toml, state.db, each person's beets config and an optional
@@ -41,8 +39,7 @@ services:
 
       # Scratch space: one inbox per person and library. Downloads are built
       # here and leave as soon as they are filed, so at rest it is empty.
-      # (STAGING_DIR is its name before 2026-10-09, still read.)
-      - ${WORKSPACE_DIR:-${STAGING_DIR:-./workspace}}:/downloads
+      - ${WORKSPACE_DIR:-./workspace}:/downloads
 
       # The library, at the SAME path Navidrome mounts it. Navidrome reports
       # where a library lives from its own database, and that path is used

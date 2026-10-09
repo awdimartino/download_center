@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-import logging
 import os
 import re
 import tomllib
@@ -12,35 +11,17 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
-log = logging.getLogger("navidrome_companion")
-
-# The environment variables' prefix. It was DC_, for Download Center, until
-# 2026-10-09; the old names are still read, with a warning, so an existing
-# .env or compose file keeps working while it is updated.
+# The environment variables' prefix.
 PREFIX = "NC_"
-OLD_PREFIX = "DC_"
-_warned_old: set[str] = set()
 
 
 def environ(name: str, default: str | None = None) -> str | None:
-    """An NC_ variable by its name without the prefix, or its DC_ spelling.
+    """An NC_ variable by its name without the prefix.
 
-    The new name wins when both are set. The old one is reported once per
-    process, by name, so the log says exactly what to rename. Empty counts
-    as unset: compose passes `NC_X: ${NC_X:-}` through as an empty string
-    when nothing sets it, which would otherwise hide a DC_X beside it.
+    Empty counts as unset: compose passes `NC_X: ${NC_X:-}` through as an
+    empty string when nothing sets it.
     """
-    value = os.environ.get(PREFIX + name)
-    if value:
-        return value
-    value = os.environ.get(OLD_PREFIX + name)
-    if value:
-        if name not in _warned_old:
-            _warned_old.add(name)
-            log.warning("%s%s is deprecated; rename it %s%s", OLD_PREFIX, name,
-                        PREFIX, name)
-        return value
-    return default
+    return os.environ.get(PREFIX + name) or default
 
 
 ROOT = Path(__file__).resolve().parent.parent

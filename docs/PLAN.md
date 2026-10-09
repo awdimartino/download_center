@@ -5,7 +5,7 @@ here disagrees with the code, the code is what shipped and this is what we
 meant. How things work today is in [FEATURES.md](FEATURES.md); known
 defects are in [CODE_REVIEW.md](CODE_REVIEW.md).
 
-Last updated: 2026-10-04.
+Last updated: 2026-10-09.
 
 ---
 
@@ -113,8 +113,8 @@ old names are needed beyond migrating the Pi's own data.
         The compose file's `DC_LASTFM_*` lines are `NC_` now, so nothing
         on the Pi uses an old name. Backups: `docker-compose.yml.bak-
         20261009-nc-rename` and `config/state.db.bak-20261009-nc-rename`.
-      - [ ] **Drop the `DC_` fallback.** Nothing on the Pi uses a `DC_`
-        name, and nobody else runs this, so it can go whenever convenient:
+      - [x] **Drop the `DC_` fallback.** Done 2026-10-09: nothing on the Pi used a `DC_`
+        name, and nobody else runs this, so it went:
         `config.environ`'s old-prefix branch, compose's `${DC_…}` and
         `${STAGING_DIR}` defaults, SETUP.md's mentions.
 - [x] **Split `app/main.py` into routers.** 2,287 lines holding every
@@ -279,7 +279,8 @@ Why things are the way they are, so they do not get re-litigated.
 - **2026-10-09 — The rest of the rename, with a fallback.** `NC_` replaced
   `DC_`, but the old names are still read for a release, because an `.env`
   nobody has looked at in months should not silently stop configuring the
-  app. The checkout folder keeps its name; see the Next list.
+  app. The checkout folder keeps its name; see the Next list The fallback was dropped the same
+  day, once the Pi's compose file was renamed: nobody else runs this.
 - **2026-10-09 — No MusicBrainz seeding.** Dropped from the plan: a "seed a
   release" button was only ever conditional on the cleanup showing a need,
   and it was not wanted.

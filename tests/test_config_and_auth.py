@@ -92,31 +92,24 @@ def test_load_remembers_which_keys_came_from_the_environment(tmp_path,
     assert "navidrome_user" in config.FROM_ENV
 
 
-# --- the DC_ names from before the rename -------------------------------------
+# --- the environment ----------------------------------------------------------
 
-def test_an_old_dc_name_still_sets_its_key_and_says_to_rename_it(tmp_path, monkeypatch,
-                                                                  caplog):
+def test_an_old_dc_name_is_ignored(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "none.toml")
     monkeypatch.delenv("NC_NAVIDROME_USER", raising=False)
     monkeypatch.setenv("DC_NAVIDROME_USER", "old")
     monkeypatch.setattr(config, "FROM_ENV", set())
-    monkeypatch.setattr(config, "_warned_old", set())
 
-    with caplog.at_level("WARNING"):
-        loaded = config.load()
+    loaded = config.load()
 
-    assert loaded.navidrome_user == "old"
-    assert "navidrome_user" in config.FROM_ENV
-    assert "rename it NC_NAVIDROME_USER" in caplog.text
+    assert loaded.navidrome_user != "old"
+    assert "navidrome_user" not in config.FROM_ENV
 
 
-def test_the_new_name_wins_and_an_empty_one_does_not(monkeypatch):
-    monkeypatch.setenv("DC_NAVIDROME_USER", "old")
-    monkeypatch.setenv("NC_NAVIDROME_USER", "new")
-    assert config.environ("NAVIDROME_USER") == "new"
+def test_an_empty_variable_counts_as_unset(monkeypatch):
     # What compose passes for a variable nothing set.
     monkeypatch.setenv("NC_NAVIDROME_USER", "")
-    assert config.environ("NAVIDROME_USER") == "old"
+    assert config.environ("NAVIDROME_USER", "fallback") == "fallback"
 
 
 def test_every_override_uses_the_new_prefix():

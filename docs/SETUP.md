@@ -131,7 +131,7 @@ need editing for a single library:
 |---|---|
 | `NC_IMAGE` | the image to run; `ghcr.io/awdimartino/navidrome-companion:latest` |
 | `LIBRARY_DIR` | the library, mounted at `/music` |
-| `WORKSPACE_DIR` | scratch space, mounted at `/downloads` (`STAGING_DIR` before 2026-10-09) |
+| `WORKSPACE_DIR` | scratch space, mounted at `/downloads` |
 | `CONFIG_DIR` | config, mounted at `/config` |
 | `NAVIDROME_DATA_DIR` | Navidrome's data directory, mounted read-only at `/navidrome` |
 | `PUID` / `PGID` | the user that should own written files |
@@ -238,7 +238,7 @@ sent back to the browser; a blank secret field means "leave it as it is".
 Settings live in `/config/config.toml`. Each key can also be set with an
 environment variable, `NC_` plus the key in capitals, and **the environment
 wins** over the file. (The prefix was `DC_` before 2026-10-09; those names
-are still read, with a warning in the log naming each one to rename.) A key set by the environment is shown locked in the
+are no longer read.) A key set by the environment is shown locked in the
 panel, since an edit there would revert at the next restart, and its value
 is never written to `config.toml`. (Before October 2026 saving the panel did
 copy environment secrets into the file; check yours if you set
@@ -431,8 +431,7 @@ The second half of the rename, on 2026-10-09, changed what was left:
 
 - **Environment variables** are `NC_…` instead of `DC_…`, and the
   scratch-space variable is `WORKSPACE_DIR` instead of `STAGING_DIR`. The
-  old names still work, for the app and in the shipped compose file, and
-  each `DC_` one is named in the log at start-up until it is renamed.
+  old names are no longer read, by the app or the shipped compose file.
 - **The container user** is `companion` instead of `downloader`, with the
   same uid, so files on disk keep their owner. Scripts that run
   `docker exec -u downloader` need the new name.
