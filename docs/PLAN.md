@@ -63,17 +63,18 @@ finished; what is left here is checking the deploy on the Pi.
 - [x] **Fix the review's low findings.** Done 2026-10-04, one commit
       each. L19 was decided: a source at or below 192 kbps is encoded at
       192. L37 had already been fixed by M27 and only gained a test.
-- [ ] **Check on the Pi** (deployed 2026-10-08; these checks are not
-      recorded as done): the state.db migrations
-      (`play_collection`, `duplicate_dismissed.decided_by`), the new caches'
-      cost, and Health's stamped-but-not-scanned row clearing (H6). From the
-      lows: the page still works through the real browser and LAN address
-      with the new same-origin check (L38) - downloads, the socket, a save
-      in Settings; a direct YouTube link still queues (L42 resolves its
-      host); `config/.cover-survey.json` appears after a survey and the
-      Cover flags survive a restart (L21); `tools/` is in the image (L34);
-      the session cookie is re-sent after a day (L33); a YouTube download
-      lands at 192 kbps (L19).
+- [ ] **Check on the Pi.** Server side done 2026-10-09 against image
+      8948bb3: both state.db migrations are in (`play_collection`,
+      `duplicate_dismissed.decided_by`); Home's statistics cost 0.31s cold
+      and 0.03s cached; `tools/` is in the image (L34);
+      `config/.cover-survey.json` survived the restart (L21); a direct
+      YouTube link passes the network guard and a LAN address is refused
+      (L42); a cross-site POST gets 403 and a same-origin one reaches the
+      session check (L38); a real YouTube download landed at 192 kbps
+      (L19). **Still to check:** Health's *Stamped but not yet scanned*
+      row once the disk audit has run (H6); and, in a browser, downloads
+      and the socket over the LAN address, a save in Settings, and the
+      cookie being re-sent after a day (L33).
 - [x] **The review's readability items.** Done; every item in
       CODE_REVIEW.md is ticked (168 of 168) as of 2026-10-08.
 
