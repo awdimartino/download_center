@@ -188,6 +188,14 @@ def library(tmp_path, monkeypatch, state_db):
     monkeypatch.setattr(worker.downloader, "download", download)
     monkeypatch.setattr(worker.matcher, "find",
                         lambda item: ("https://example.invalid/x", 0.9, {}))
+    # Every other source has nothing, so no test here reaches SoundCloud or
+    # Bandcamp. The fallback tests below say otherwise where they need to.
+    def only_youtube(source, item):
+        if source == "youtube":
+            return worker.matcher.find(item)
+        raise worker.matcher.MatchError(f"nothing on {source}")
+
+    monkeypatch.setattr(worker.sources, "find", only_youtube)
     monkeypatch.setattr(worker.navidrome, "notify", lambda *a, **k: False)
     # The real tagger runs: it is what decides where the file is filed now,
     # so stubbing it would test nothing. No item here carries a cover_url, so
@@ -473,3 +481,142 @@ async def test_a_retry_that_succeeds_leaves_no_error_behind(library, monkeypatch
     assert len(attempts) == 2
     assert items[0]["status"] == "complete"
     assert items[0]["error"] is None
+
+
+# --- more than one place to look ---------------------------------------------
+# YouTube Music had nothing good enough, or refused the download (a 403), and
+# the track failed with the song a search away on SoundCloud or Bandcamp.
+
+def _sources(monkeypatch, answers, quality=None):
+    """Each source's answer: (url, score, parts), or an exception to raise."""
+    asked = []
+
+    def find(source, item):
+        asked.append(source)
+        answer = answers.get(source, worker.matcher.MatchError(f"nothing on {source}"))
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(worker.sources, "find", find)
+    probed = []
+
+    def measure(url):
+        probed.append(url)
+        return (quality or {}).get(url, 0.0)
+
+    monkeypatch.setattr(worker.sources, "quality", measure)
+    return asked, probed
+
+
+SURE = {"duration": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_nothing_on_youtube_music_falls_back_to_soundcloud(library, monkeypatch):
+    asked, probed = _sources(monkeypatch, {
+        "youtube": worker.matcher.MatchError("Best candidate scored 0.41"),
+        "soundcloud": ("https://soundcloud.com/a/b", 0.93, SURE)})
+
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    assert items[0]["status"] == "complete"
+    assert items[0]["source"] == "soundcloud"
+    assert items[0]["match_url"] == "https://soundcloud.com/a/b"
+    # Bandcamp is not asked once something delivered, nor anything measured
+    # with only one copy to choose.
+    assert asked == ["youtube", "soundcloud"] and probed == []
+
+
+@pytest.mark.asyncio
+async def test_a_refused_download_tries_the_next_source(library, monkeypatch):
+    _sources(monkeypatch, {
+        "youtube": ("https://music.youtube.com/watch?v=x", 0.95, SURE),
+        "soundcloud": ("https://soundcloud.com/a/b", 0.75, {"duration": 0.6})})
+    real = worker.downloader.download
+    tried = []
+
+    def download(url, destination, on_progress=None, stop=None):
+        tried.append(url)
+        if "youtube" in url:
+            raise worker.downloader.DownloadError("HTTP Error 403: Forbidden")
+        return real(url, destination, on_progress)
+
+    monkeypatch.setattr(worker.downloader, "download", download)
+    from app.config import settings
+    monkeypatch.setattr(settings, "max_attempts", 1)
+
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    assert items[0]["status"] == "complete"
+    assert items[0]["source"] == "soundcloud"
+    assert tried == ["https://music.youtube.com/watch?v=x", "https://soundcloud.com/a/b"]
+
+
+@pytest.mark.asyncio
+async def test_bandcamp_is_the_last_resort(library, monkeypatch):
+    asked, _ = _sources(monkeypatch, {
+        "bandcamp": ("https://x.bandcamp.com/track/y", 0.9, SURE)})
+
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    assert asked == ["youtube", "soundcloud", "bandcamp"]
+    assert items[0]["source"] == "bandcamp"
+
+
+@pytest.mark.asyncio
+async def test_when_every_source_fails_the_error_says_what_each_said(library, monkeypatch):
+    _sources(monkeypatch, {
+        "youtube": worker.matcher.MatchError("Best candidate scored 0.41"),
+        "soundcloud": worker.matcher.SearchUnavailable("HTTP Error 429")})
+
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    error = items[0]["error"]
+    assert items[0]["status"] == "failed"
+    assert "YouTube Music: Best candidate scored 0.41" in error
+    assert "SoundCloud: could not search" in error
+    assert "Bandcamp: nothing on bandcamp" in error
+
+
+@pytest.mark.asyncio
+async def test_two_certain_matches_go_to_the_better_sounding_copy(library, monkeypatch):
+    youtube, original = "https://music.youtube.com/watch?v=x", "https://soundcloud.com/a/b"
+    _, probed = _sources(monkeypatch, {
+        "youtube": (youtube, 0.97, SURE), "soundcloud": (original, 0.94, SURE)},
+        quality={youtube: 195.0, original: 1411.0})
+    tried = []
+    real = worker.downloader.download
+
+    def download(url, destination, on_progress=None, stop=None):
+        tried.append(url)
+        return real(url, destination, on_progress)
+
+    monkeypatch.setattr(worker.downloader, "download", download)
+
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    assert sorted(probed) == sorted([youtube, original])
+    assert tried == [original]
+    assert items[0]["source"] == "soundcloud"
+    assert items[0]["quality"] == {"youtube": 195, "soundcloud": 1411}
+
+
+@pytest.mark.asyncio
+async def test_a_doubtful_second_match_is_not_measured_against_a_certain_one(library,
+                                                                           monkeypatch):
+    _, probed = _sources(monkeypatch, {
+        "youtube": ("https://music.youtube.com/watch?v=x", 0.97, SURE),
+        "soundcloud": ("https://soundcloud.com/a/b", 0.78, {"duration": 0.5})},
+        quality={"https://soundcloud.com/a/b": 1411.0})
+
+    items = [_track(1, "Come Together")]
+    await _run(library, items)
+
+    assert probed == []
+    assert items[0]["source"] == "youtube"

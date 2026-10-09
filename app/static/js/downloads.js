@@ -39,6 +39,20 @@ const STEP = {
 
 // Which shelf a job sits on. "partial" is a failure as far as you are
 // concerned: something you asked for did not arrive.
+// Where a track is being looked for or came from, when that is worth
+// saying: YouTube Music is the usual place, so only the others are named.
+const SOURCE = { soundcloud: "SoundCloud", bandcamp: "Bandcamp" };
+
+function stepOf(item) {
+  if (item.warning) return "Done, no identity";
+  if (item.status === "matching" && item.source === "compare") return "Comparing copies";
+  const where = SOURCE[item.source];
+  if (where && item.status === "matching") return `Trying ${where}`;
+  if (where && ["downloading", "retrying"].includes(item.status)) return `${STEP[item.status]} from ${where}`;
+  if (where && item.status === "complete") return `Done · ${where}`;
+  return STEP[item.status] || item.status;
+}
+
 export function jobGroup(job) {
   if (job.status === "complete") return "done";
   if (["failed", "partial", "cancelled"].includes(job.status)) return "attention";
@@ -102,7 +116,7 @@ function describe(job) {
   }
   const current = job.items.find((i) => MOVING.has(i.status));
   if (!current) return "Waiting its turn";
-  if (n === 1) return STEP[current.status];
+  if (n === 1) return stepOf(current);
   return `${settledCount(job)} of ${n} · ${current.title}`;
 }
 
@@ -192,7 +206,7 @@ function updateJob(job) {
     const rows = job.items.map((item) => {
       const row = el("div", "dl-trk");
       const status = el("span", `dl-trk-st ${item.status}${item.warning ? " warn" : ""}`,
-        item.warning ? "Done, no identity" : STEP[item.status] || item.status);
+        stepOf(item));
       const name = el("span", "dl-trk-name", item.title);
       if (item.error || item.warning) name.title = item.error || item.warning;
       row.append(name, status);

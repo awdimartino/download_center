@@ -19,6 +19,7 @@ from typing import Any
 
 import yt_dlp
 
+from . import downloader
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.generic")
@@ -148,7 +149,8 @@ def _options(**extra: Any) -> dict[str, Any]:
     members-only video failed here though it would have downloaded.
     """
     options: dict[str, Any] = {"quiet": True, "no_warnings": True,
-                               "skip_download": True, **extra}
+                               "skip_download": True,
+                               "cachedir": str(downloader.YTDLP_CACHE), **extra}
     cookies = settings.cookies_file
     if cookies:
         options["cookiefile"] = str(cookies)

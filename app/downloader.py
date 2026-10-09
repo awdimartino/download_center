@@ -11,11 +11,17 @@ from collections.abc import Callable
 import yt_dlp
 from yt_dlp.postprocessor.ffmpeg import FFmpegExtractAudioPP
 
-from .config import settings
+from .config import CONFIG_DIR, settings
 
 log = logging.getLogger("navidrome_companion.downloader")
 
 ProgressHook = Callable[[float], None]
+
+# Where yt-dlp keeps what it learns between runs: SoundCloud's client id,
+# YouTube's player code. Its default is ~/.cache, and the app's user has
+# /app as its home, which it cannot write - so every search fetched them
+# again, and said so in a traceback.
+YTDLP_CACHE = CONFIG_DIR / ".cache" / "yt-dlp"
 
 
 class DownloadError(Exception):
@@ -156,6 +162,7 @@ def download(url: str, destination: Path, on_progress: ProgressHook | None = Non
         "updatetime": False,
         "retries": 3,
         "fragment_retries": 3,
+        "cachedir": str(YTDLP_CACHE),
     }
 
     cookies = settings.cookies_file

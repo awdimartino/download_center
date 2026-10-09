@@ -21,7 +21,7 @@ import threading
 from typing import Any
 from collections.abc import Awaitable, Callable
 
-from . import downloader, inbox, matcher, navidrome, tagger, threads
+from . import downloader, inbox, matcher, navidrome, sources, tagger, threads
 from . import workspace
 from .config import settings
 
@@ -154,8 +154,9 @@ async def _download_with_retries(item: dict[str, Any], url: str, temp) -> Any:
     return await _retrying(item, "download", downloader.DownloadError, attempt)
 
 
-async def _match_with_retries(item: dict[str, Any]) -> Any:
-    """Find the recording, retrying only when the search itself failed.
+async def _match_with_retries(item: dict[str, Any], source: str) -> Any:
+    """Find the recording on one source, retrying only when the search itself
+    failed.
 
     A MatchError means the results were seen and none of them was good
     enough; asking again returns the same results. A SearchUnavailable means
@@ -165,9 +166,85 @@ async def _match_with_retries(item: dict[str, Any]) -> Any:
     YouTube's catalogue for a problem with the connection.
     """
     async def attempt(n: int) -> Any:
-        return await _until_done(matcher.find, item)
+        return await _until_done(sources.find, source, item)
 
     return await _retrying(item, "search", matcher.SearchUnavailable, attempt)
+
+
+async def _fetch(item: dict[str, Any], temp) -> Any:
+    """Match and download, from the best source that will deliver.
+
+    YouTube Music and SoundCloud are both searched. When both have a
+    confirmed match - the right song, beyond doubt - the better sounding one
+    is downloaded first (sources.quality); otherwise the order is YouTube
+    Music, then SoundCloud. Whatever fails - no good recording, or a
+    download refused - the next is tried, and Bandcamp last of all, rather
+    than failing with a working copy a search away.
+
+    Returns the downloaded path, or None with the item marked failed and
+    every source's reason in its error, so "failed" says what was tried.
+    """
+    reasons: list[str] = []
+    found: list[tuple[str, str, float, dict[str, float]]] = []
+
+    async def search(source: str) -> None:
+        name = sources.NAMES[source]
+        _mark(item, "matching", source=source)
+        try:
+            url, score, parts = await _match_with_retries(item, source)
+        except matcher.MatchError as exc:
+            # Not retried: an identical search returns identical results.
+            reasons.append(f"{name}: {exc}")
+        except matcher.SearchUnavailable as exc:
+            reasons.append(f"{name}: could not search ({exc})")
+        except Exception as exc:
+            reasons.append(f"{name}: search error ({exc})")
+        else:
+            found.append((source, url, score, parts))
+
+    async def download(source: str, url: str, score: float) -> Any:
+        name = sources.NAMES[source]
+        item.update(source=source, match_url=url, match_score=round(score, 3))
+        try:
+            return await _download_with_retries(item, url, temp)
+        except downloader.DownloadError as exc:
+            reasons.append(f"{name}: download failed ({exc})")
+            item["progress"] = 0
+            log.info("%s: %s download failed, trying the next source",
+                     item.get("title"), name)
+            return None
+
+    for source in sources.COMPARED:
+        await search(source)
+
+    sure = [one for one in found if sources.confirmed(one[2], one[3])]
+    if len(sure) > 1:
+        # Only worth asking when there is a choice: each answer is one more
+        # request to the source, per track.
+        _mark(item, "matching", source="compare")
+        worth = {url: await _until_done(sources.quality, url)
+                 for _source, url, _score, _parts in sure}
+        item["quality"] = {source: round(worth[url]) for source, url, *_ in sure}
+        sure.sort(key=lambda one: worth[one[1]], reverse=True)
+        found = sure + [one for one in found if one not in sure]
+
+    for source, url, score, _parts in found:
+        path = await download(source, url, score)
+        if path is not None:
+            return path
+
+    for source in sources.ORDER:
+        if source in sources.COMPARED:
+            continue
+        found.clear()
+        await search(source)
+        for one_source, url, score, _parts in found:
+            path = await download(one_source, url, score)
+            if path is not None:
+                return path
+
+    _mark(item, "failed", error=" · ".join(reasons)[:600], progress=0)
+    return None
 
 
 async def _process(item: dict[str, Any], space: workspace.Workspace,
@@ -202,40 +279,22 @@ async def _process_item(item: dict[str, Any], space: workspace.Workspace,
         return
 
     async with gate:
+        temp = inbox.scratch_path(space, job_id, item["id"])
         # Items from a direct link already name their audio, so there is
-        # nothing to search for and no confidence to score.
+        # nothing to search for, no confidence to score and nowhere else to
+        # look.
         direct = item.get("direct_url")
         if direct:
-            url = direct
             item["match_url"] = direct
-        else:
-            _mark(item, "matching")
             try:
-                url, score, _parts = await _match_with_retries(item)
-            except matcher.MatchError as exc:
-                # Not retried: an identical search returns identical results,
-                # so trying again only burns time. This is a judgement about
-                # the results, not about reaching YouTube - see
-                # _match_with_retries for the case that is worth another go.
-                _mark(item, "failed", error=str(exc))
+                path = await _download_with_retries(item, direct, temp)
+            except downloader.DownloadError as exc:
+                _mark(item, "failed", error=str(exc)[:200], progress=0)
                 return
-            except matcher.SearchUnavailable as exc:
-                _mark(item, "failed",
-                      error=f"Could not reach YouTube Music: {exc}"[:200])
+        else:
+            path = await _fetch(item, temp)
+            if path is None:
                 return
-            except Exception as exc:
-                _mark(item, "failed", error=f"Search error: {exc}"[:200])
-                return
-
-            item["match_url"] = url
-            item["match_score"] = round(score, 3)
-
-        temp = inbox.scratch_path(space, job_id, item["id"])
-        try:
-            path = await _download_with_retries(item, url, temp)
-        except downloader.DownloadError as exc:
-            _mark(item, "failed", error=str(exc)[:200], progress=0)
-            return
 
         _mark(item, "tagging", progress=1.0)
         try:
@@ -298,7 +357,7 @@ def _item_state(item: dict[str, Any]) -> tuple:
     per file and nobody can see a thousandth of a bar move.
     """
     return (item["status"], round((item.get("progress") or 0) * 100),
-            item.get("error"))
+            item.get("error"), item.get("source"))
 
 
 async def _pusher(job: dict[str, Any], push: Push,

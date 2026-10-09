@@ -125,8 +125,11 @@ async def push_progress(job: dict[str, Any], changed: list) -> None:
         "id": job["id"],
         "status": job["status"],
         "error": job.get("error"),
+        # `source` too: a track moving from YouTube Music to SoundCloud is
+        # still "matching", and the row says which it is asking.
         "items": [{"id": i["id"], "status": i["status"],
-                   "progress": i.get("progress"), "error": i.get("error")}
+                   "progress": i.get("progress"), "error": i.get("error"),
+                   "source": i.get("source")}
                   for i in changed],
     }, owner=job.get("owner"))
 

@@ -437,6 +437,27 @@ title doubles as the album.
    A wrong file is far more expensive to find and undo than a missing one
    is to fetch, so a doubtful match fails rather than downloads, and you can
    retry it.
+
+   **Other sources** (`sources.py`, since 2026-10-09). SoundCloud is
+   searched too, for every track, and Bandcamp is the last resort. Both are
+   scored the same way, with one extra rule: the length must be known and
+   within 15 seconds, because a major label's SoundCloud upload is a
+   30-second preview with the right title and artist. A re-upload naming
+   the artist in its title ("Radiohead - Karma Police", "Teardrop ●
+   Massive Attack") is read both ways round. Bandcamp's search does not
+   give lengths, so only its three best-named results are opened to check.
+
+   **Which copy.** When YouTube Music and SoundCloud both have a
+   *confirmed* match (score at least 0.90, length within 3 seconds), the
+   one that sounds better is downloaded: each offered format is rated in
+   MP3-equivalent kbps (Opus × 1.5, AAC × 1.3, lossless as 1411), so an
+   artist's downloadable original on SoundCloud beats YouTube's Opus, and
+   YouTube's Opus beats SoundCloud's 128 kbps MP3. Otherwise the order is
+   YouTube Music, SoundCloud, Bandcamp. Whatever fails, a match or a
+   download (a 403 from YouTube), the next source is tried, and a track
+   that fails everywhere says what each source answered. The Queue names
+   the source while it is tried ("Trying SoundCloud") and on a finished
+   track that did not come from YouTube Music ("Done · Bandcamp").
 3. **Download.** yt-dlp fetches the best audio and ffmpeg converts it to MP3
    at the configured bitrate (320 kbps by default) - or at 192 when the
    source is no better than that, which is most of YouTube (Opus at
