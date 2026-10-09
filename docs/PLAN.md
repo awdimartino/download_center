@@ -79,18 +79,23 @@ finished; what is left here is checking the deploy on the Pi.
 
 ### Next
 
-- [x] **Finish the rename: retire the Download Center leftovers.** Done
-      2026-10-09. Environment variables are `NC_…` (the `DC_` names are
+- [ ] **Finish the rename: retire the Download Center leftovers.** Code
+      done 2026-10-09. Environment variables are `NC_…` (the `DC_` names are
       still read, with a warning naming each, and the shipped compose
       falls back to them), `STAGING_DIR` is `WORKSPACE_DIR`, the session
       cookie is `nc_session` (everyone signed out once), the container user
       is `companion` (same uid), the source default workspace is
-      `workspace/`, and the Pi's config folder moved to
-      `~/Docker/navidrome-companion/config`. **Left as it is:** the local
+      `workspace/`. **Not deployed yet.** **Left as it is:** the local
       checkout folder `download_center`. Renaming it would orphan the
       assistant's memory, which is keyed on the folder's path, and the
       IDE workspace, for nothing anyone sees.
-      - **Drop the `DC_` fallback** a release or two later, once nothing
+      - [ ] **Deploy it, and move the Pi's config folder** with it:
+        stop the container, back up `state.db`, move
+        `~/Docker/download-center` to `~/Docker/navidrome-companion`, point
+        the `/config` mount there and rename the compose file's
+        `DC_LASTFM_*` lines to `NC_`. Nothing else on the Pi refers to the
+        folder or to the `downloader` user (checked 2026-10-09).
+      - [ ] **Drop the `DC_` fallback** a release or two later, once nothing
         logs the deprecation warning.
 - [x] **Split `app/main.py` into routers.** 2,287 lines holding every
       route. The review proposes a split. **Done** (CODE_REVIEW R1):
