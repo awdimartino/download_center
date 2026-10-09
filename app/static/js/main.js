@@ -17,6 +17,7 @@ import { loadPlaylists } from "./playlists.js";
 import { loadSettings, checkSpotify } from "./settings.js";
 import { focusSearchIfPointer } from "./browse.js";
 import { loadForYou } from "./foryou.js";
+import { loadQuarantine, loadQuarantineCount } from "./quarantine.js";
 // No bindings needed from this one - it wires its own DOM listeners as a
 // side effect of being imported, the same as every other panel module.
 import "./drop.js";
@@ -127,6 +128,7 @@ Object.assign(viewHandlers, {
   health: loadHealth,
   dupes: loadDupes,
   playlists: loadPlaylists,
+  quarantine: loadQuarantine,
   settings: loadSettings,
 });
 
@@ -169,6 +171,7 @@ function start() {
     loadHealth();
     loadLibrary();
     checkSpotify();
+    loadQuarantineCount();
   });
   healthTimer = setInterval(loadHealth, 5 * 60 * 1000);
 }

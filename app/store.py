@@ -86,7 +86,10 @@ CREATE TABLE IF NOT EXISTS duplicate_quarantined (
     keeper_path  TEXT,
     decided_by   TEXT,
     moved_at     TEXT NOT NULL,
-    restored_at  TEXT
+    restored_at  TEXT,
+    -- Deleted for good from the Quarantine page. The row stays: it is the
+    -- record that the file existed, where it came from, and who removed it.
+    deleted_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_quarantined_group
     ON duplicate_quarantined(group_key);
@@ -249,6 +252,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if "day" in columns and "played_at" not in columns:
             conn.execute(
                 "ALTER TABLE play_imported RENAME COLUMN day TO played_at")
+
+    # duplicate_quarantined gains `deleted_at` (the Quarantine page's
+    # Delete for good).
+    if "duplicate_quarantined" in tables:
+        columns = {row[1] for row in
+                   conn.execute("PRAGMA table_info(duplicate_quarantined)")}
+        if "deleted_at" not in columns:
+            conn.execute("ALTER TABLE duplicate_quarantined ADD COLUMN"
+                         " deleted_at TEXT")
 
     # play_snapshot_run gains `without_uuid`.
     if "play_snapshot_run" in tables:
@@ -555,20 +567,32 @@ def quarantined(limit: int | None = 200,
     """Everything set aside, newest first. The list you undo from. A limit
     of None reads every row."""
     assert _conn is not None, "state.db not connected"
-    where = "" if include_restored else " WHERE restored_at IS NULL"
+    where = ("" if include_restored
+             else " WHERE restored_at IS NULL AND deleted_at IS NULL")
     with _lock:
         rows = _conn.execute(
             "SELECT id, group_key, track_id, library_id, title, artist, album,"
             "       source_path, target_path, keeper_id, keeper_path,"
-            "       decided_by, moved_at, restored_at"
+            "       decided_by, moved_at, restored_at, deleted_at"
             f"  FROM duplicate_quarantined{where}"
             "  ORDER BY id DESC LIMIT ?",
             (-1 if limit is None else limit,)).fetchall()
     keys = ("id", "group_key", "track_id", "library_id", "title", "artist",
             "album", "source_path", "target_path", "keeper_id", "keeper_path",
-            "decided_by", "moved_at", "restored_at")
+            "decided_by", "moved_at", "restored_at", "deleted_at")
     # strict: the column list and the SELECT above have to stay in step, and
     # a silent truncation here would shift every field one to the left.
     return [dict(zip(keys, row, strict=True)) for row in rows]
 
 
+def stamp_quarantine(row_ids: list[int], what: str) -> None:
+    """Record that set-aside files were put back ("restored") or deleted for
+    good ("deleted"), from the Quarantine page."""
+    column = {"restored": "restored_at", "deleted": "deleted_at"}[what]
+    if not row_ids:
+        return
+    stamp = datetime.now(UTC).isoformat(timespec="seconds")
+    with transaction() as conn:
+        conn.executemany(
+            f"UPDATE duplicate_quarantined SET {column} = ? WHERE id = ?",
+            [(stamp, row_id) for row_id in row_ids])

@@ -142,6 +142,12 @@ finished; what is left here is checking the deploy on the Pi.
       MusicBrainz release the files carry (Spotify otherwise), an edition
       switcher, and Download per track or for all of them, tagged into
       this album (FEATURES.md §8, `app/albumcheck.py`, `app/musicbrainz.py`).
+- [x] **Quarantine as a general "remove".** Done 2026-10-09: a
+      Quarantine page (FEATURES.md §9a) listing everything set aside, with
+      Restore (to where it was, stars and plays included) and Delete for
+      good; and Quarantine from the Library's selection bar and song
+      search results. Duplicates links to it instead of its own read-only
+      list.
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
       tally alone. Reuse the album editor's merge-search pattern: a debounced
       search across the genre tally, picking a target folds the source

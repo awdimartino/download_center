@@ -143,7 +143,8 @@ changing Settings, and forcing a play-count reading.
 ### Navigation
 
 One menu button at every width opens a full-height panel: Home, Library,
-Download, Drop, Playlists, Duplicates, Health, then Settings, your name and
+Download, Drop, Playlists, Duplicates, Quarantine (with a quiet count of
+what is set aside, not a badge), Health, then Settings, your name and
 the libraries you can see, and Sign out. The header shows the current
 view's name and a connection pill (live/offline, from the WebSocket).
 
@@ -926,12 +927,17 @@ its own dialog instead of offering an undo.
 
 ### Quarantine
 
-**Quarantine album** and **Quarantine this track** move files out of the
-library into `duplicates-removed/` (section 9), recorded in the same
-ledger. The files to move are taken from Navidrome's index for that folder,
-never from the request. Stars are not migrated, since there is no other copy
-to move them to. It confirms first; putting a file back is a manual job.
-It is refused while the inbox is still filing into that album.
+Four ways to take music out of the library, all confirming first:
+**Quarantine album** (the album's More menu), **Quarantine this track**
+(a track's More…), **Quarantine…** on the select-mode bar (every selected
+album and loose track), and **Remove** on a song in the Library's search
+results. Each moves the files into `duplicates-removed/` (section 9),
+recorded in the same ledger, where the **Quarantine page** (section 9a)
+can put them back or delete them for good. The files to move are taken
+from Navidrome's index for that folder, never from the request. Stars are
+not migrated - there is no other copy to move them to - and they come back
+with the file on a restore. It is refused while the inbox is still filing
+into that album.
 
 When the last track leaves a folder (by quarantine or a resolved
 duplicate), its folder cover follows the tracks to the same place inside
@@ -1023,11 +1029,38 @@ original deleted, and the copy destroyed by the next update.) It holds an
 one is read as a list of patterns and lets everything else back in, so the
 app rewrites it if it is not empty — and a `README.txt` saying all this.
 
-**Set aside** at the bottom of the panel lists what is there, matched
-against the record, so both kinds of disagreement show: a file with no
-record (moved by hand or by an old version), and a record whose file has
-gone. Read-only on purpose: putting a copy back means deciding about the one
-kept, which is not a decision to make from a list.
+What is in it is on the Quarantine page, below.
+
+---
+
+## 9a. Quarantine
+
+Everything set aside, from either road - removed by hand in the Library,
+or the losing copy of a duplicate - an album to a card, newest first
+(`quarantine.py`, `quarantine.js`). The disk is read and the ledger joined
+on, so a file an older version set aside, with no record, is listed too,
+named from its own tags; one buried under
+`duplicates-removed/duplicates-removed/…` by the old .ndignore bug is
+listed under the folder it really came from.
+
+- **Filters and search:** All, Removed by hand, Duplicates, No record; and
+  a search over artist, album, title and path.
+- **Restore** (a track, or **Restore all** for an album) moves the file
+  back to the path it came from. That is how Navidrome knows it - its track
+  UUID never changed - so its stars and plays return on the next scan,
+  which is asked for. If the path is taken (often by the copy kept in its
+  place), the file is filed by its tags instead, under a new name if it
+  must be. The album's folder cover comes back with its last track.
+  Restoring the loser of a duplicate pair asks first: it is a duplicate
+  again, and will be back on the Duplicates page.
+- **Delete…** (a track, or **Delete all…**) removes the file from disk
+  after a confirmation. **Delete everything older than** 30 days, 90 days
+  or a year does the same for everything set aside before then. The
+  ledger row stays, stamped `deleted_at`, as the record that it existed.
+- Every path arrives as `<library id>:<path inside the quarantine>` and is
+  acted on only once it resolves to a file inside the quarantine of a
+  library you can see. Restores and deletes hold the libraries' folder
+  locks, so no edit, match or ReplayGain run meets a file mid-move.
 
 ---
 
@@ -1201,10 +1234,12 @@ administrator.
 | POST | `/api/library/combine` · `/combine/guess` | combine / name suggestion |
 | POST | `/api/library/replaygain` · `/replaygain/stop` | ReplayGain |
 | POST | `/api/library/quarantine` · `/track/quarantine` | set aside |
+| GET | `/api/quarantine` | everything set aside, by album |
+| POST | `/api/quarantine/restore` · `/delete` · `/empty` | put back / delete for good / delete older than N days |
 | POST | `/api/library/rescan` | ask Navidrome to scan |
 | GET | `/api/operations` | long operations' status |
 | GET | `/api/health` · POST `/api/health/audit` | Health / re-read files |
-| GET | `/api/duplicates` · `/api/duplicates/quarantined` | groups / set-aside list |
+| GET | `/api/duplicates` | duplicate groups |
 | POST | `/api/duplicates/resolve` · `/dismiss` · `/auto` · `/auto/apply` | resolve / keep both / preview confident / resolve exactly those |
 | GET · POST | `/api/playlists` | list / create smart playlists |
 | PUT · DELETE | `/api/playlists/{id}` | save / delete |

@@ -597,23 +597,6 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
    A read-only ledger of what has already been removed from the library.
    Collapsed by default: it answers a question you only occasionally ask. */
 
-#quarantine {
-  margin-top: var(--s-5);
-  border-top: 1px solid var(--line-soft);
-  border-bottom: 1px solid var(--line-soft);
-}
-#quarantine > summary {
-  padding: var(--s-3) 0;
-  cursor: pointer;
-  font-size: var(--t-md);
-  font-weight: var(--w-medium);
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-}
-#quarantine > summary:hover { color: var(--text); }
-#quarantine[open] > summary { border-bottom: 1px solid var(--line-soft); }
 .pill {
   font-weight: var(--w-normal);
   font-size: var(--t-xs);
@@ -626,34 +609,7 @@ main:has(#view-library:not([hidden])) { max-width: 1400px; }
   color: var(--faint);
 }
 
-.quarantined {
-  display: grid;
-  grid-template-columns: minmax(9rem, 1.3fr) 1fr 1.6fr auto;
-  gap: var(--s-3);
-  align-items: baseline;
-  padding: var(--s-2) var(--s-4);
-  border-top: 1px solid var(--line-soft);
-  font-size: var(--t-sm);
-}
-.quarantined-name { font-weight: var(--w-medium); overflow-wrap: anywhere; }
-.quarantined-album { color: var(--muted); }
-.quarantined-path {
-  color: var(--faint);
-  font-size: var(--t-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl;
-  text-align: left;
-}
-.quarantined-size { font-variant-numeric: tabular-nums; color: var(--faint); }
-.quarantined-note {
-  grid-column: 1 / -1;
-  font-size: var(--t-xs);
-  color: var(--warn);
-}
 /* Recorded as set aside, but not where it was put. */
-.quarantined.gone .quarantined-name { color: var(--faint); text-decoration: line-through; }
 
 /* --- queue ---------------------------------------------------------------- */
 
@@ -1758,8 +1714,6 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
   .dupe-copy { grid-template-columns: auto 1fr; gap: var(--s-1) var(--s-3); padding: var(--s-2); margin: 0; }
   .dupe-copy input { width: 20px; height: 20px; }
   .dupe-copy-title, .dupe-spec, .dupe-album, .dupe-path, .dupe-star { grid-column: 2; }
-  .quarantined { grid-template-columns: 1fr; gap: var(--s-1); padding: var(--s-3) var(--s-4); }
-  .quarantined-note { grid-column: 1; }
   /* Otherwise the star falls into the radio column and hangs under it. */
   .dupe-star { justify-self: start; }
   .dupe-path { direction: ltr; font-size: var(--t-xs); }
@@ -2179,6 +2133,10 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
   text-align: left;
 }
 .lib-song:hover { background: var(--panel); }
+.lib-songs .lib-song { cursor: pointer; }
+.lib-songs .lib-song .lib-song-end { grid-column: 3; grid-row: 1 / span 2; }
+.lib-songs .lib-song { grid-template-columns: 36px minmax(0, 1fr) auto; }
+.lib-song-remove { min-height: 28px; }
 .lib-song .art { width: 36px; height: 36px; grid-row: span 2; }
 .lib-song-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-md); }
 
@@ -2425,6 +2383,64 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 
 .lib-tracks-head { display: flex; align-items: baseline; justify-content: space-between; }
 .lib-tracks { border-top: 1px solid var(--line-soft); }
+
+/* --- quarantine ---------------------------------------------------------------
+   Set-aside tracks, an album to a card, each with Restore and Delete. */
+
+.nav-count { color: var(--faint); font-size: var(--t-sm); font-weight: var(--w-normal); font-variant-numeric: tabular-nums; }
+.nav-count[hidden] { display: none; }
+.link-button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+}
+.link-button:hover { background: transparent; color: var(--text); }
+
+.q-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); margin: var(--s-3) 0 var(--s-4); }
+.q-summary { flex: 1 1 100%; margin: 0; color: var(--muted); font-size: var(--t-md); }
+.q-search { flex: 1 1 14rem; }
+.q-search input { width: 100%; }
+.q-empty-old { display: flex; align-items: center; gap: var(--s-2); color: var(--muted); font-size: var(--t-sm); }
+.q-empty-old label { display: flex; align-items: center; gap: var(--s-2); }
+
+.q-album {
+  margin-bottom: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+.q-album-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-3); }
+.q-album-name { flex: 1 1 16rem; min-width: 0; }
+.q-album-name strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-lg); font-weight: var(--w-bold); }
+.q-album-name small { display: block; color: var(--muted); font-size: var(--t-sm); }
+.q-album-actions { display: flex; gap: var(--s-2); }
+.q-track {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 40px;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--t-md);
+}
+.q-track:first-of-type { margin-top: var(--s-2); }
+.q-track-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-track-name small { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--faint); font-size: var(--t-sm); }
+.q-track .lib-pill { white-space: nowrap; }
+.q-track-actions { display: flex; gap: var(--s-1); }
+.q-track-actions button { min-height: 28px; }
+.q-album.busy { opacity: .55; pointer-events: none; }
+
+@media (max-width: 640px) {
+  .q-album { padding: var(--s-3); }
+  .q-track { grid-template-columns: minmax(0, 1fr) auto; }
+  .q-track .lib-pill { display: none; }
+}
 
 /* --- library: selecting, and combining ------------------------------------- */
 

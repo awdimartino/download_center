@@ -597,7 +597,8 @@ def test_duplicates_says_a_failure_is_a_failure():
     on the set-aside list as "Nothing has been set aside" (2L20). Checked in
     Chromium; this pins the wiring."""
     dupes = JS_FILES["duplicates.js"]
-    assert 'await getJSON("/api/duplicates/quarantined")' in dupes
+    # The set-aside list moved to its own page, and kept the same wiring.
+    assert 'await getJSON("/api/quarantine")' in JS_FILES["quarantine.js"]
     assert 'await postJSON("/api/duplicates/auto", {})' in dupes
     assert "export async function getJSON" in JS_FILES["core.js"]
 

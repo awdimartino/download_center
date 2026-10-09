@@ -31,6 +31,7 @@ from .api import library_edit as library_edit_routes
 from .api import library_read as library_read_routes
 from .api import listening as listening_routes
 from .api import playlists as playlists_routes
+from .api import quarantine as quarantine_routes
 from .api import settings as settings_routes
 from .api.deps import CHANGING, DOC_PATHS, OPEN_PATHS, _send_cookie
 from .api.inbox import UPLOAD_PATH, _upload_refusal
@@ -188,6 +189,7 @@ app.include_router(browse_routes.router)
 app.include_router(health_routes.router)
 app.include_router(duplicates_routes.router)
 app.include_router(playlists_routes.router)
+app.include_router(quarantine_routes.router)
 app.include_router(listening_routes.router)
 app.include_router(library_read_routes.router)
 app.include_router(library_edit_routes.router)

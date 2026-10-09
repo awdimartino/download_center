@@ -986,7 +986,7 @@ function reportQuarantine(data) {
   const failed = data.failed || [];
   const parts = [];
   if (moved.length) {
-    parts.push(`Set aside ${plural(moved.length, "file")} to duplicates-removed/.`);
+    parts.push(`Moved ${plural(moved.length, "track")} to the Quarantine page.`);
   }
   if (failed.length) parts.push(`Could not move: ${failed.join("; ")}`);
   setNote("library-op", parts.join(" ") || "Nothing was moved.",
@@ -1005,10 +1005,9 @@ async function quarantineAlbum(album, button) {
     return;
   }
   if (!confirm(
-    `Move ${plural(album.tracks, "file")} to duplicates-removed/ inside `
-    + `${album.library || "this library"}?\n\n${albumName(album)}\n\n`
-    + "This is for the wrong record entirely, not a worse copy of a right "
-    + "one. It cannot be undone from here.")) return;
+    `Quarantine ${plural(album.tracks, "track")}?\n\n${albumName(album)}\n\n`
+    + "They leave the library and wait on the Quarantine page, where they "
+    + "can be restored, stars and plays included, or deleted for good.")) return;
 
   button.disabled = true;
   try {
@@ -1030,10 +1029,9 @@ async function quarantineAlbum(album, button) {
 // Set aside one track by hand, leaving the rest of the album alone.
 async function quarantineTrack(album, track, button, gone) {
   if (!confirm(
-    `Move "${track.title}" to duplicates-removed/ inside `
-    + `${album.library || "this library"}?\n\n${track.path}\n\n`
-    + "This is for the wrong file entirely, not a worse copy of a right "
-    + "one. It cannot be undone from here.")) return;
+    `Quarantine "${track.title}"?\n\n${track.path}\n\n`
+    + "It leaves the library and waits on the Quarantine page, where it "
+    + "can be restored, stars and plays included, or deleted for good.")) return;
 
   button.disabled = true;
   try {

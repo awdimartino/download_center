@@ -23,7 +23,7 @@
    are library-attention.js, library-drawer.js and library-combine.js; what
    they share is library-shared.js. */
 
-import { apiFetch, el, getJSON, pageEscape, plural, setNote, songRow } from "./core.js";
+import { apiFetch, el, getJSON, pageEscape, plural, postJSON, setNote, songRow } from "./core.js";
 import { barRows } from "./charts.js";
 import { setBadge } from "./nav.js";
 import {
@@ -75,6 +75,7 @@ import {
   renderTracks
 } from "./library-drawer.js";
 import { closeCombine, openCombine } from "./library-combine.js";
+import { loadQuarantineCount } from "./quarantine.js";
 
 /* --- select mode --------------------------------------------------------- */
 
@@ -135,6 +136,10 @@ export function renderBar() {
                         (b) => markReviewed([...selection.albums.values()], b));
   review.disabled = !albums;
 
+  const remove = actionButton("Quarantine…", "ghost danger", (b) => quarantineSelection(b));
+  remove.disabled = !albums && !tracks;
+  remove.title = "Take the selection out of the library; the Quarantine page can put it back";
+
   const clear = actionButton("Clear", "ghost", () => {
     selection.albums.clear();
     selection.tracks.clear();
@@ -143,8 +148,55 @@ export function renderBar() {
   });
   clear.disabled = !albums && !tracks;
 
-  libraryBar.replaceChildren(what, combine, square, review, clear);
+  libraryBar.replaceChildren(what, combine, square, review, remove, clear);
   libraryBar.hidden = false;
+}
+
+// Whole albums by their folder and loose tracks one by one, through the same
+// two routes the album panel uses, which check each against the library
+// before anything moves.
+async function quarantineSelection(button) {
+  const albums = [...selection.albums.values()];
+  const tracks = looseTracks();
+  const what = [albums.length && plural(albums.length, "album"),
+                tracks.length && plural(tracks.length, "track")].filter(Boolean).join(" and ");
+  if (!confirm(`Quarantine ${what}?\n\nThey leave the library and wait on the `
+    + "Quarantine page, where they can be restored, stars and plays included, "
+    + "or deleted for good.")) return;
+  button.disabled = true;
+  let moved = 0;
+  const failed = [];
+  const send = async (path, body, label) => {
+    try {
+      const out = await postJSON(path, body);
+      moved += out.quarantined.length;
+      failed.push(...out.failed);
+    } catch (err) {
+      failed.push(`${label}: ${err.message}`);
+    }
+  };
+  for (const album of albums) {
+    await send("/api/library/quarantine", {
+      library_id: album.library_id, folder: album.folder,
+      album: album.album, artist: album.artist,
+    }, albumName(album));
+  }
+  for (const { track, album } of tracks) {
+    await send("/api/library/track/quarantine", {
+      library_id: album.library_id, folder: album.folder, track_id: track.id,
+      album: album.album, artist: album.artist,
+    }, track.title);
+  }
+  selection.albums.clear();
+  selection.tracks.clear();
+  if (openAlbum) closeDrawer();
+  setNote("library-op", `Moved ${plural(moved, "track")} to the Quarantine page.`
+    + (failed.length ? ` ${failed.length} failed: ${failed.slice(0, 3).join("; ")}` : ""),
+    failed.length ? "warn" : "notice");
+  refreshPicks();
+  renderBar();
+  refreshLibrary();
+  loadQuarantineCount();
 }
 
 /* --- the album list ------------------------------------------------------ */
@@ -246,17 +298,50 @@ function songsBlock(songs) {
   const block = el("section", "lib-songs");
   block.append(el("h3", "lib-section-title", "Songs"));
   for (const song of songs) {
-    const row = songRow("button", libraryArt(song.id, 96), song.title,
-                        [song.artist, song.album].filter(Boolean).join(" · "));
-    row.type = "button";
-    // Opens the album it is on, which is where anything about it is done.
-    row.addEventListener("click", () => openDrawer({
+    // A row rather than a button, so Remove can sit in it: a button inside
+    // a button is not something a browser will let you press.
+    const remove = actionButton("Remove", "ghost lib-song-remove", (b) => removeSong(song, row, b));
+    remove.title = "Quarantine this song; the Quarantine page can put it back";
+    const row = songRow("div", libraryArt(song.id, 96), song.title,
+                        [song.artist, song.album].filter(Boolean).join(" · "), [remove]);
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    // Opens the album it is on, which is where anything else about it is done.
+    const open = () => openDrawer({
       library_id: song.library_id, folder: song.folder, album: song.album,
       artist: song.artist, art_id: song.id, stub: true,
-    }));
+    });
+    row.addEventListener("click", (event) => { if (!remove.contains(event.target)) open(); });
+    row.addEventListener("keydown", (event) => {
+      if (event.target === row && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        open();
+      }
+    });
     block.append(row);
   }
   return block;
+}
+
+async function removeSong(song, row, button) {
+  if (!confirm(`Quarantine "${song.title}"?\n\n${[song.artist, song.album].filter(Boolean).join(" · ")}`
+    + "\n\nIt leaves the library and waits on the Quarantine page, where it can "
+    + "be restored, stars and plays included, or deleted for good.")) return;
+  button.disabled = true;
+  try {
+    await postJSON("/api/library/track/quarantine", {
+      library_id: song.library_id, folder: song.folder, track_id: song.id,
+      album: song.album, artist: song.artist,
+    });
+  } catch (err) {
+    button.disabled = false;
+    setNote("library-op", `Could not quarantine "${song.title}": ${err.message}`, "warn");
+    return;
+  }
+  row.remove();
+  setNote("library-op", `"${song.title}" moved to the Quarantine page.`, "notice");
+  refreshLibrary();
+  loadQuarantineCount();
 }
 
 // How many covers the grid fits across right now, or 0 when that cannot be

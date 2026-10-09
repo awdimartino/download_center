@@ -66,6 +66,12 @@
       <span class="nav-label">Duplicates</span>
       <span id="dupe-badge" class="badge" hidden></span>
     </button>
+    <!-- No badge: a badge is "something needs you", and set-aside music
+         waiting to be restored or deleted is not that. A quiet count. -->
+    <button class="nav-item" data-view="quarantine" type="button">
+      <span class="nav-label">Quarantine</span>
+      <span id="quarantine-count" class="nav-count" hidden></span>
+    </button>
     <button class="nav-item" data-view="health" type="button">
       <span class="nav-label">Health</span>
       <span id="health-badge" class="badge" hidden></span>
@@ -393,26 +399,55 @@
         Copies of the same recording. Nothing is deleted — the copy you
         drop moves to <code>duplicates-removed/</code> inside its own
         library, and any star or rating on it is moved onto the one you keep.
+        It waits on the <button class="link-button" type="button"
+        data-goto="quarantine">Quarantine</button> page, where it can be put
+        back.
       </p>
       <button id="dupe-auto" class="ghost" type="button">Resolve MusicBrainz matches</button>
     </div>
     <p id="dupe-note" class="warn" hidden></p>
     <p id="dupe-result" class="notice" hidden></p>
 
-    <details id="quarantine">
-      <summary>
-        Set aside <span id="quarantine-count" class="pill"></span>
-      </summary>
-      <p class="panel-sub">
-        Copies already removed from the library. Read-only — putting one back
-        means deciding what to do about the copy that was kept, which is a
-        job for a shell, not a list.
-      </p>
-      <div id="quarantine-list"></div>
-      <p id="quarantine-empty" class="empty">Nothing has been set aside.</p>
-    </details>
     <div id="dupes"></div>
     <p id="dupes-empty" class="empty">Looking for duplicates…</p>
+  </section>
+
+  <!-- What has been set aside: removed by hand from the Library, or the
+       losing copy of a duplicate. Each can be put back or deleted for good. -->
+  <section id="view-quarantine" hidden>
+    <div class="panel-note">
+      <p>
+        Tracks set aside from your library. Nothing here is lost:
+        <strong>Restore</strong> puts a track back where it was, stars and
+        plays included, and <strong>Delete for good</strong> frees its space.
+      </p>
+    </div>
+    <div class="q-tools">
+      <p id="quarantine-summary" class="q-summary"></p>
+      <div id="quarantine-filter" class="lib-chips" role="group" aria-label="Show">
+        <button type="button" data-reason="all">All</button>
+        <button type="button" data-reason="removed">Removed by hand</button>
+        <button type="button" data-reason="duplicate">Duplicates</button>
+        <button type="button" data-reason="unknown">No record</button>
+      </div>
+      <label class="q-search">
+        <span class="sr-only">Search the quarantine</span>
+        <input id="quarantine-search" type="search" placeholder="Search artist, album or title">
+      </label>
+      <div class="q-empty-old">
+        <label>Delete everything older than
+          <select id="quarantine-age">
+            <option value="30">30 days</option>
+            <option value="90">90 days</option>
+            <option value="365">a year</option>
+          </select>
+        </label>
+        <button id="quarantine-empty-old" class="ghost danger" type="button">Delete…</button>
+      </div>
+    </div>
+    <p id="quarantine-note" class="notice" hidden></p>
+    <div id="quarantine-list"></div>
+    <p id="quarantine-empty" class="empty">Reading…</p>
   </section>
 
   <section id="view-playlists" hidden>
