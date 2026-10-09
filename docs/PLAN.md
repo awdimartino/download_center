@@ -48,12 +48,12 @@ sofa.
 
 ## Now
 
-The 2026-09-27 feedback round is finished apart from the code review, which
-has been done and written up; fixing what it found comes next.
+The 2026-09-27 feedback round and the code review it led to are both
+finished; what is left here is checking the deploy on the Pi.
 
 - [x] **Session 11 — code review** of everything. Done 2026-10-04; findings
-      in [CODE_REVIEW.md](CODE_REVIEW.md), ordered by severity, **not yet
-      fixed**. Work through it top-down before new features.
+      in [CODE_REVIEW.md](CODE_REVIEW.md), ordered by severity, all since
+      fixed.
 - [x] **Fix the review's critical and high findings.** Done 2026-10-04,
       one commit per finding (H6 fell out of C4's fix); each is ticked in
       CODE_REVIEW.md with what changed and what is left.
@@ -63,7 +63,8 @@ has been done and written up; fixing what it found comes next.
 - [x] **Fix the review's low findings.** Done 2026-10-04, one commit
       each. L19 was decided: a source at or below 192 kbps is encoded at
       192. L37 had already been fixed by M27 and only gained a test.
-- [ ] **Deploy and check on the Pi**: the state.db migrations
+- [ ] **Check on the Pi** (deployed 2026-10-08; these checks are not
+      recorded as done): the state.db migrations
       (`play_collection`, `duplicate_dismissed.decided_by`), the new caches'
       cost, and Health's stamped-but-not-scanned row clearing (H6). From the
       lows: the page still works through the real browser and LAN address
@@ -73,31 +74,24 @@ has been done and written up; fixing what it found comes next.
       Cover flags survive a restart (L21); `tools/` is in the image (L34);
       the session cookie is re-sent after a day (L33); a YouTube download
       lands at 192 kbps (L19).
-- [ ] **The review's readability items.**
+- [x] **The review's readability items.** Done; every item in
+      CODE_REVIEW.md is ticked (168 of 168) as of 2026-10-08.
 
 ### Next
 
-- [ ] **Finish the rename: retire the Download Center leftovers.** Session 9
-      renamed what users see (repo, image, service, UI, logs) and kept the
-      rest so the Pi would not need its configuration touched. Rename:
-      - **The `DC_` environment variables** (`DC_NAVIDROME_URL`,
-        `DC_SPOTIFY_CLIENT_ID`, `DC_CONFIG_DIR`, … — the map in
-        `config.py`, `Dockerfile`, `docker-compose.yml`, `.env.example`)
-        to a new prefix such as `NC_`. Read the old `DC_` names as a
-        fallback for a release, logging a deprecation warning, so an
-        existing `.env` keeps working while it is updated.
-      - **The Pi's config folder**, `~/Docker/download-center/config` →
-        `~/Docker/navidrome-companion/config`. Stop the container, move
-        the folder, update the bind mount; back up `state.db` first.
-      - **The session cookie** `dc_session` (`auth.py:33`). Renaming it
-        signs everyone out once, which a deploy does anyway.
-      - **The container user** `downloader` (Dockerfile, entrypoint), and
-        the `config.py` default `output_dir = ROOT / "untagged"` and
-        compose's `STAGING_DIR` naming, both from the staging era.
-      - **The local checkout folder** `download_center` (cosmetic; memory
-        notes and the IDE workspace point at it).
-      Then update SETUP.md (settings table, "Moving from the old name") and
-      the 2026-10-04 decisions-log entry that says the prefix stays.
+- [x] **Finish the rename: retire the Download Center leftovers.** Done
+      2026-10-09. Environment variables are `NC_…` (the `DC_` names are
+      still read, with a warning naming each, and the shipped compose
+      falls back to them), `STAGING_DIR` is `WORKSPACE_DIR`, the session
+      cookie is `nc_session` (everyone signed out once), the container user
+      is `companion` (same uid), the source default workspace is
+      `workspace/`, and the Pi's config folder moved to
+      `~/Docker/navidrome-companion/config`. **Left as it is:** the local
+      checkout folder `download_center`. Renaming it would orphan the
+      assistant's memory, which is keyed on the folder's path, and the
+      IDE workspace, for nothing anyone sees.
+      - **Drop the `DC_` fallback** a release or two later, once nothing
+        logs the deprecation warning.
 - [x] **Split `app/main.py` into routers.** 2,287 lines holding every
       route. The review proposes a split. **Done** (CODE_REVIEW R1):
       `app/main.py` is the application, its middleware and the page;
@@ -122,32 +116,10 @@ has been done and written up; fixing what it found comes next.
       genre's tracks into it. Needs a write path first - `genre` is not in
       `filer._EASY`, so `write_tags` silently drops it today; every track
       carrying the source genre has to be retagged and rescanned.
-- [ ] **MusicBrainz seeding from Spotify data.** A "seed a release" button
-      that opens MusicBrainz's add-release form pre-filled, using its
-      existing seeding format. Only if the genre and ReplayGain cleanup shows
-      enough releases need it.
 
 ---
 
 ## Later
-
-### Music recommendations
-
-Added 2026-10-04, not designed yet. Suggest music that isn't in the
-library yet, seeded from what each person actually plays, with a way to send
-a suggestion straight to Browse to download.
-
-**Not Spotify.** `GET /v1/recommendations`, along with related artists and
-audio features, returns 403 for any app created after 2024-11-27, and
-Development Mode lost more in February 2026. Search alone gives only a rough
-substitute.
-
-**Likely sources**, both keyed on the MusicBrainz ids the library already
-carries: Last.fm's `track.getSimilar` / `artist.getSimilar` (an API key
-only), and ListenBrainz's similar-artist and recommendation data. Seeds come
-from our own play history (`play_snapshot` + `play_imported`) rather than an
-external account, so it works the same for Kelly. Filter out anything the
-library already holds.
 
 ### Wrapped-style stats
 
@@ -181,6 +153,14 @@ The feedback round, in brief. Detail is in FEATURES.md and git history.
   SETUP.md and FEATURES.md; HANDOFF.md, FIXES.md and ARCHITECTURE.md were
   folded into them and removed.
 - **Session 10** — `app.js` split into sixteen ES modules, no bundler.
+- **Recommendations and the Download tab** (2026-10-08): Browse renamed
+  **Download** and its rail **Queue**; five shelves while nothing is
+  searched (new releases and missing albums from your favourite artists,
+  similar artists, songs like what is on repeat, top albums in your
+  genres). Favourites are a year of plays plus stars and ratings; "similar"
+  is Last.fm's, because Spotify's recommendation endpoints are closed to
+  new apps. Computed in the background once a day per person, with "not
+  interested" per card or per artist. See FEATURES.md §5.
 - **Sessions 12–14 — aesthetics** (2026-10-04): the Library and Browse
   redesigns, the Home cover, fade-ins, one style for every dropdown, and
   Home's statistics made fast (`memo.py`).
@@ -216,10 +196,21 @@ September 2026; verify before acting.
 
 Why things are the way they are, so they do not get re-litigated.
 
+- **2026-10-09 — The rest of the rename, with a fallback.** `NC_` replaced
+  `DC_`, but the old names are still read for a release, because an `.env`
+  nobody has looked at in months should not silently stop configuring the
+  app. The checkout folder keeps its name; see the Next list.
+- **2026-10-09 — No MusicBrainz seeding.** Dropped from the plan: a "seed a
+  release" button was only ever conditional on the cleanup showing a need,
+  and it was not wanted.
+- **2026-10-08 — Recommendations from Last.fm, computed daily.** Spotify
+  closed recommendations and related artists to new apps; Last.fm needs an
+  API key and nothing else. A pass is about a hundred requests, so it runs
+  in the background and is stored, and what changes between passes (what is
+  held, what was dismissed) is applied on every read.
 - **2026-10-04 — Renamed to Navidrome Companion.** It stopped being only a
   downloader long ago. The `DC_` environment prefix and the Pi's config
-  folder stayed for now, so the deploy touched no configuration; retiring
-  them is on the Next list.
+  folder stayed for that deploy, so it touched no configuration.
 - **2026-10-04 — Two user-facing docs.** SETUP.md for installing, FEATURES.md
   for what everything does and how. The handoff document went stale within
   weeks of being written; the code and these two are what stay true.
