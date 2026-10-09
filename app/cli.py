@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import sys
 
+from .config import environ
+
 
 def not_as_root(command: str) -> None:
     """Refuse to run as root, unless told to.
@@ -14,8 +16,8 @@ def not_as_root(command: str) -> None:
     the app, running as its own user, could no longer write.
     """
     geteuid = getattr(os, "geteuid", None)
-    if geteuid is None or geteuid() != 0 or os.environ.get("DC_ALLOW_ROOT"):
+    if geteuid is None or geteuid() != 0 or environ("ALLOW_ROOT"):
         return
     sys.exit(f"Run this as the app's user, so what it writes stays writable:\n"
-             f"  docker exec -u downloader navidrome-companion python -m app.{command} ...\n"
-             f"(Set DC_ALLOW_ROOT=1 to run it as root anyway.)")
+             f"  docker exec -u companion navidrome-companion python -m app.{command} ...\n"
+             f"(Set NC_ALLOW_ROOT=1 to run it as root anyway.)")

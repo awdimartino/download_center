@@ -30,7 +30,9 @@ from . import navidrome
 
 log = logging.getLogger("navidrome_companion.auth")
 
-COOKIE = "dc_session"
+# Was "dc_session", for Download Center, until 2026-10-09. The rename signed
+# everyone out once; an old cookie is simply never read again.
+COOKIE = "nc_session"
 # Long enough not to interrupt an afternoon, short enough that a forgotten
 # browser on a shared machine does not stay signed in indefinitely.
 LIFETIME_SECONDS = 14 * 24 * 60 * 60

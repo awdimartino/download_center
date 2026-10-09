@@ -13,19 +13,19 @@ fi
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
 
-groupmod -o -g "$PGID" downloader
-usermod  -o -u "$PUID" downloader
+groupmod -o -g "$PGID" companion
+usermod  -o -u "$PUID" companion
 
 mkdir -p /config /config/beets /downloads
 
 # The config volume is small and entirely ours, so claiming all of it is safe.
-chown -R downloader:downloader /config
+chown -R companion:companion /config
 
 # The output volume is not: it may sit inside an existing music library owned
 # by other users. Only the directories this app writes into are touched, and
 # never recursively.
 for dir in /downloads /music; do
-    chown downloader:downloader "$dir" 2>/dev/null || true
+    chown companion:companion "$dir" 2>/dev/null || true
 done
 
-exec gosu downloader "$@"
+exec gosu companion "$@"

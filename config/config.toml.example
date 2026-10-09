@@ -1,7 +1,7 @@
 # Copy to config.toml and fill in, or leave it absent and use the Settings
 # panel (Navidrome administrators only). Every key can also be set with an
-# environment variable - DC_ plus the key in capitals, e.g.
-# DC_SPOTIFY_CLIENT_ID - which wins over this file. See docs/SETUP.md.
+# environment variable - NC_ plus the key in capitals, e.g.
+# NC_SPOTIFY_CLIENT_ID - which wins over this file. See docs/SETUP.md.
 
 # --- Navidrome --------------------------------------------------------------
 # Where Navidrome answers, from inside this container. Required to sign in.

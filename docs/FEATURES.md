@@ -130,7 +130,7 @@ the libraries your account may see.
   app, so the browser keeps it as long as the server keeps the session.
 - **Admin status and libraries** are re-read from Navidrome every five
   minutes, so a demotion or a revoked library reaches an open session, and
-  an account deleted in Navidrome is signed out. The cookie (`dc_session`) is
+  an account deleted in Navidrome is signed out. The cookie (`nc_session`; `dc_session` before 2026-10-09) is
   `httponly`, `samesite=lax`, and `secure` when the request came over HTTPS.
 - **A restart signs everyone out.** That is the trade for never storing
   credentials or tokens at rest.

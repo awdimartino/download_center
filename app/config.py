@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 import re
 import tomllib
@@ -11,31 +12,50 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
+log = logging.getLogger("navidrome_companion")
+
+# The environment variables' prefix. It was DC_, for Download Center, until
+# 2026-10-09; the old names are still read, with a warning, so an existing
+# .env or compose file keeps working while it is updated.
+PREFIX = "NC_"
+OLD_PREFIX = "DC_"
+_warned_old: set[str] = set()
+
+
+def environ(name: str, default: str | None = None) -> str | None:
+    """An NC_ variable by its name without the prefix, or its DC_ spelling.
+
+    The new name wins when both are set. The old one is reported once per
+    process, by name, so the log says exactly what to rename. Empty counts
+    as unset: compose passes `NC_X: ${NC_X:-}` through as an empty string
+    when nothing sets it, which would otherwise hide a DC_X beside it.
+    """
+    value = os.environ.get(PREFIX + name)
+    if value:
+        return value
+    value = os.environ.get(OLD_PREFIX + name)
+    if value:
+        if name not in _warned_old:
+            _warned_old.add(name)
+            log.warning("%s%s is deprecated; rename it %s%s", OLD_PREFIX, name,
+                        PREFIX, name)
+        return value
+    return default
+
+
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_DIR = Path(os.environ.get("DC_CONFIG_DIR", ROOT / "config"))
+CONFIG_DIR = Path(environ("CONFIG_DIR") or ROOT / "config")
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 
-# TOML key -> environment variable that overrides it.
-_ENV_OVERRIDES = {
-    "spotify_client_id": "DC_SPOTIFY_CLIENT_ID",
-    "spotify_client_secret": "DC_SPOTIFY_CLIENT_SECRET",
-    "output_dir": "DC_OUTPUT_DIR",
-    "concurrency": "DC_CONCURRENCY",
-    "audio_bitrate": "DC_AUDIO_BITRATE",
-    "max_attempts": "DC_MAX_ATTEMPTS",
-    "rate_limit_sleep": "DC_RATE_LIMIT_SLEEP",
-    "beets_enabled": "DC_BEETS_ENABLED",
-    "inbox_quiet_seconds": "DC_INBOX_QUIET_SECONDS",
-    "music_dir": "DC_MUSIC_DIR",
-    "navidrome_db": "DC_NAVIDROME_DB",
-    "navidrome_url": "DC_NAVIDROME_URL",
-    "navidrome_user": "DC_NAVIDROME_USER",
-    "navidrome_password": "DC_NAVIDROME_PASSWORD",
-    "play_day_timezone": "DC_PLAY_DAY_TIMEZONE",
-    "acoustid_key": "DC_ACOUSTID_KEY",
-    "lastfm_api_key": "DC_LASTFM_API_KEY",
-    "lastfm_secret": "DC_LASTFM_SECRET",
-}
+# TOML key -> environment variable that overrides it: NC_ and the key in
+# capitals, for every key that can be overridden.
+_ENV_OVERRIDES = {key: PREFIX + key.upper() for key in (
+    "spotify_client_id", "spotify_client_secret", "output_dir", "concurrency",
+    "audio_bitrate", "max_attempts", "rate_limit_sleep", "beets_enabled",
+    "inbox_quiet_seconds", "music_dir", "navidrome_db", "navidrome_url",
+    "navidrome_user", "navidrome_password", "play_day_timezone",
+    "acoustid_key", "lastfm_api_key", "lastfm_secret",
+)}
 
 
 class Settings(BaseModel):
@@ -44,7 +64,7 @@ class Settings(BaseModel):
 
     # Where each person's workspace lives: their inbox, the scratch space a
     # download is built in, and the marker saying whose it is.
-    output_dir: Path = ROOT / "untagged"
+    output_dir: Path = ROOT / "workspace"
 
     concurrency: int = Field(default=3, ge=1, le=10)
     # Handed to ffmpeg through yt-dlp: a constant bitrate in kbps, or a VBR
@@ -147,7 +167,7 @@ EDITABLE = (
 
 # Keys whose value came from an environment variable at start-up. They are
 # never written to config.toml - saving the panel used to copy a password
-# set as DC_NAVIDROME_PASSWORD into the file in plain text - and they cannot
+# set as NC_NAVIDROME_PASSWORD into the file in plain text - and they cannot
 # be changed from the panel, since the environment wins again on restart and
 # the edit would silently revert.
 FROM_ENV: set[str] = set()
@@ -269,7 +289,7 @@ def load() -> Settings:
 
     FROM_ENV.clear()
     for key, name in _ENV_OVERRIDES.items():
-        value = os.environ.get(name)
+        value = environ(name.removeprefix(PREFIX))
         if value:
             raw[key] = value
             FROM_ENV.add(key)

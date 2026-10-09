@@ -26,7 +26,7 @@ def space(tmp_path, monkeypatch, state_db):
     from app import workspace
     from app.config import settings
 
-    monkeypatch.setattr(settings, "output_dir", tmp_path / "untagged")
+    monkeypatch.setattr(settings, "output_dir", tmp_path / "workspace")
     monkeypatch.setattr(workspace, "CONFIG_DIR", tmp_path / "config")
     library = tmp_path / "music"
     library.mkdir()

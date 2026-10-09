@@ -129,16 +129,16 @@ need editing for a single library:
 
 | Variable | Meaning |
 |---|---|
-| `DC_IMAGE` | the image to run; `ghcr.io/awdimartino/navidrome-companion:latest` |
+| `NC_IMAGE` | the image to run; `ghcr.io/awdimartino/navidrome-companion:latest` |
 | `LIBRARY_DIR` | the library, mounted at `/music` |
-| `STAGING_DIR` | scratch space, mounted at `/downloads` |
+| `WORKSPACE_DIR` | scratch space, mounted at `/downloads` (`STAGING_DIR` before 2026-10-09) |
 | `CONFIG_DIR` | config, mounted at `/config` |
 | `NAVIDROME_DATA_DIR` | Navidrome's data directory, mounted read-only at `/navidrome` |
 | `PUID` / `PGID` | the user that should own written files |
 | `TZ` | container timezone |
 | `PORT` | host port to serve on (default 8000) |
-| `DC_NAVIDROME_URL` | where Navidrome answers, **from inside this container** |
-| `DC_SPOTIFY_CLIENT_ID` / `_SECRET` | optional; can be set in the UI instead |
+| `NC_NAVIDROME_URL` | where Navidrome answers, **from inside this container** |
+| `NC_SPOTIFY_CLIENT_ID` / `_SECRET` | optional; can be set in the UI instead |
 
 **`PUID`/`PGID`** must match the owner of your library directory, or files
 written here will not be readable by Navidrome. Find it with
@@ -147,7 +147,7 @@ ids, takes ownership of `/config`, and touches only the top directory of
 `/downloads` and `/music` — never recursively, since a library may hold
 files owned by others.
 
-**`DC_NAVIDROME_URL`** has to be set before the first sign-in, because the
+**`NC_NAVIDROME_URL`** has to be set before the first sign-in, because the
 Settings panel that can also set it is behind sign-in. If Navidrome is a
 service called `navidrome` on the same compose network, use
 `http://navidrome:4533`. If it is published on the host, use the host's
@@ -186,10 +186,10 @@ services:
     environment:
       PUID: 1000
       PGID: 1000
-      DC_NAVIDROME_URL: http://navidrome:4533
+      NC_NAVIDROME_URL: http://navidrome:4533
     volumes:
       - /srv/navidrome-companion/config:/config
-      - /srv/staging:/downloads
+      - /srv/navidrome-companion/workspace:/downloads
       - /srv/music:/music                  # same path as Navidrome's
       - /srv/navidrome/data:/navidrome:ro  # the directory, read-only
 ```
@@ -236,12 +236,13 @@ sent back to the browser; a blank secret field means "leave it as it is".
 ### Every setting
 
 Settings live in `/config/config.toml`. Each key can also be set with an
-environment variable, `DC_` plus the key in capitals, and **the environment
-wins** over the file. A key set by the environment is shown locked in the
+environment variable, `NC_` plus the key in capitals, and **the environment
+wins** over the file. (The prefix was `DC_` before 2026-10-09; those names
+are still read, with a warning in the log naming each one to rename.) A key set by the environment is shown locked in the
 panel, since an edit there would revert at the next restart, and its value
 is never written to `config.toml`. (Before October 2026 saving the panel did
 copy environment secrets into the file; check yours if you set
-`DC_NAVIDROME_PASSWORD` or `DC_SPOTIFY_CLIENT_SECRET`.)
+`DC_NAVIDROME_PASSWORD` or `DC_SPOTIFY_CLIENT_SECRET` (as they were then named).)
 
 | Key | Default | In the panel | Meaning |
 |---|---|---|---|
@@ -361,10 +362,10 @@ hand.)
 
 **Maintenance commands** run inside the container. Run them as the app's
 user so new files get the right owner — `docker exec` is root by default,
-and each command refuses to run as root unless `DC_ALLOW_ROOT=1` is set:
+and each command refuses to run as root unless `NC_ALLOW_ROOT=1` is set:
 
 ```bash
-docker exec -u downloader navidrome-companion python -m app.survey
+docker exec -u companion navidrome-companion python -m app.survey
 ```
 
 | Command | What it does |
@@ -422,8 +423,24 @@ docker compose stop download-center && docker compose rm -f download-center
 docker compose up -d navidrome-companion
 ```
 
-Keep the same volumes; config and `state.db` carry over unchanged, and so do
-the `DC_` environment variables.
+Keep the same volumes; config and `state.db` carry over unchanged.
+
+The second half of the rename, on 2026-10-09, changed what was left:
+
+- **Environment variables** are `NC_…` instead of `DC_…`, and the
+  scratch-space variable is `WORKSPACE_DIR` instead of `STAGING_DIR`. The
+  old names still work, for the app and in the shipped compose file, and
+  each `DC_` one is named in the log at start-up until it is renamed.
+- **The container user** is `companion` instead of `downloader`, with the
+  same uid, so files on disk keep their owner. Scripts that run
+  `docker exec -u downloader` need the new name.
+- **The session cookie** is `nc_session`, so everyone is signed out once.
+- **The default workspace** when running from source is `workspace/`
+  instead of `untagged/`.
+
+Moving the host's config folder is optional and up to you: stop the
+container, back up `state.db`, move the folder, and point the `/config`
+mount at its new place.
 
 ---
 
@@ -456,7 +473,7 @@ executes the JavaScript, so check UI changes in a browser.
 
 | Symptom | Likely cause |
 |---|---|
-| "Navidrome is not configured" at sign-in | `DC_NAVIDROME_URL` is not reaching the container. It must be in compose's `environment:`, not only in `.env` |
+| "Navidrome is not configured" at sign-in | `NC_NAVIDROME_URL` is not reaching the container. It must be in compose's `environment:`, not only in `.env` |
 | "Could not reach Navidrome" | the URL is wrong from inside the container (`localhost` is the container itself) |
 | Signed in, but "no library assigned" | the `/navidrome` mount is missing, or the user has no library in Navidrome |
 | A refusal naming a library path | that library is not mounted here at the path Navidrome uses |

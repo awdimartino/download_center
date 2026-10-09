@@ -323,7 +323,10 @@ def main() -> int:
             from app.config import settings
             api_key = settings.acoustid_key
         except Exception:
-            api_key = os.environ.get("DC_ACOUSTID_KEY", "")
+            # The settings would not load, so neither would their reader of
+            # the environment; both spellings, the old DC_ one last.
+            api_key = (os.environ.get("NC_ACOUSTID_KEY")
+                       or os.environ.get("DC_ACOUSTID_KEY", ""))
     if not api_key:
         sys.exit("No AcoustID key. Set one in Settings (or pass --api-key).\n"
                  "Free, from https://acoustid.org/new-application\n"

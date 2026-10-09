@@ -4,6 +4,7 @@ __pycache__/
 config/config.toml
 config/cookies.txt
 config/state.db*
+workspace/
 untagged/
 config/.spotipy-cache
 .env

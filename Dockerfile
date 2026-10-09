@@ -4,8 +4,8 @@ FROM python:3.13-slim@sha256:bf44cdfcb76cd3b41e879bc058fc37ec5872002ccfde7fcb765
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    DC_CONFIG_DIR=/config \
-    DC_OUTPUT_DIR=/downloads \
+    NC_CONFIG_DIR=/config \
+    NC_OUTPUT_DIR=/downloads \
     BEETSDIR=/config/beets
 
 # ffmpeg encodes the MP3s and gosu drops from root to the mapped user once the
@@ -30,8 +30,8 @@ COPY tools ./tools
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
- && groupadd -g 1000 downloader \
- && useradd -u 1000 -g downloader -d /app -s /usr/sbin/nologin downloader
+ && groupadd -g 1000 companion \
+ && useradd -u 1000 -g companion -d /app -s /usr/sbin/nologin companion
 
 EXPOSE 8000
 

@@ -91,7 +91,7 @@ def test_the_session_lookup_runs_off_the_loop(monkeypatch):
 
     _watch(monkeypatch, auth, "get", refuse=None)
     request = Request({"type": "http", "method": "GET", "path": "/api/library",
-                       "headers": [(b"cookie", b"dc_session=s1")],
+                       "headers": [(b"cookie", b"nc_session=s1")],
                        "query_string": b""})
 
     async def call_next(request):

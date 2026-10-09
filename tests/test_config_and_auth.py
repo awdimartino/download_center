@@ -56,7 +56,7 @@ def test_saving_writes_every_editable_key(config_file, monkeypatch):
 
 # --- keys set by the environment (CODE_REVIEW M25) --------------------------
 # Saving the panel wrote every editable key's live value, so a password set
-# as DC_NAVIDROME_PASSWORD landed in config.toml in plain text.
+# as NC_NAVIDROME_PASSWORD landed in config.toml in plain text.
 
 def test_a_secret_from_the_environment_is_never_written(config_file, monkeypatch):
     monkeypatch.setattr(config, "FROM_ENV", {"navidrome_password"})
@@ -78,18 +78,50 @@ def test_a_file_value_for_an_environment_key_is_kept(config_file, monkeypatch):
 def test_a_key_set_by_the_environment_cannot_be_changed_here(config_file,
                                                               monkeypatch):
     monkeypatch.setattr(config, "FROM_ENV", {"navidrome_url"})
-    with pytest.raises(ValueError, match="DC_NAVIDROME_URL"):
+    with pytest.raises(ValueError, match="NC_NAVIDROME_URL"):
         config.save({"navidrome_url": "http://elsewhere"})
 
 
 def test_load_remembers_which_keys_came_from_the_environment(tmp_path,
                                                              monkeypatch):
     monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "none.toml")
-    monkeypatch.setenv("DC_NAVIDROME_USER", "svc")
+    monkeypatch.setenv("NC_NAVIDROME_USER", "svc")
     monkeypatch.setattr(config, "FROM_ENV", set())
     loaded = config.load()
     assert loaded.navidrome_user == "svc"
     assert "navidrome_user" in config.FROM_ENV
+
+
+# --- the DC_ names from before the rename -------------------------------------
+
+def test_an_old_dc_name_still_sets_its_key_and_says_to_rename_it(tmp_path, monkeypatch,
+                                                                  caplog):
+    monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "none.toml")
+    monkeypatch.delenv("NC_NAVIDROME_USER", raising=False)
+    monkeypatch.setenv("DC_NAVIDROME_USER", "old")
+    monkeypatch.setattr(config, "FROM_ENV", set())
+    monkeypatch.setattr(config, "_warned_old", set())
+
+    with caplog.at_level("WARNING"):
+        loaded = config.load()
+
+    assert loaded.navidrome_user == "old"
+    assert "navidrome_user" in config.FROM_ENV
+    assert "rename it NC_NAVIDROME_USER" in caplog.text
+
+
+def test_the_new_name_wins_and_an_empty_one_does_not(monkeypatch):
+    monkeypatch.setenv("DC_NAVIDROME_USER", "old")
+    monkeypatch.setenv("NC_NAVIDROME_USER", "new")
+    assert config.environ("NAVIDROME_USER") == "new"
+    # What compose passes for a variable nothing set.
+    monkeypatch.setenv("NC_NAVIDROME_USER", "")
+    assert config.environ("NAVIDROME_USER") == "old"
+
+
+def test_every_override_uses_the_new_prefix():
+    assert all(name == "NC_" + key.upper()
+               for key, name in config._ENV_OVERRIDES.items())
 
 
 def test_saving_round_trips_through_the_parser(config_file):
@@ -321,7 +353,7 @@ def _through_the_gate(path, cookie=None):
 
     from app import main
 
-    headers = [(b"cookie", f"dc_session={cookie}".encode())] if cookie else []
+    headers = [(b"cookie", f"nc_session={cookie}".encode())] if cookie else []
     request = Request({"type": "http", "method": "GET", "path": path,
                        "headers": headers, "query_string": b""})
 
@@ -361,7 +393,7 @@ def _request_with(session, monkeypatch):
 
     monkeypatch.setattr(auth, "get", lambda sid: session if sid == session.id else None)
     request = Request({"type": "http", "method": "GET", "path": "/api/library",
-                       "headers": [(b"cookie", f"dc_session={session.id}".encode())],
+                       "headers": [(b"cookie", f"nc_session={session.id}".encode())],
                        "query_string": b"", "scheme": "http"})
 
     async def call_next(request):
@@ -392,7 +424,7 @@ def test_an_active_session_has_its_cookie_renewed(monkeypatch):
     response = _request_with(session, monkeypatch)
 
     cookie = response.headers.get("set-cookie", "")
-    assert "dc_session=s1" in cookie
+    assert "nc_session=s1" in cookie
     assert f"Max-Age={auth.LIFETIME_SECONDS}" in cookie
     assert not auth.cookie_due(session)
 
@@ -495,7 +527,7 @@ def test_a_socket_opened_by_another_page_is_closed(monkeypatch):
     events = []
 
     class Socket:
-        cookies = {"dc_session": "s1"}
+        cookies = {"nc_session": "s1"}
         headers = {"host": "pi:8000", "origin": "http://pi:4533"}
 
         async def accept(self):
