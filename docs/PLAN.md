@@ -58,12 +58,11 @@ Missing tracks in the album panel; the Quarantine page; and
 `duplicates-removed/` renamed `quarantine/`. Each is a checked item in
 Next, and in FEATURES.md.
 
-**Pushed but not deployed** (later on 2026-10-09; the Pi still runs
-`fd87b51`): the `DC_` fallback dropped, singles offered to combine only
-when they name one record, and Merge from Missing tracks. Deploy, then
-check the image's revision label and health.
+**Later the same evening**, deployed: the Pi runs `2b3ddee`, healthy. The
+`DC_` fallback dropped, singles offered to combine only when they name one
+record, Merge from Missing tracks, and the quarantine's old name retired.
 
-Open, in the order worth doing: deploy the above; the browser half of the Pi checks below;
+Open, in the order worth doing: the browser half of the Pi checks below;
 Alex's by-hand list (Operational backlog); Genre merge and rename; then
 Later.
 
@@ -90,9 +89,10 @@ old names are needed beyond migrating the Pi's own data.
       YouTube link passes the network guard and a LAN address is refused
       (L42); a cross-site POST gets 403 and a same-origin one reaches the
       session check (L38); a real YouTube download landed at 192 kbps
-      (L19). **Still to check:** Health's *Stamped but not yet scanned*
-      row once the disk audit has run (H6; the audit had not finished
-      after the last restarts); and, in a browser, downloads and the
+      (L19). H6 checked 2026-10-09 against `2b3ddee`: every library's
+      stamped files on disk match Navidrome's index (6,851, 472 and 112),
+      so *Stamped but not yet scanned* is rightly absent. **Still to
+      check,** in a browser: downloads and the
       socket over the LAN address, a save in Settings, and the cookie
       being re-sent after a day (L33). Also first real uses, never yet
       clicked on the Pi: Missing tracks (a Download), the Quarantine page
@@ -184,11 +184,11 @@ old names are needed beyond migrating the Pi's own data.
         rows still naming the old folder have no file behind them. Then
         `walk.OLD_QUARANTINE_NAMES`, `rename_old_folders` and its start-up
         call went.
-- [x] **Singles that belong together, fixed.** Done 2026-10-09 (not yet
-      deployed): every one-track folder by an artist was offered as one
+- [x] **Singles that belong together, fixed.** Done and deployed
+      2026-10-09: every one-track folder by an artist was offered as one
       album - 311 groups on the Pi, three real. Now they must name the same
       record (`library.record_key`); FEATURES.md §8.
-- [x] **Merge from Missing tracks.** Done 2026-10-09 (not yet deployed):
+- [x] **Merge from Missing tracks.** Done and deployed 2026-10-09:
       a track in another album offers Merge…, opening the combine dialog
       with this album and that copy (FEATURES.md §8).
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
@@ -283,7 +283,9 @@ September 2026 unless dated; verify before acting.
 - **30 broken `.m4a`** from the migration (`tools/fix_broken_m4a.py`).
 - **5,572 imported plays are still day-granular**, because those tracks'
   artist tags changed since the import; `python -m app.lastfm <user>
-  --times` after a tag cleanup picks up more.
+  --times` after a tag cleanup picks up more. Rerun 2026-10-09 without
+  one: 49,983 scrobbles fetched, 0 rows resolvable, 5,565 with no scrobble
+  that resolves to the track that day. It needs the tag cleanup first.
 - **Playlist field vocabulary** checked against Navidrome's source
   (`model/criteria/fields.go`, master, 2026-10-09): every field the editor
   offers is accepted, `bpm` and `compilation` included; `genre` is a tag
