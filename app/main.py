@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import auth, background, inbox, operations, quarantine, store, threads
+from . import auth, background, inbox, operations, store, threads
 from .api import auth as auth_routes
 from .api import browse as browse_routes
 from .api import deps
@@ -63,13 +63,6 @@ async def lifespan(app: FastAPI):
             f"WEB_CONCURRENCY is {workers}; this application keeps its state "
             "in memory and must run as a single worker.")
     store.connect(settings.state_db)
-    # duplicates-removed/ became quarantine/ (2026-10-09). Before the loops
-    # start, so nothing sets a file aside into the old name meanwhile.
-    try:
-        await threads.run(quarantine.rename_old_folders,
-                          await threads.run(background._library_roots))
-    except Exception:
-        log.exception("could not rename the old quarantine folders")
     operations.subscribe(push_operation)
     log.info("workspace root: %s", settings.output_dir)
     if not settings.spotify_configured:

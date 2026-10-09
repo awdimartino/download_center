@@ -375,7 +375,7 @@ def loose_in_library(space: workspace.Workspace) -> list[Path]:
     the whole library. Filing it by its tags gives it somewhere to be.
 
     Only the top level, never recursing. Everything below it is already in a
-    folder, and `duplicates-removed/` is a directory, so it is passed over.
+    folder, and `quarantine/` is a directory, so it is passed over.
     """
     root = space.library_path
     if not root.is_dir():

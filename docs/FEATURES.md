@@ -1029,9 +1029,8 @@ groups are a single beside its own album rather than true duplicates.
 
 `quarantine/` sits inside each library root so moving into it is a
 rename on one filesystem. It was called `duplicates-removed/` until
-2026-10-09, when it stopped being only for duplicates; on start-up the app
-renames an old one (merging into `quarantine/` if both exist) and points
-the ledger's paths at the new place. (It once sat outside every volume, so a
+2026-10-09, when it stopped being only for duplicates; the old name is no
+longer recognised. (It once sat outside every volume, so a
 "quarantined" file was copied into the container's writable layer, the
 original deleted, and the copy destroyed by the next update.) It holds an
 **empty** `.ndignore`, which keeps Navidrome from scanning it — a non-empty
@@ -1049,8 +1048,8 @@ or the losing copy of a duplicate - an album to a card, newest first
 (`quarantine.py`, `quarantine.js`). The disk is read and the ledger joined
 on, so a file an older version set aside, with no record, is listed too,
 named from its own tags; one buried under
-`quarantine/duplicates-removed/…` by the old .ndignore bug is listed under
-the folder it really came from.
+`quarantine/quarantine/…` by the old .ndignore bug is listed under the
+folder it really came from.
 
 - **Filters and search:** All, Removed by hand, Duplicates, No record; and
   a search over artist, album, title and path.

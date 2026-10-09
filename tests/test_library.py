@@ -774,17 +774,17 @@ def test_a_dot_never_reaches_an_artist_directory(tmp_path, identity, folder):
 
 
 def test_a_quarantined_folder_is_not_an_album(tmp_path, identity):
-    (tmp_path / "music" / "duplicates-removed" / "Radiohead").mkdir(parents=True)
+    (tmp_path / "music" / "quarantine" / "Radiohead").mkdir(parents=True)
     with pytest.raises(ValueError, match="set aside"):
-        library.album_dir(identity, 1, "duplicates-removed/Radiohead")
+        library.album_dir(identity, 1, "quarantine/Radiohead")
 
 
 def test_a_quarantined_track_is_not_editable(tmp_path, identity):
-    folder = tmp_path / "music" / "duplicates-removed" / "A" / "B"
+    folder = tmp_path / "music" / "quarantine" / "A" / "B"
     folder.mkdir(parents=True)
     (folder / "song.mp3").write_bytes(b"x")
     with pytest.raises(ValueError, match="set aside"):
-        library.track_path(identity, 1, "duplicates-removed/A/B/song.mp3")
+        library.track_path(identity, 1, "quarantine/A/B/song.mp3")
 
 
 def test_measuring_may_reach_a_disc_folder_editing_may_not(tmp_path, identity):

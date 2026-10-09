@@ -33,7 +33,7 @@ from typing import Any
 
 from . import filer, folderlock, inbox, navidrome, store
 from .matcher import FEATURING
-from .walk import NDIGNORE, QUARANTINE_NAME, QUARANTINE_NAMES
+from .walk import NDIGNORE, QUARANTINE_NAME
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.duplicates")
@@ -411,7 +411,7 @@ def already_quarantined(copy: Copy, root: Path) -> bool:
         inside = _relative(copy, root)
     except Exception:
         return False
-    return any(name in inside.parts for name in QUARANTINE_NAMES)
+    return QUARANTINE_NAME in inside.parts
 
 
 def _relative(copy: Copy, root: Path) -> Path:
@@ -502,9 +502,8 @@ def _leave(folder: Path, root: Path) -> None:
     root = root.resolve()
     here = folder.resolve()
     aside = root / QUARANTINE_NAME
-    asides = {root / name for name in QUARANTINE_NAMES}
     while (here != root and root in here.parents
-           and not asides & {here, *here.parents}):
+           and aside not in {here, *here.parents}):
         if not here.is_dir():
             here = here.parent
             continue

@@ -242,7 +242,7 @@ def test_quarantine_one_refuses_a_missing_file(tmp_path, state_db, identity):
 
 def test_quarantine_one_refuses_a_file_already_set_aside(tmp_path, state_db,
                                                           identity):
-    buried = _copy("buried", "duplicates-removed/Artist/Album/01 Song.mp3")
+    buried = _copy("buried", "quarantine/Artist/Album/01 Song.mp3")
     with pytest.raises(ValueError, match="already set aside"):
         duplicates.quarantine_one(buried, identity)
 
@@ -401,13 +401,13 @@ def test_the_explanation_survives_somewhere_readable(tmp_path):
 
 def test_a_copy_already_set_aside_is_not_buried_deeper(tmp_path, state_db,
                                                         identity):
-    """The move that made duplicates-removed/duplicates-removed. Navidrome
+    """The move that nested the quarantine in itself. Navidrome
     lists the quarantined file, it pairs with the copy it lost to, and
     resolving moves it one directory further down."""
     root = tmp_path / "music"
     keeper = _copy("keep", "Artist/Album/01 Song.mp3")
     buried = _copy("buried",
-                   "duplicates-removed/Artist/Album/01 Song.mp3")
+                   "quarantine/Artist/Album/01 Song.mp3")
     for copy in (keeper, buried):
         (root / copy.path).parent.mkdir(parents=True, exist_ok=True)
         (root / copy.path).write_bytes(b"x")
@@ -418,7 +418,7 @@ def test_a_copy_already_set_aside_is_not_buried_deeper(tmp_path, state_db,
     assert outcome["quarantined"] == []
     assert "already set aside" in outcome["failed"][0]
     assert (root / buried.path).exists(), "left where it was"
-    assert not (root / "duplicates-removed" / "duplicates-removed").exists()
+    assert not (root / "quarantine" / "quarantine").exists()
 
 
 def test_a_resolved_copy_leaves_the_page_before_navidrome_notices(
@@ -440,7 +440,7 @@ def test_a_resolved_copy_leaves_the_page_before_navidrome_notices(
         store.record_quarantine(
             group_key="k", copy=_copy("lose", "Artist/Other/01 Song.mp3"),
             keeper=_copy("keep"), source="/music/Artist/Other/01 Song.mp3",
-            target="/music/duplicates-removed/Artist/Other/01 Song.mp3",
+            target="/music/quarantine/Artist/Other/01 Song.mp3",
             decided_by="alex")
 
         assert duplicates.find(connection, identity) == [], (

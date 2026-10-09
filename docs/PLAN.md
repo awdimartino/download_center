@@ -175,17 +175,15 @@ old names are needed beyond migrating the Pi's own data.
       list. The folder itself was renamed `duplicates-removed/` ->
       `quarantine/` the same day, on start-up, ledger paths following
       (305 old rows point at files that were gone before the rename and
-      were left as history). The app still recognises the old name, only
-      because folders buried by the old .ndignore bug sit inside the new
-      one carrying it.
-      - [ ] **Retire the old name.** Checked 2026-10-09: 153 files sit in
-        `/music/quarantine/duplicates-removed/duplicates-removed/`, none
-        clashing with anything in `quarantine/`, each with a ledger row;
-        `/test` has only the marker files. Lift them to the path
-        `quarantine.original_path` gives, repoint their ledger rows, remove
-        the empty folders (state.db backed up first). Only then drop
-        `walk.OLD_QUARANTINE_NAMES`, `rename_old_folders` and its call in
-        `main.py`: before that, Restore of those files needs the old name.
+      were left as history).
+      - [x] **Retired the old name.** Done 2026-10-09: the 153 files buried
+        in `/music/quarantine/duplicates-removed/duplicates-removed/` were
+        lifted to where `quarantine.original_path` put them, their ledger
+        rows following, and the old folders removed from `/music` and
+        `/test` (backup: `config/state.db.bak-20261009-flatten`). The 306
+        rows still naming the old folder have no file behind them. Then
+        `walk.OLD_QUARANTINE_NAMES`, `rename_old_folders` and its start-up
+        call went.
 - [x] **Singles that belong together, fixed.** Done 2026-10-09 (not yet
       deployed): every one-track folder by an artist was offered as one
       album - 311 groups on the Pi, three real. Now they must name the same
