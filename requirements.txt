@@ -4,7 +4,7 @@ uvicorn[standard]==0.40.0
 # FastAPI's multipart parser, for the inbox upload endpoints - the browser
 # has no other way to send a file.
 python-multipart==0.0.20
-spotipy==2.25.1
+spotipy==2.26.0
 # With its `default` extra for yt-dlp-ejs, the solver for the JavaScript
 # challenge YouTube puts in front of its audio (run by deno, which the
 # Dockerfile installs) - without it some downloads are refused with a 403 -
