@@ -402,12 +402,14 @@ function showResults(data) {
   setMessage(parts.length ? "" : `Nothing on Spotify matches “${lastQuery}”. Try fewer words, or paste a link.`);
 }
 
-async function runSearch() {
+async function runSearch({ record = true } = {}) {
   const q = input.value.trim();
   if (!q || looksLikeUrl(q)) return;
   // Guards against a slow earlier request landing after a newer one.
   const token = ++searchToken;
   lastQuery = q;
+  openArtistId = null;
+  if (record) recordSearch(q);
   if (!resultsEl.childElementCount) setMessage("Searching…");
   resultsEl.classList.add("br-loading");
   try {
@@ -439,11 +441,97 @@ function setKind(next) {
   runSearch();
 }
 
+/* --- the address -----------------------------------------------------------
+   /download?q=<search>, /download/artist/<Spotify id> and
+   /download/album/<Spotify id>. A search changes the address in place - one
+   history entry per keystroke would make Back useless - while an artist or
+   an album adds a step. The entry being left notes how far down it was, so
+   Back finds the results where they were, from the copy already held rather
+   than by asking Spotify again. */
+
+const ARTIST_PATH = /^\/download\/artist\/([^/]+)\/?$/;
+let openArtistId = null;
+
+function artistIdInPath() {
+  const found = location.pathname.match(ARTIST_PATH);
+  return found ? decodeURIComponent(found[1]) : null;
+}
+
+function searchPath(q) {
+  return q ? `/download?q=${encodeURIComponent(q)}` : "/download";
+}
+
+function stampEntry() {
+  history.replaceState({ ...(history.state || {}), view: "browse", scroll: window.scrollY }, "");
+}
+
+// Searching from an artist's page is a step of its own; otherwise the
+// address follows the box.
+function recordSearch(q) {
+  const path = searchPath(q);
+  if (location.pathname + location.search === path) return;
+  if (artistIdInPath()) {
+    stampEntry();
+    history.pushState({ view: "browse" }, "", path);
+  } else {
+    history.replaceState({ view: "browse" }, "", path);
+  }
+}
+
+// The results for `q`, as the address asks for them after Back or a load.
+function showSearch(q) {
+  openArtistId = null;
+  if (lastResults && q === lastQuery && q === input.value.trim()) {
+    backToResults();
+    return;
+  }
+  input.value = q;
+  syncBox();
+  if (q) {
+    kindsEl.hidden = false;
+    runSearch({ record: false });
+  } else {
+    searchToken++;
+    lastResults = null;
+    painters = [];
+    resultsEl.replaceChildren();
+    setMessage("");
+  }
+  syncForYou();
+}
+
+// After Back or Forward or a load: "opened", "same" or "closed" for an
+// album, else "artist" or "search". An album closing over what was behind
+// it leaves that alone.
+export function syncDownloadToPath() {
+  const album = syncDownloadAlbum();
+  if (album === "opened" || album === "same") return album;
+  const artist = artistIdInPath();
+  if (artist) {
+    if (artist !== openArtistId) openArtist(artist, { record: false });
+    return album === "closed" ? album : "artist";
+  }
+  const q = new URLSearchParams(location.search).get("q") || "";
+  if (openArtistId || q !== input.value.trim()) {
+    showSearch(q);
+    const { scroll } = history.state || {};
+    if (scroll != null) requestAnimationFrame(() => window.scrollTo(0, scroll));
+  }
+  return album === "closed" ? album : "search";
+}
+
 /* --- one artist ------------------------------------------------------------- */
 
-async function openArtist(id) {
+async function openArtist(id, { record = true } = {}) {
   if (!id) return;
-  closeAlbum();
+  // From an album's page the album keeps its entry, so Back returns to it.
+  closeAlbum({ record: false });
+  if (record) {
+    stampEntry();
+    history.pushState({ view: "browse", artist: true }, "",
+                      `/download/artist/${encodeURIComponent(id)}`);
+  }
+  openArtistId = id;
   const token = ++searchToken;
   painters = [];
   resultsEl.replaceChildren();
@@ -458,7 +546,7 @@ async function openArtist(id) {
 
     const back = el("button", "ghost lib-back", lastResults ? `‹ Results for “${lastQuery}”` : "‹ Back");
     back.type = "button";
-    back.addEventListener("click", backToResults);
+    back.addEventListener("click", leaveArtist);
 
     const head = el("div", "lib-artist-head");
     const mosaic = el("div", "lib-mosaic");
@@ -482,7 +570,17 @@ async function openArtist(id) {
   }
 }
 
+function leaveArtist() {
+  if (history.state && history.state.artist) {
+    history.back();
+    return;
+  }
+  history.replaceState({ view: "browse" }, "", searchPath(lastResults ? lastQuery : ""));
+  backToResults();
+}
+
 function backToResults() {
+  openArtistId = null;
   kindsEl.hidden = false;
   if (lastResults) {
     searchToken++;
@@ -532,7 +630,7 @@ function leaveAlbum() {
 
 // What the address says against what is open, after Back or Forward or a
 // load: "opened", "closed", "same" or "none".
-export function syncDownloadAlbum() {
+function syncDownloadAlbum() {
   const id = albumIdInPath();
   if (!id) {
     if (!openAlbumId) return "none";
@@ -595,8 +693,12 @@ async function openAlbum(id, { record = true } = {}) {
   if (record) {
     // One album to another swaps the entry, so Back still goes to the results.
     const path = `/download/album/${encodeURIComponent(id)}`;
-    if (albumIdInPath()) history.replaceState({ view: "browse", album: true }, "", path);
-    else history.pushState({ view: "browse", album: true }, "", path);
+    if (albumIdInPath()) {
+      history.replaceState({ view: "browse", album: true }, "", path);
+    } else {
+      stampEntry();
+      history.pushState({ view: "browse", album: true }, "", path);
+    }
   }
   openAlbumId = id;
   drawerPainters = [];
@@ -682,9 +784,11 @@ input.addEventListener("input", () => {
   if (!text) {
     searchToken++;
     lastResults = null;
+    openArtistId = null;
     painters = [];
     resultsEl.replaceChildren();
     setMessage("");
+    if (location.search) history.replaceState({ view: "browse" }, "", "/download");
     return;
   }
   if (looksLikeUrl(text) || text.length < 2) return;

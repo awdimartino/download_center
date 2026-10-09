@@ -29,7 +29,8 @@ import {
   refreshLibrary,
   refreshPicks,
   renderBar,
-  setSelecting
+  setSelecting,
+  stampEntry
 } from "./library.js";
 import { mergeInto } from "./library-combine.js";
 
@@ -175,8 +176,12 @@ function recordAlbum(album) {
     ? `/library/album/${encodeURIComponent(album.album_id)}` : location.pathname;
   // One album to another (a merge lands on its target) swaps the entry
   // rather than stacking one, so Back still goes to the list.
-  if (albumIdInPath()) history.replaceState({ view: "library", album: true }, "", path);
-  else history.pushState({ view: "library", album: true }, "", path);
+  if (albumIdInPath()) {
+    history.replaceState({ view: "library", album: true }, "", path);
+  } else {
+    stampEntry();
+    history.pushState({ view: "library", album: true }, "", path);
+  }
 }
 
 // The page's Back button and Escape: the browser's own Back when this page

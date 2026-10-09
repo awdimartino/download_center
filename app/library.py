@@ -379,6 +379,12 @@ def listing(identity: navidrome.Identity, limit: int = PAGE, offset: int = 0,
                 "unmatched_albums": 0, "review_albums": 0, "no_gain": 0,
                 "no_gain_albums": 0, "limit": limit, "offset": offset}
 
+    # The album a song opens is its folder's, so it takes the folder's id -
+    # the one that album's own address uses - rather than the track's.
+    for song in songs:
+        home = albums.get((song["library_id"], song["folder"]))
+        song["album_id"] = home.album_id if home else ""
+
     every = list(albums.values())
     reviewed = store.reviewed_albums([lib["id"] for lib in identity.libraries])
     for album in every:

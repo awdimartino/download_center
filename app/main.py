@@ -221,9 +221,11 @@ async def index() -> HTMLResponse:
 
 for _path in VIEW_PATHS:
     app.add_api_route(_path, index, methods=["GET"], include_in_schema=False)
-# One album, as a page of its own: in the Library by Navidrome's album id,
-# in Download by Spotify's.
-for _path in ("/library/album/{album_id}", "/download/album/{album_id}"):
+# One album or artist, as a page of its own: in the Library by Navidrome's
+# album id and the artist's name - which may hold a slash, AC/DC, hence
+# :path - and in Download by Spotify's ids.
+for _path in ("/library/album/{album_id}", "/library/artist/{name:path}",
+              "/download/album/{album_id}", "/download/artist/{artist_id}"):
     app.add_api_route(_path, index, methods=["GET"], include_in_schema=False)
 
 

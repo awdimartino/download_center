@@ -73,7 +73,8 @@ import {
   leaveAlbum,
   openAlbum,
   openDrawer,
-  renderTracks
+  renderTracks,
+  syncAlbumToPath
 } from "./library-drawer.js";
 import { closeCombine, openCombine } from "./library-combine.js";
 import { loadQuarantineCount } from "./quarantine.js";
@@ -310,7 +311,7 @@ function songsBlock(songs) {
     // Opens the album it is on, which is where anything else about it is done.
     const open = () => openDrawer({
       library_id: song.library_id, folder: song.folder, album: song.album,
-      artist: song.artist, art_id: song.id, stub: true,
+      album_id: song.album_id, artist: song.artist, art_id: song.id, stub: true,
     });
     row.addEventListener("click", (event) => { if (!remove.contains(event.target)) open(); });
     row.addEventListener("keydown", (event) => {
@@ -386,6 +387,9 @@ async function fetchLibraryPage(offset, limit) {
 // Every edit used to reload with "reset", so fixing album 180 put you back
 // at album 50 with "Show more" under your thumb.
 export async function loadLibrary(mode = "reset", anchor = null) {
+  // Whatever left the artist page - a tab, a search, a filter - the address
+  // leaves it too, without adding a step to Back.
+  if (!viewing.artist && artistInPath()) history.replaceState({ view: "library" }, "", "/library");
   syncControls();
   if (viewing.tab === "todo") return loadAttention();
   if (viewing.tab === "artists" && !viewing.artist) return loadArtists();
@@ -568,8 +572,26 @@ function renderArtists() {
   libraryEmpty.hidden = !!shown.length;
 }
 
-export function openArtist(name) {
-  closeDrawer();
+/* --- the Library's address ------------------------------------------------
+   /library, /library/artist/<name> and /library/album/<id> (the album's
+   part is library-drawer.js). Each step adds a history entry, and the entry
+   being left first notes the tab it showed and how far down it was, so Back
+   puts the list back as it was rather than at the top of whichever tab was
+   last remembered. */
+
+const ARTIST_PATH = /^\/library\/artist\/([^/]+)\/?$/;
+
+function artistInPath() {
+  const found = location.pathname.match(ARTIST_PATH);
+  return found ? decodeURIComponent(found[1]) : null;
+}
+
+export function stampEntry() {
+  history.replaceState({ ...(history.state || {}), view: "library",
+                         tab: viewing.tab, scroll: window.scrollY }, "");
+}
+
+function showArtist(name) {
   viewing.tab = "artists";
   viewing.artist = name;
   viewing.show = "all";
@@ -577,10 +599,43 @@ export function openArtist(name) {
   window.scrollTo(0, 0);
 }
 
+export function openArtist(name) {
+  // From an album's page the album keeps its entry, so Back returns to it.
+  closeDrawer({ record: false });
+  stampEntry();
+  history.pushState({ view: "library", artist: true }, "",
+                    `/library/artist/${encodeURIComponent(name)}`);
+  showArtist(name);
+}
+
+// After Back or Forward or a load: make the Library show what the address
+// says. An album closing over the list leaves the list alone, which is what
+// keeps it where it was; anything else reloads it.
+export function syncLibraryToPath() {
+  const album = syncAlbumToPath();
+  if (album === "opened") loadLibrary();
+  if (album === "opened" || album === "same") return;
+  const artist = artistInPath();
+  if (artist !== viewing.artist) {
+    const { tab, scroll } = history.state || {};
+    if (artist) {
+      showArtist(artist);
+      return;
+    }
+    viewing.artist = null;
+    if (tab) viewing.tab = tab;
+    loadLibrary().then(() => { if (scroll != null) window.scrollTo(0, scroll); });
+    return;
+  }
+  if (album !== "closed") loadLibrary();
+}
+
 function artistPage(name, albums) {
   const back = el("button", "ghost lib-back", "‹ All artists");
   back.type = "button";
   back.addEventListener("click", () => {
+    stampEntry();
+    history.pushState({ view: "library", tab: "artists" }, "", "/library");
     viewing.artist = null;
     loadLibrary();
   });

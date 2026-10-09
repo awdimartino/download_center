@@ -24,11 +24,13 @@ ROUTES = {
     # until there is a session.
     ('GET', '/download', 'open'),
     ('GET', '/download/album/{album_id}', 'open'),
+    ('GET', '/download/artist/{artist_id}', 'open'),
     ('GET', '/drop', 'open'),
     ('GET', '/duplicates', 'open'),
     ('GET', '/health', 'open'),
     ('GET', '/library', 'open'),
     ('GET', '/library/album/{album_id}', 'open'),
+    ('GET', '/library/artist/{name:path}', 'open'),
     ('GET', '/api/library/album/by-id', 'session'),
     ('GET', '/playlists', 'open'),
     ('GET', '/quarantine', 'open'),
@@ -182,3 +184,7 @@ def test_every_view_address_serves_the_page_and_only_those_do():
     for path in main.VIEW_PATHS:
         assert _call("GET", path) == 200, path
     assert _call("GET", "/libary") == 404
+    # Deeper addresses: an album, and an artist whose name holds a slash.
+    assert _call("GET", "/library/album/al-1") == 200
+    assert _call("GET", "/library/artist/AC%2FDC") == 200
+    assert _call("GET", "/download/artist/4Z8W4fKeB5YxbusRsdQVPb") == 200

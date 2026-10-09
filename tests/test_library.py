@@ -930,3 +930,12 @@ def test_an_album_found_by_id_says_whether_it_was_reviewed(db, identity):
     store.mark_reviewed(1, {"al-d"}, "marked", "alex")
 
     assert library.find_album(identity, "al-d")["reviewed"] is True
+
+
+def test_a_song_in_the_search_carries_its_albums_address(db, identity):
+    """A song opens its album, which needs the id that album's page uses."""
+    make_album(db, "Radiohead/OK Computer", 2, album="OK Computer", title="Airbag")
+
+    songs = library.listing(identity, search="airbag")["songs"]
+
+    assert [s["album_id"] for s in songs] == ["al-Radiohead/OK Computer"] * 2
