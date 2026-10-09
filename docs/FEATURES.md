@@ -771,12 +771,50 @@ to the artist page), year, track count, length, date added, your plays, the
 library; status pills (MusicBrainz, review, ReplayGain, cover); and actions:
 
 **Mark reviewed** · **Edit details** · **Fetch cover** · **Find matches** ·
-**More** (Measure ReplayGain, Combine with other albums…, Quarantine album).
+**Missing tracks** · **More** (Measure ReplayGain, Combine with other albums…,
+Quarantine album).
 
 Then the tracks, read by their own query when the album opens; the list only
 *counts* tracks, which keeps paging 2,800 albums cheap. The status bar
 (`#library-status`), which reports everything a panel action starts, moves
 into the panel while it is open.
+
+### Missing tracks
+
+**Missing tracks** compares the album with its full tracklist
+(`albumcheck.py`) and lists every track, each marked **In library** or with
+a **Download** button.
+
+- **Which tracklist.** The MusicBrainz release the files are tagged with,
+  when they carry one (about four albums in five): that is the edition
+  *Find matches* chose, so it needs no guessing. Otherwise Spotify's copy of
+  the album, chosen as the candidate sharing the most titles with the files.
+  MusicBrainz is asked at most once a second, as it requires; if it does not
+  answer, Spotify is used and the panel says why.
+- **Editions.** An **Edition** menu offers the album's other releases - the
+  rest of the MusicBrainz release group, one entry per distinct tracklist
+  (twenty pressings of one CD are one choice), or Spotify's other
+  candidates. A standard copy is complete, and missing its bonus tracks
+  against the deluxe.
+- **Held.** A track counts as held when one of the album's files is that
+  MusicBrainz recording, or failing that has the same title once version
+  notes ("Remastered 2011", "(Mono)") are set aside. One file answers for
+  one track only. Files on no track of the edition are counted ("2 of your
+  tracks are not on this edition"), which is the hint to try another.
+- **Not offered.** A track already in the library under another album - a
+  single, a compilation - says **In another album** rather than offering a
+  second copy; moving it here is a track edit in that album. A track
+  MusicBrainz has no title for ("[unknown]") says **Untitled**.
+- **Downloading.** **Download** on a track, or **Download all N missing**,
+  queues one job (`POST /api/library/album/missing/download`). Each track
+  is looked up on Spotify for its ISRC, cover and exact length, then tagged
+  with *this* album's artist and name and the edition's track and disc
+  numbers, so it files into this album wherever Spotify spells it
+  differently. A track Spotify does not have is still queued, from the
+  reference's title, artist and length; the download searches YouTube
+  Music, SoundCloud and Bandcamp with those alone.
+
+Only on request: nothing checks albums in the background.
 
 ### Editing tracks
 

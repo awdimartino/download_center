@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from .. import auth, events, generic, inbox, jobs, spotify, workspace
+from .. import albumcheck, auth, events, generic, inbox, jobs, library, spotify, workspace
 from ..jobs import (
     JOBS,
     RUNNING,
@@ -83,6 +83,63 @@ async def create_job(
     # to report 409 "that job is not running" because RUNNING was only
     # populated once _run was reached.
     RUNNING[job["id"]] = asyncio.create_task(jobs._resolve_job(job, url, space))
+    return {"id": job["id"]}
+
+
+class AlbumTrack(BaseModel):
+    title: str
+    artist: str = ""
+    disc: int | None = None
+    number: int | None = None
+    length_ms: int | None = None
+    spotify_id: str | None = None
+
+
+class AlbumTracksRequest(BaseModel):
+    library_id: int
+    folder: str
+    # How many tracks the reference edition has, for "3/12".
+    total: int | None = None
+    tracks: list[AlbumTrack]
+
+
+# One album's missing tracks, never a playlist's worth.
+MAX_ALBUM_TRACKS = 100
+
+
+@router.post("/api/library/album/missing/download")
+async def queue_album_tracks(
+    request: AlbumTracksRequest,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, str]:
+    """Download tracks into an album already in the library.
+
+    One job for all of them, tagged with the album's own names so they
+    file beside the tracks already there (albumcheck.album_items).
+    """
+    if not request.tracks:
+        raise HTTPException(status_code=400, detail="No tracks to download.")
+    if len(request.tracks) > MAX_ALBUM_TRACKS:
+        raise HTTPException(status_code=400, detail="That is more than one album's worth.")
+    try:
+        # Also the check that this album is the asker's to add to.
+        album = await asyncio.to_thread(
+            library.tracks, session.identity, request.library_id, request.folder)
+        space = await asyncio.to_thread(
+            workspace.for_session, session.identity, request.library_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _prepare(space)
+
+    _check_room(session.identity.username)
+    _evict_old_jobs(session.identity.username)
+    wanted = [track.model_dump() for track in request.tracks]
+    job = new_job("", space)
+    job["title"] = f"{album['artist']} - {album['album']}"
+    await events.push_job(job)
+    RUNNING[job["id"]] = asyncio.create_task(jobs._resolve_job(
+        job, "", space,
+        resolve=functools.partial(albumcheck.album_items, album, wanted, request.total)))
     return {"id": job["id"]}
 
 

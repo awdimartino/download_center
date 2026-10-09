@@ -198,20 +198,158 @@ export function openDrawer(album) {
   cover.title = "Replace only the cover art - every tag stays as it is";
   const match = actionButton("Find matches", "ghost", (b) => askForCandidates(album, b));
   match.title = "Ask MusicBrainz, then retag every track from the one you pick";
-  actions.append(reviewButton(album, words), edit, cover, match, moreMenu(album));
+  const missingBox = el("div", "lib-panel miss");
+  missingBox.hidden = true;
+  const missing = actionButton("Missing tracks", "ghost", (b) => showMissing(album, b, missingBox));
+  missing.title = "Compare with the album's full tracklist on MusicBrainz or Spotify";
+  actions.append(reviewButton(album, words), edit, cover, match, missing, moreMenu(album));
 
   drawerTracksHead = el("div", "lib-tracks-head");
   drawerTracksEl = el("div", "lib-tracks");
   drawerTracksEl.append(el("p", "empty", "Reading…"));
 
   const body = el("div", "lib-drawer-body");
-  body.append(hero, libraryStatus, actions, editWrap, picker, drawerTracksHead, drawerTracksEl);
+  body.append(hero, libraryStatus, actions, editWrap, picker, missingBox,
+              drawerTracksHead, drawerTracksEl);
   libraryDrawer.replaceChildren(top, body);
   libraryDrawer.hidden = false;
   libraryView.classList.add("drawer-open");
   libraryDrawer.scrollTop = 0;
   close.focus({ preventScroll: true });
   loadTracks(album);
+}
+
+/* --- what the album is missing ----------------------------------------------
+   The album's full tracklist - its MusicBrainz release, or Spotify's copy
+   when it has none - with what the library holds marked off, and the rest a
+   button away. Other editions are a choice in the panel: a standard copy is
+   complete, and missing its bonus tracks against the deluxe. */
+
+async function showMissing(album, button, box, edition) {
+  if (!edition && !box.hidden) {
+    box.hidden = true;
+    button.textContent = "Missing tracks";
+    return;
+  }
+  box.hidden = false;
+  button.textContent = "Hide missing";
+  box.replaceChildren(el("p", "empty",
+    edition ? "Reading that edition…" : "Comparing with the album's full tracklist…"));
+  const asked = album;
+  let data;
+  try {
+    data = await getJSON(
+      `/api/library/album/missing?library_id=${album.library_id}`
+      + `&folder=${encodeURIComponent(album.folder)}`
+      + (edition ? `&edition=${encodeURIComponent(edition)}` : ""));
+  } catch (err) {
+    if (openAlbum === asked) box.replaceChildren(el("p", "empty", `Could not compare: ${err.message}`));
+    return;
+  }
+  if (openAlbum !== asked) return;
+  renderMissing(album, button, box, data);
+}
+
+function renderMissing(album, button, box, data) {
+  const where = data.source === "musicbrainz" ? "MusicBrainz" : "Spotify";
+  const from = el("p", "miss-from");
+  const link = el("a", "", data.label);
+  if (data.url) {
+    link.href = data.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+  }
+  from.append("Compared with ", link, ` on ${where}`);
+
+  const parts = [from];
+  if (data.editions.length > 1) {
+    const choose = el("label", "miss-edition");
+    const select = el("select");
+    for (const one of data.editions) {
+      const option = el("option", "", one.label);
+      option.value = one.id;
+      option.selected = one.id === data.edition;
+      select.append(option);
+    }
+    select.addEventListener("change", () => showMissing(album, button, box, select.value));
+    choose.append(el("span", "", "Edition"), select);
+    parts.push(choose);
+  }
+
+  const total = data.tracks.length;
+  const summary = el("p", "miss-sum", data.missing
+    ? `${data.missing} of ${total} tracks missing`
+    : `Nothing missing: all ${total} tracks of this edition are in your library.`);
+  if (data.elsewhere) {
+    const n = data.elsewhere;
+    summary.append(el("small", "", ` · ${n} ${n === 1 ? "is" : "are"} in another album`));
+  }
+  if (data.not_on_edition) {
+    const n = data.not_on_edition;
+    summary.append(el("small", "",
+      ` · ${n} of your tracks ${n === 1 ? "is" : "are"} not on this edition`));
+  }
+  parts.push(summary);
+
+  const discs = new Set(data.tracks.map((t) => t.disc)).size > 1;
+  const gets = [];
+  const rows = data.tracks.map((track) => {
+    const row = el("div", `miss-trk${track.held ? " held" : ""}`);
+    const number = !track.number ? ""
+      : discs ? `${track.disc}-${String(track.number).padStart(2, "0")}` : String(track.number);
+    const name = el("span", "miss-name", track.title);
+    if (track.artist && track.artist !== data.artist) name.append(el("small", "", track.artist));
+    let end;
+    if (track.held) {
+      end = el("span", "lib-pill tone-ok", "In library");
+      if (track.held_as && track.held_as !== track.title) end.title = `As “${track.held_as}”`;
+    } else if (track.elsewhere) {
+      // Filed as its own single, or on a compilation. Downloading would
+      // make a second copy; moving it here is a track edit away.
+      end = el("span", "lib-pill", "In another album");
+      end.title = "Already in your library under another album. To have it here, "
+        + "open that album and use the track's More → Move this track.";
+    } else if (!track.downloadable) {
+      end = el("span", "lib-pill", "Untitled");
+      end.title = "MusicBrainz has no title for this track, so there is nothing to search for.";
+    } else {
+      end = actionButton("Download", "ghost miss-get", (b) => queueMissing(album, data, [track], [b]));
+      gets.push(end);
+    }
+    row.append(el("span", "miss-no", number), name, end);
+    return row;
+  });
+  const list = el("div", "miss-list");
+  list.append(...rows);
+  parts.push(list);
+
+  if (gets.length > 1) {
+    parts.push(actionButton(`Download all ${gets.length} missing`, "miss-all",
+      (b) => queueMissing(album, data,
+        data.tracks.filter((t) => !t.held && !t.elsewhere && t.downloadable), [b, ...gets])));
+  }
+  for (const problem of data.problems || []) parts.push(el("p", "miss-note", problem));
+  box.replaceChildren(...parts);
+}
+
+async function queueMissing(album, data, tracks, buttons) {
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    await postJSON("/api/library/album/missing/download", {
+      library_id: album.library_id, folder: album.folder, total: data.tracks.length,
+      tracks: tracks.map((t) => ({
+        title: t.title, artist: t.artist || data.artist, disc: t.disc, number: t.number,
+        length_ms: t.length_ms || null, spotify_id: t.spotify_id || null,
+      })),
+    });
+  } catch (err) {
+    buttons.forEach((b) => { b.disabled = false; });
+    setNote("library-op", `Could not queue: ${err.message}`, "warn");
+    return;
+  }
+  buttons.forEach((b) => { b.textContent = "Queued"; });
+  setNote("library-op", `Queued ${plural(tracks.length, "track")}. They join this album as each `
+    + "finishes; the Download tab's Queue shows how they are getting on.", "notice");
 }
 
 export function closeDrawer() {

@@ -2395,6 +2395,34 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 .lib-panel { margin-bottom: var(--s-4); padding: 0 var(--s-3); border-radius: var(--r-md); background: var(--panel-2); }
 .lib-drawer .cover-picker { margin-bottom: var(--s-4); }
 
+/* Missing tracks: the album's full tracklist, what is here marked off. */
+.miss { padding: var(--s-3); }
+.miss-from { margin: 0; color: var(--muted); font-size: var(--t-sm); }
+.miss-from a { color: var(--text); }
+.miss-edition { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-2);
+  color: var(--muted); font-size: var(--t-sm); }
+.miss-edition select { flex: 1; min-width: 0; }
+.miss-sum { margin: var(--s-3) 0 var(--s-2); font-weight: var(--w-medium); }
+.miss-sum small { color: var(--muted); font-size: var(--t-sm); font-weight: var(--w-normal); }
+.miss-trk {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 36px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--t-md);
+}
+.miss-trk:last-child { border-bottom: 0; }
+.miss-trk.held .miss-name { color: var(--muted); }
+.miss-no { color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+.miss-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.miss-name small { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: var(--t-sm); }
+.miss-get { min-height: 28px; }
+.miss-all { margin-top: var(--s-3); }
+.miss-note { margin: var(--s-2) 0 0; color: var(--faint); font-size: var(--t-sm); }
+.lib-panel.miss[hidden] { display: none; }
+
 .lib-tracks-head { display: flex; align-items: baseline; justify-content: space-between; }
 .lib-tracks { border-top: 1px solid var(--line-soft); }
 

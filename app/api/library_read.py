@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from .. import auth, library, navidrome, operations
+from .. import albumcheck, auth, library, navidrome, operations
 from .deps import current_session
 
 # Every route here is for a signed-in person. Declared on the router as
@@ -100,6 +100,27 @@ async def library_album(
             library.tracks, session.identity, library_id, folder)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/api/library/album/missing")
+async def library_album_missing(
+    library_id: int,
+    folder: str,
+    edition: str | None = None,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """The album's full tracklist from MusicBrainz or Spotify, each track
+    marked held or missing (albumcheck.py). `edition` picks another release
+    from an earlier answer's `editions`."""
+    if edition and not edition.startswith(("mb:", "sp:")):
+        raise HTTPException(status_code=400, detail="Unknown edition.")
+    try:
+        return await asyncio.to_thread(
+            albumcheck.missing, session.identity, library_id, folder, edition)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # Long, because a cover does not change without the file changing, and the

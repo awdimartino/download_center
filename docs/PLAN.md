@@ -138,6 +138,10 @@ finished; what is left here is checking the deploy on the Pi.
       rows (174), which its API can only add to as new plays. Then the old
       rows can be cleared from Navidrome's Missing Files page - except the
       quarantined ones, until the duplicates are settled.
+- [x] **Missing tracks in the album panel.** Done 2026-10-09: the
+      MusicBrainz release the files carry (Spotify otherwise), an edition
+      switcher, and Download per track or for all of them, tagged into
+      this album (FEATURES.md §8, `app/albumcheck.py`, `app/musicbrainz.py`).
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
       tally alone. Reuse the album editor's merge-search pattern: a debounced
       search across the genre tally, picking a target folds the source

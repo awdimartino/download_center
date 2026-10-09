@@ -149,7 +149,8 @@ def validate(url: str) -> None:
 
 
 async def _resolve_job(job: dict[str, Any], url: str,
-                       space: workspace.Workspace) -> None:
+                       space: workspace.Workspace,
+                       resolve: Any = None) -> None:
     """Resolve a link off the event loop, then announce the result.
 
     One handler for a cancel, wherever it lands. It covered only the resolve
@@ -160,7 +161,10 @@ async def _resolve_job(job: dict[str, Any], url: str,
     """
     try:
         try:
-            kind, title, tracks = await threads.run(_resolve, url)
+            # A job built from a list rather than a link (the Library's
+            # missing tracks) brings its own resolver.
+            kind, title, tracks = await (threads.run(resolve) if resolve
+                                         else threads.run(_resolve, url))
         except (spotify.ResolveError, generic.ResolveError) as exc:
             job.update(status="failed", error=str(exc))
             log.warning("resolve failed for %s: %s", url, exc)
