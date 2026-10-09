@@ -5,7 +5,13 @@ uvicorn[standard]==0.40.0
 # has no other way to send a file.
 python-multipart==0.0.20
 spotipy==2.25.1
-yt-dlp==2026.8.19
+# With its `default` extra for yt-dlp-ejs, the solver for the JavaScript
+# challenge YouTube puts in front of its audio (run by deno, which the
+# Dockerfile installs) - without it some downloads are refused with a 403 -
+# and `curl-cffi` for the browser impersonation Bandcamp's extractor asks
+# for. yt-dlp pins the exact ejs release it expects, so a bump here brings
+# the matching one.
+yt-dlp[default,curl-cffi]==2026.8.19
 ytmusicapi==1.11.5
 mutagen==1.47.0
 

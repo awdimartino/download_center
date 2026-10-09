@@ -121,12 +121,12 @@ finished; what is left here is checking the deploy on the Pi.
       Bandcamp after YouTube Music, and the better-sounding copy when two
       sources are certain (FEATURES.md §5, `app/sources.py`). Found while
       checking the Pi: a correct YouTube match failed with a 403.
-- [ ] **Give yt-dlp a JavaScript runtime.** The image has none, and
-      yt-dlp warns on every YouTube request that extraction without one is
-      deprecated and formats may be missing; the likely cause of YouTube's
-      403s. Add deno and yt-dlp's EJS solver to the image, and
-      `curl_cffi` for the impersonation Bandcamp's extractor asks for. Then
-      keep yt-dlp current (Health warns when it is old).
+- [x] **Give yt-dlp a JavaScript runtime.** Done 2026-10-09: the image
+      carries deno (from `denoland/deno:bin`, which Dependabot moves), and
+      yt-dlp is installed with its `default` and `curl-cffi` extras for the
+      EJS challenge solver and browser impersonation. Health shows a
+      *JavaScript for YouTube* row. Keeping yt-dlp current is Dependabot's
+      weekly pull request; Health warns past 60 days.
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
       tally alone. Reuse the album editor's merge-search pattern: a debounced
       search across the genre tally, picking a target folds the source

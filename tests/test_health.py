@@ -426,6 +426,20 @@ def test_health_says_how_old_yt_dlp_is():
     assert old.status == health.WARN and "days ago" in old.detail
 
 
+def test_health_says_when_youtube_has_no_javascript_runtime(monkeypatch):
+    """Without deno, yt-dlp only warned on every request, and the symptom
+    was YouTube refusing downloads with a 403."""
+    from app import health
+
+    monkeypatch.setattr(health.shutil, "which", lambda name: None)
+    missing = health._js_runtime_check()
+    monkeypatch.setattr(health.shutil, "which", lambda name: "/usr/local/bin/deno")
+    present = health._js_runtime_check()
+
+    assert missing.status == health.WARN and "403" in missing.detail
+    assert present.status == health.OK
+
+
 def test_health_shows_where_the_registry_and_the_files_disagree(state_db, monkeypatch):
     """Three stores say what an album is, and nothing compared them (2D2)."""
     from app import diskaudit, health, registry

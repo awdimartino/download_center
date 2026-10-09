@@ -541,7 +541,26 @@ def _system_section(started_at: float) -> Section:
     ))
     section.add(*_loop_checks())
     section.add(_ytdlp_check())
+    section.add(_js_runtime_check())
     return section
+
+
+def _js_runtime_check() -> Check:
+    """Whether yt-dlp has the JavaScript runtime YouTube now needs.
+
+    YouTube hides its audio behind a challenge that yt-dlp answers by
+    running YouTube's own player code. Without deno it said so only in a
+    warning on every request, and the visible symptom was downloads failing
+    with a 403 - which looks like YouTube's fault, not the image's.
+    """
+    found = shutil.which("deno")
+    if found:
+        return Check("js_runtime", "JavaScript for YouTube", "deno", OK,
+                     found, secondary=True)
+    return Check("js_runtime", "JavaScript for YouTube", "missing", WARN,
+                 "yt-dlp cannot answer YouTube's challenge, so some downloads "
+                 "are refused (HTTP 403) and fall back to other sources.",
+                 "Rebuild the image; its Dockerfile installs deno.")
 
 
 # How old a yt-dlp release can be before it is worth a look. YouTube changes

@@ -1,3 +1,11 @@
+# deno, for yt-dlp: YouTube puts a JavaScript challenge in front of its audio
+# links, and yt-dlp solves it by running YouTube's own player code
+# (yt-dlp-ejs, in requirements.txt). Without a runtime it warned on every
+# request that formats may be missing, and some downloads were refused with
+# a 403. The official image's single binary, for amd64 and arm64 alike;
+# Dependabot moves the tag forward as it does the base image's.
+FROM denoland/deno:bin-2.9.7 AS deno
+
 # Pinned by digest as well as tag, so a rebuild of one commit starts from the
 # same image; Dependabot moves it forward (.github/dependabot.yml).
 FROM python:3.13-slim@sha256:bf44cdfcb76cd3b41e879bc058fc37ec5872002ccfde7fcb765e218cde0cd79c
@@ -6,7 +14,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     NC_CONFIG_DIR=/config \
     NC_OUTPUT_DIR=/downloads \
-    BEETSDIR=/config/beets
+    BEETSDIR=/config/beets \
+    DENO_DIR=/config/.cache/deno
 
 # ffmpeg encodes the MP3s and gosu drops from root to the mapped user once the
 # volumes are prepared. libchromaprint-tools provides fpcalc, which beets'
@@ -28,6 +37,7 @@ COPY app ./app
 # --entrypoint python ... -m tools.<name>`; their usage says so.
 COPY tools ./tools
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --from=deno /deno /usr/local/bin/deno
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
  && groupadd -g 1000 companion \

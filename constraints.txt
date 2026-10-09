@@ -10,15 +10,20 @@
 # Regenerate after changing requirements.txt, for the image's platform:
 #   uv pip compile requirements.txt --python-version 3.13 #     --python-platform aarch64-unknown-linux-gnu --no-header -o lock.txt
 # then keep the lines for packages not named in requirements.txt.
+# Except yt-dlp-ejs, which yt-dlp itself pins exactly: pinning it
+# here too would fail every yt-dlp bump that moves it.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 audioop-lts==0.2.2
 audioread==3.1.0
+brotli==1.2.0
 certifi==2026.7.22
+cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
 confuse==2.3.0
+curl-cffi==0.16.3
 filetype==1.2.0
 h11==0.16.0
 httptools==0.8.0
@@ -29,8 +34,10 @@ mediafile==0.17.0
 numpy==2.5.3
 packaging==26.3
 platformdirs==4.12.4
-pydantic-core==2.46.5
+pycparser==3.1
+pycryptodomex==3.24.0
 pydantic==2.13.5
+pydantic-core==2.46.5
 pyrate-limiter==4.5.0
 python-dotenv==1.2.4
 redis==8.1.0
