@@ -19,7 +19,7 @@ updated. For what each part of the app does once it is running, see
 - **A Spotify developer app** for search, metadata and cover suggestions.
   Create one at <https://developer.spotify.com/dashboard>; any redirect URI
   will do, because only the client-credentials flow is used. Without it,
-  Browse search and Spotify links do not work; direct links (YouTube,
+  Download-tab search and Spotify links do not work; direct links (YouTube,
   Bandcamp, SoundCloud, …) still do.
 - **A Navidrome administrator account** the app can use as a service
   account, for triggering scans and fetching cover art. Optional, but without

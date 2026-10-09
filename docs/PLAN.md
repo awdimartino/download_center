@@ -48,8 +48,22 @@ sofa.
 
 ## Now
 
-The 2026-09-27 feedback round and the code review it led to are both
-finished; what is left here is checking the deploy on the Pi.
+**Where things stand (2026-10-09, end of day).** Everything below marked
+done is deployed: the Pi runs image `fd87b51`, healthy. The day's work, in
+order: the Download tab and its recommendations; the rename's leftovers
+(`NC_`, `companion`, the config folder); folders holding several albums
+separated; SoundCloud and Bandcamp fallbacks, quality-first choice, and
+deno for YouTube; listening history relinked to re-identified songs;
+Missing tracks in the album panel; the Quarantine page; and
+`duplicates-removed/` renamed `quarantine/`. Each is a checked item in
+Next, and in FEATURES.md.
+
+Open, in the order worth doing: the browser half of the Pi checks below;
+Alex's by-hand list (Operational backlog); Genre merge and rename; then
+Later.
+
+Nobody but Alex uses this, so breaking changes are fine: no fallbacks for
+old names are needed beyond migrating the Pi's own data.
 
 - [x] **Session 11 — code review** of everything. Done 2026-10-04; findings
       in [CODE_REVIEW.md](CODE_REVIEW.md), ordered by severity, all since
@@ -72,9 +86,13 @@ finished; what is left here is checking the deploy on the Pi.
       (L42); a cross-site POST gets 403 and a same-origin one reaches the
       session check (L38); a real YouTube download landed at 192 kbps
       (L19). **Still to check:** Health's *Stamped but not yet scanned*
-      row once the disk audit has run (H6); and, in a browser, downloads
-      and the socket over the LAN address, a save in Settings, and the
-      cookie being re-sent after a day (L33).
+      row once the disk audit has run (H6; the audit had not finished
+      after the last restarts); and, in a browser, downloads and the
+      socket over the LAN address, a save in Settings, and the cookie
+      being re-sent after a day (L33). Also first real uses, never yet
+      clicked on the Pi: Missing tracks (a Download), the Quarantine page
+      (a Restore, then the star coming back in Navidrome), and a download
+      that falls back to SoundCloud or Bandcamp.
 - [x] **The review's readability items.** Done; every item in
       CODE_REVIEW.md is ticked (168 of 168) as of 2026-10-08.
 
@@ -95,8 +113,10 @@ finished; what is left here is checking the deploy on the Pi.
         The compose file's `DC_LASTFM_*` lines are `NC_` now, so nothing
         on the Pi uses an old name. Backups: `docker-compose.yml.bak-
         20261009-nc-rename` and `config/state.db.bak-20261009-nc-rename`.
-      - [ ] **Drop the `DC_` fallback** a release or two later, once nothing
-        logs the deprecation warning.
+      - [ ] **Drop the `DC_` fallback.** Nothing on the Pi uses a `DC_`
+        name, and nobody else runs this, so it can go whenever convenient:
+        `config.environ`'s old-prefix branch, compose's `${DC_…}` and
+        `${STAGING_DIR}` defaults, SETUP.md's mentions.
 - [x] **Split `app/main.py` into routers.** 2,287 lines holding every
       route. The review proposes a split. **Done** (CODE_REVIEW R1):
       `app/main.py` is the application, its middleware and the page;
@@ -147,7 +167,12 @@ finished; what is left here is checking the deploy on the Pi.
       Restore (to where it was, stars and plays included) and Delete for
       good; and Quarantine from the Library's selection bar and song
       search results. Duplicates links to it instead of its own read-only
-      list.
+      list. The folder itself was renamed `duplicates-removed/` ->
+      `quarantine/` the same day, on start-up, ledger paths following
+      (305 old rows point at files that were gone before the rename and
+      were left as history). The app still recognises the old name, only
+      because folders buried by the old .ndignore bug sit inside the new
+      one carrying it.
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
       tally alone. Reuse the album editor's merge-search pattern: a debounced
       search across the genre tally, picking a target folds the source
@@ -212,7 +237,24 @@ The feedback round, in brief. Detail is in FEATURES.md and git history.
 ## Operational backlog
 
 Not code — things waiting in the library itself. Numbers are from late
-September 2026; verify before acting.
+September 2026 unless dated; verify before acting.
+
+- **11 songs need a star or rating put back by hand** (2026-10-09): the
+  stars sit only on Navidrome rows for files it can no longer find.
+  Ambrosia - Art Beware (★, 4) and How Much I Feel (★, 4), *Life Beyond
+  L.A.*; Geese - Au pays du cocaine (★); Mineral - Dolorosa (★) and
+  Gloria (★); Player - Bad News Travels Fast (3); Queens of the Stone Age
+  - Another Love Song (★); Sora - revans (★, 4); The Alan Parsons
+  Project - Children of the Moon (★), Eye in the Sky (★, 4), Silence and
+  I (★, 4). Then clear Navidrome's Missing Files page, keeping rows for
+  quarantined files.
+- **The quarantine holds 666 tracks, 5.2 GB** (2026-10-09): 530 lost to
+  duplicates, 136 removed by hand. The Quarantine page restores or
+  deletes them; *Delete everything older than* frees the space once the
+  duplicate decisions are trusted.
+- **21 folders of untagged files**, mostly `Artist/Unknown Album`, plus a
+  stray in `Valzugg/Afternoon`, need album tags (Edit details), not moving
+  (2026-10-09).
 
 - **~296 duplicate groups to review.** About 50 are a single beside its own
   album rather than true duplicates. Do not bulk-resolve while music is
