@@ -44,35 +44,35 @@
          stays put above this, and the burger is already the close control. -->
     <!-- Ordered by how often each is opened: your music first, then the
          two ways music arrives, then playlists, then the upkeep pages. -->
-    <button class="nav-item active" data-view="home" type="button">
+    <button class="nav-item active" data-view="home" data-path="/" type="button">
       <span class="nav-label">Home</span>
     </button>
-    <button class="nav-item" data-view="library" type="button">
+    <button class="nav-item" data-view="library" data-path="/library" type="button">
       <span class="nav-label">Library</span>
       <span id="library-badge" class="badge" hidden></span>
     </button>
     <!-- "browse" inside the code: the tab was called that until it gained
          the recommendations, and every id and class still says so. -->
-    <button class="nav-item" data-view="browse" type="button">
+    <button class="nav-item" data-view="browse" data-path="/download" type="button">
       <span class="nav-label">Download</span>
     </button>
-    <button class="nav-item" data-view="drop" type="button">
+    <button class="nav-item" data-view="drop" data-path="/drop" type="button">
       <span class="nav-label">Drop</span>
     </button>
-    <button class="nav-item" data-view="playlists" type="button">
+    <button class="nav-item" data-view="playlists" data-path="/playlists" type="button">
       <span class="nav-label">Playlists</span>
     </button>
-    <button class="nav-item" data-view="dupes" type="button">
+    <button class="nav-item" data-view="dupes" data-path="/duplicates" type="button">
       <span class="nav-label">Duplicates</span>
       <span id="dupe-badge" class="badge" hidden></span>
     </button>
     <!-- No badge: a badge is "something needs you", and set-aside music
          waiting to be restored or deleted is not that. A quiet count. -->
-    <button class="nav-item" data-view="quarantine" type="button">
+    <button class="nav-item" data-view="quarantine" data-path="/quarantine" type="button">
       <span class="nav-label">Quarantine</span>
       <span id="quarantine-count" class="nav-count" hidden></span>
     </button>
-    <button class="nav-item" data-view="health" type="button">
+    <button class="nav-item" data-view="health" data-path="/health" type="button">
       <span class="nav-label">Health</span>
       <span id="health-badge" class="badge" hidden></span>
     </button>
@@ -81,7 +81,7 @@
 
     <!-- A section like any other, not a form that appears on top of whichever
          panel you happened to be looking at. -->
-    <button class="nav-item" data-view="settings" type="button">
+    <button class="nav-item" data-view="settings" data-path="/settings" type="button">
       <span class="nav-label">Settings</span>
     </button>
 

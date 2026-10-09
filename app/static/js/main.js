@@ -6,7 +6,7 @@
 
 import { setBanner, setLibraries, showError, warnEl, whenSignedOut } from "./core.js";
 import { connect, disconnect } from "./ws.js";
-import { viewHandlers, closeMenu } from "./nav.js";
+import { viewHandlers, closeMenu, showView, viewFromPath } from "./nav.js";
 import { catchUpOperations } from "./operations.js";
 import { loadHome } from "./home.js";
 import { loadListening } from "./listening.js";
@@ -122,7 +122,7 @@ document.getElementById("signout").addEventListener("click", async () => {
 // "showing this view" to "load this panel's data".
 
 Object.assign(viewHandlers, {
-  home: () => { loadHome(); loadListening(); },
+  home: () => Promise.allSettled([loadHome(), loadListening()]),
   browse: () => { focusSearchIfPointer(); loadForYou(); },
   library: loadLibrary,
   health: loadHealth,
@@ -162,14 +162,17 @@ function start() {
   started = true;
   whenSignedOut(handleSessionExpired);
   connect(handleSessionExpired, resumeOperations);
-  // The panel the page opens on, so it is not blank until somebody
-  // navigates away and back. Everything else waits for it: the Pi works
-  // through requests one at a time near enough, and the health checks and
-  // the library listing sent alongside Home used to be answered first while
-  // the page somebody was actually looking at sat empty.
-  Promise.allSettled([loadHome(), loadListening()]).then(() => {
-    loadHealth();
-    loadLibrary();
+  // The panel the page opens on - whichever one the address names - so it
+  // is not blank until somebody navigates away and back. Everything else
+  // waits for it: the Pi works through requests one at a time near enough,
+  // and the health checks and the library listing sent alongside Home used
+  // to be answered first while the page somebody was looking at sat empty.
+  const first = viewFromPath();
+  Promise.resolve(showView(first, { record: false })).finally(() => {
+    // Both also feed menu badges, so they load whatever the first view is -
+    // just not twice when it is theirs.
+    if (first !== "health") loadHealth();
+    if (first !== "library") loadLibrary();
     checkSpotify();
     loadQuarantineCount();
   });

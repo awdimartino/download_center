@@ -90,7 +90,26 @@ document.addEventListener("keydown", (event) => {
   }
 }, true);
 
-export function showView(view) {
+// Each view has an address of its own (data-path on its menu button), so
+// companion.pi/library can be typed, bookmarked, and gone back from. The
+// server answers every one of them with this same page; app/main.py keeps
+// the list it serves.
+export function viewFromPath(path = location.pathname) {
+  const trimmed = path.replace(/\/+$/, "") || "/";
+  const item = [...navItems()].find((i) => i.dataset.path === trimmed);
+  return item ? item.dataset.view : "home";
+}
+
+function recordView(view) {
+  const item = document.querySelector(`.nav-item[data-view="${view}"]`);
+  const path = item && item.dataset.path;
+  if (path && path !== location.pathname) history.pushState({ view }, "", path);
+}
+
+// `record: false` when the address already says where we are: the first
+// view of a page load, and the back and forward buttons.
+export function showView(view, { record = true } = {}) {
+  if (record) recordView(view);
   // Driven off the buttons themselves rather than a hand-kept list: a view
   // removed from the markup used to leave a name here that resolved to
   // null, and the resulting throw hid every panel at once.
@@ -110,8 +129,13 @@ export function showView(view) {
   // With the tabs gone this is the only thing saying where you are.
   if (label) viewTitle.textContent = label.textContent;
 
-  viewHandlers[view]?.();
+  return viewHandlers[view]?.();
 }
+
+addEventListener("popstate", () => {
+  showView(viewFromPath(), { record: false });
+  closeMenu();
+});
 
 navItems().forEach((item) => {
   item.addEventListener("click", () => {

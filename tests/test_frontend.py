@@ -681,3 +681,16 @@ def test_one_plural_for_every_panel():
                if re.search(r"function plural\(", text)]
     assert defined == ["core.js"]
     assert "async function call(" not in JS_FILES["core.js"]
+
+
+def test_every_menu_address_is_one_the_server_answers():
+    """nav.js puts a view's data-path in the address bar, and a reload asks
+    the server for it. A path in the menu but not in main.VIEW_PATHS works
+    until somebody refreshes on that view and gets a 404."""
+    from app import main
+
+    paths = re.findall(r'data-path="([^"]+)"', HTML)
+    views = re.findall(r'class="nav-item[^"]*" data-view="[^"]+"', HTML)
+    assert len(paths) == len(views)
+    assert set(paths) - {"/"} == set(main.VIEW_PATHS)
+    assert len(set(paths)) == len(paths)

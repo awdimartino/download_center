@@ -20,6 +20,16 @@ from app import main
 # declares; "open" routes are reachable signed out on purpose.
 ROUTES = {
     ('GET', '/', 'open'),
+    # Each view's own address: the same page, which shows the sign-in form
+    # until there is a session.
+    ('GET', '/download', 'open'),
+    ('GET', '/drop', 'open'),
+    ('GET', '/duplicates', 'open'),
+    ('GET', '/health', 'open'),
+    ('GET', '/library', 'open'),
+    ('GET', '/playlists', 'open'),
+    ('GET', '/quarantine', 'open'),
+    ('GET', '/settings', 'open'),
     ('GET', '/api/albums/{album_id}', 'session'),
     ('GET', '/api/artists/{artist_id}/albums', 'session'),
     ('POST', '/api/auth/login', 'open'),
@@ -160,3 +170,12 @@ def test_every_router_but_sign_in_declares_the_session_guard_itself():
         module = importlib.import_module(f"app.api.{info.name}")
         calls = [d.dependency for d in module.router.dependencies]
         assert deps.current_session in calls, info.name
+
+
+def test_every_view_address_serves_the_page_and_only_those_do():
+    """companion.pi/library has to load the page, signed out included, since
+    the page is what shows the sign-in form. A path that names no view still
+    gets a 404 rather than HTML."""
+    for path in main.VIEW_PATHS:
+        assert _call("GET", path) == 200, path
+    assert _call("GET", "/libary") == 404

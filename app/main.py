@@ -195,6 +195,14 @@ app.include_router(library_read_routes.router)
 app.include_router(library_edit_routes.router)
 
 
+# Every view's own address (data-path on its menu button in index.html),
+# answered with the same page, which then opens on that view. Listed rather
+# than caught with "/{anything}", which would answer a mistyped /api path
+# with HTML and shadow any top-level route added later.
+VIEW_PATHS = ("/library", "/download", "/drop", "/playlists", "/duplicates",
+              "/quarantine", "/health", "/settings")
+
+
 @app.get("/")
 async def index() -> HTMLResponse:
     # Never cached. The shell decides whether to show the sign-in form, so a
@@ -209,6 +217,10 @@ async def index() -> HTMLResponse:
         html,
         headers={"Cache-Control": "no-store, must-revalidate"},
     )
+
+
+for _path in VIEW_PATHS:
+    app.add_api_route(_path, index, methods=["GET"], include_in_schema=False)
 
 
 class RevalidatedStatic(StaticFiles):
