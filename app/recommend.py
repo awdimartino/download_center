@@ -589,12 +589,22 @@ def genre_picks(genres: list[str], names: dict[str, set],
     return shelves
 
 
-def _unique(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[str] = set()
+def _unique(cards: list[dict[str, Any]],
+            already: list[dict[str, Any]] = ()) -> list[dict[str, Any]]:
+    """One card per record. Two editions of an album are one suggestion -
+    "Life 1" and "Life 1 (where did the time go)" were side by side - and
+    a record already on an earlier shelf is not repeated on a later one."""
+    def keys(card: dict[str, Any]) -> set:
+        return {card.get("id"), (card.get("primary_artist") or card.get("artist") or "",
+                                 base_title(card.get("name") or ""))}
+
+    seen: set = set()
+    for card in already:
+        seen |= keys(card)
     out = []
     for card in cards:
-        if card.get("id") and card["id"] not in seen:
-            seen.add(card["id"])
+        if card.get("id") and not keys(card) & seen:
+            seen |= keys(card)
             out.append(card)
     return out
 
@@ -607,9 +617,10 @@ def compute(user_id: str, library_id: int) -> dict[str, Any]:
     favourites = favourite_artists(user_id, library_id)
 
     discographies = _discographies(favourites, problems)
+    new = new_releases(discographies, names)
     shelves: dict[str, Any] = {
-        "new": new_releases(discographies, names),
-        "missing": missing_albums(discographies, names),
+        "new": new,
+        "missing": _unique(missing_albums(discographies, names), new),
         "similar": [], "because": [], "genres": [],
     }
 

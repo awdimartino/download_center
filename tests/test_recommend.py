@@ -127,6 +127,15 @@ def test_missing_albums_take_turns_and_leave_out_singles_and_owned(library):
     assert shelf == ["Amnesiac", "Homogenic", "Hail to the Thief", "Vespertine", "In Rainbows"]
 
 
+def test_two_editions_are_one_suggestion_and_no_shelf_repeats_another():
+    life = album("Life 1", artist="Noah")
+    deluxe = album("Life 1 (where did the time go)", artist="Noah")
+    other = album("Waves", artist="Noah")
+
+    assert recommend._unique([life, deluxe, other]) == [life, other]
+    assert recommend._unique([deluxe, other], already=[life]) == [other]
+
+
 def test_new_releases_are_recent_and_not_owned(library):
     names = recommend.library_names(1)
     recent = (datetime.now(UTC) - timedelta(days=10)).strftime("%Y-%m-%d")
