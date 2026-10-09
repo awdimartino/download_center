@@ -316,32 +316,40 @@ def held_in(library_id: int) -> set[str]:
     Keyed on the same normalisation the album registry uses, so "Don't" and
     "Dont" are one song here too.
     """
+    return set(held_where(library_id))
+
+
+def held_where(library_id: int) -> dict[str, set[str]]:
+    """`held_in`, with the folders each recording is in: what Missing tracks
+    needs to say which album already has a song, and to offer merging it."""
     from . import registry
 
     try:
         connection = open_db()
     except Unavailable as exc:
         log.warning("cannot read what library %s holds: %s", library_id, exc)
-        return set()
+        return {}
 
     with connection:
         rows = connection.execute(
             f"select coalesce(mf.artist, ''), coalesce(mf.album_artist, ''),"
-            f"       coalesce(mf.title, '')"
+            f"       coalesce(mf.title, ''), mf.path"
             f"  from media_file mf"
             f" where {live_clause(connection, [library_id])}").fetchall()
 
-    held = set()
-    for artist, album_artist, title in rows:
+    held: dict[str, set[str]] = {}
+    for artist, album_artist, title, path in rows:
         if not title:
             continue
+        folder = path.replace("\\", "/").rpartition("/")[0]
         # Both credits. This application writes the *primary* artist to the
         # file and keeps the full credit on the album artist, but a CD rip or
         # a hand-tagged file may have it either way round, and a badge that
         # only recognises our own downloads is most of the way to useless.
-        held.add(registry.recording_key(artist, title))
+        held.setdefault(registry.recording_key(artist, title), set()).add(folder)
         if album_artist and album_artist != artist:
-            held.add(registry.recording_key(album_artist, title))
+            held.setdefault(registry.recording_key(album_artist, title),
+                            set()).add(folder)
     return held
 
 

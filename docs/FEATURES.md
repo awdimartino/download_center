@@ -805,8 +805,12 @@ a **Download** button.
   one track only. Files on no track of the edition are counted ("2 of your
   tracks are not on this edition"), which is the hint to try another.
 - **Not offered.** A track already in the library under another album - a
-  single, a compilation - says **In another album** rather than offering a
-  second copy; moving it here is a track edit in that album. A track
+  single, a compilation - names that album and offers **Merge…** rather
+  than a second copy. It opens the combine dialog with this album and the
+  copy: a single comes whole, while from a bigger album only the copy comes,
+  so the rest of that album stays put. Nothing changes until Combine is
+  pressed. With more than one, **Merge all N into this album…** does them
+  together. A track
   MusicBrainz has no title for ("[unknown]") says **Untitled**.
 - **Downloading.** **Download** on a track, or **Download all N missing**,
   queues one job (`POST /api/library/album/missing/download`). Each track

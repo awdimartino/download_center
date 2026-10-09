@@ -229,18 +229,49 @@ def missing(identity: navidrome.Identity, library_id: int, folder: str,
     # track filed as its own single, or on a compilation, would download as
     # a second copy. Asked of the same index the Download tab's "In library"
     # badge reads.
-    everywhere = navidrome.held_in(library_id)
+    everywhere = navidrome.held_where(library_id)
     for track in marked:
         track["downloadable"] = (track["title"].strip().lower()
                                  not in UNTITLED)
-        track["elsewhere"] = not track["held"] and any(
-            registry.recording_key(credit, track["title"]) in everywhere
-            for credit in {track.get("artist") or "", album["artist"]} if credit)
+        keys = {registry.recording_key(credit, track["title"])
+                for credit in {track.get("artist") or "", album["artist"]} if credit}
+        folders = set().union(*(everywhere.get(k, ()) for k in keys))
+        track["elsewhere"] = not track["held"] and bool(folders)
+        track["elsewhere_on"] = (_elsewhere(identity, library_id, folder,
+                                            folders, keys)
+                                 if track["elsewhere"] else [])
     return {**reference, "album": album["album"], "artist": album["artist"],
             "tracks": marked,
             "missing": sum(not t["held"] and not t["elsewhere"] for t in marked),
             "elsewhere": sum(t["elsewhere"] for t in marked),
             "not_on_edition": extra, "problems": problems}
+
+
+def _elsewhere(identity: navidrome.Identity, library_id: int, here: str,
+               folders: set[str], keys: set[str]) -> list[dict[str, Any]]:
+    """The albums other than this one that hold a song, each with the
+    copies of it there: what the combine dialog is opened with to merge it
+    in. In the shapes the Library already uses for an album and a track."""
+    others = folders - {here}
+    try:
+        summaries = library.albums_at(identity, library_id, others)
+    except ValueError:
+        return []
+    found = []
+    for folder in sorted(others):
+        summary = summaries.get(folder)
+        if summary is None:
+            continue
+        try:
+            other = library.tracks(identity, library_id, folder)
+        except ValueError:
+            continue
+        copies = [t for t in other["items"] if any(
+            registry.recording_key(credit, t["title"]) in keys
+            for credit in {t.get("artist") or "", other["artist"]} if credit)]
+        if copies:
+            found.append({"album": summary, "tracks": copies})
+    return found
 
 
 # --- downloading what is missing ---------------------------------------------

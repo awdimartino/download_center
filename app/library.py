@@ -470,6 +470,13 @@ def _albums_or_raise(identity: navidrome.Identity) -> list[Album]:
         raise ValueError(f"Navidrome's database is unreadable: {exc}") from exc
 
 
+def albums_at(identity: navidrome.Identity, library_id: int,
+              folders: set[str]) -> dict[str, dict[str, Any]]:
+    """The listing's row for each of these folders that is an album here."""
+    return {a.folder: a.as_dict() for a in _albums_or_raise(identity)
+            if a.library_id == int(library_id) and a.folder in folders}
+
+
 def album_ids(identity: navidrome.Identity, library_id: int,
               folder: str) -> set[str]:
     """Navidrome's album ids for one folder, as it stands right now.

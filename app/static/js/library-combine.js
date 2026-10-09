@@ -47,6 +47,24 @@ export function combineGroup(group) {
   openCombine();
 }
 
+// From Missing tracks: an album, and copies of its songs filed under other
+// albums. A single comes whole; from a bigger album only the copy comes,
+// as a loose track, so the rest of that album stays where it is.
+export function mergeInto(album, found) {
+  closeDrawer();
+  setSelecting(true);
+  selection.albums.set(albumKey(album), album);
+  for (const { album: other, tracks } of found) {
+    if (other.tracks <= tracks.length) {
+      selection.albums.set(albumKey(other), other);
+    } else {
+      for (const track of tracks) selection.tracks.set(track.path, { track, album: other });
+    }
+  }
+  refreshPicks();
+  openCombine();
+}
+
 export async function openCombine() {
   const albums = [...selection.albums.values()];
   const loose = looseTracks();

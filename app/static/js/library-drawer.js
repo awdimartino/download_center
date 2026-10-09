@@ -31,6 +31,7 @@ import {
   renderBar,
   setSelecting
 } from "./library.js";
+import { mergeInto } from "./library-combine.js";
 
 export let openAlbum = null;
 let drawerTracks = [];
@@ -305,10 +306,19 @@ function renderMissing(album, button, box, data) {
       if (track.held_as && track.held_as !== track.title) end.title = `As “${track.held_as}”`;
     } else if (track.elsewhere) {
       // Filed as its own single, or on a compilation. Downloading would
-      // make a second copy; moving it here is a track edit away.
-      end = el("span", "lib-pill", "In another album");
-      end.title = "Already in your library under another album. To have it here, "
-        + "open that album and use the track's More → Move this track.";
+      // make a second copy; merging brings the copy here instead.
+      const on = track.elsewhere_on || [];
+      if (on.length) {
+        name.append(el("small", "", `On ${on.map((o) => o.album.album).join(", ")}`));
+        end = actionButton("Merge…", "ghost miss-get", () => mergeInto(album, on));
+        end.title = "Open the combine dialog with this album and that copy. "
+          + "Nothing changes until you press Combine.";
+      } else {
+        // The only copy is in this album, under a title the comparison
+        // did not take for this track.
+        end = el("span", "lib-pill", "In library");
+        end.title = "This album has a copy under a slightly different title.";
+      }
     } else if (!track.downloadable) {
       end = el("span", "lib-pill", "Untitled");
       end.title = "MusicBrainz has no title for this track, so there is nothing to search for.";
@@ -327,6 +337,23 @@ function renderMissing(album, button, box, data) {
     parts.push(actionButton(`Download all ${gets.length} missing`, "miss-all",
       (b) => queueMissing(album, data,
         data.tracks.filter((t) => !t.held && !t.elsewhere && t.downloadable), [b, ...gets])));
+  }
+  // Every copy filed elsewhere, merged in one combine. Keyed by folder, so
+  // an album holding several of these songs comes once with all of them.
+  const elsewhere = new Map();
+  for (const track of data.tracks) {
+    for (const { album: other, tracks } of track.elsewhere_on || []) {
+      const seen = elsewhere.get(other.folder) || { album: other, tracks: [] };
+      for (const t of tracks) {
+        if (!seen.tracks.some((s) => s.path === t.path)) seen.tracks.push(t);
+      }
+      elsewhere.set(other.folder, seen);
+    }
+  }
+  const merges = data.tracks.filter((t) => (t.elsewhere_on || []).length).length;
+  if (merges > 1) {
+    parts.push(actionButton(`Merge all ${merges} into this album…`, "ghost miss-all",
+      () => mergeInto(album, [...elsewhere.values()])));
   }
   for (const problem of data.problems || []) parts.push(el("p", "miss-note", problem));
   box.replaceChildren(...parts);

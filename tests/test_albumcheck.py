@@ -167,6 +167,26 @@ def test_a_track_filed_under_another_album_is_not_missing(db, identity, mb):
 
     assert paranoid["held"] is False and paranoid["elsewhere"] is True
     assert answer["missing"] == 2 and answer["elsewhere"] == 1
+    [on] = paranoid["elsewhere_on"]
+    assert on["album"]["folder"] == "Radiohead/Paranoid Android"
+    assert on["album"]["tracks"] == 1
+    assert [t["title"] for t in on["tracks"]] == ["Paranoid Android"]
+
+
+def test_only_the_copy_is_offered_from_a_bigger_album(db, identity, mb):
+    """Merging a compilation whole would bring all of it along."""
+    held(db, 1, "Airbag", "r1")
+    for n, title in enumerate(("Paranoid Android", "Karma Police", "Creep"), 1):
+        add_track(db, f"best-{n}", path=f"Radiohead/The Best Of/0{n}.mp3",
+                  title=title, album="The Best Of", artist="Radiohead",
+                  album_artist="Radiohead", album_id="al-best")
+
+    answer = albumcheck.missing(identity, 1, FOLDER)
+    paranoid = next(t for t in answer["tracks"] if t["title"] == "Paranoid Android")
+
+    [on] = paranoid["elsewhere_on"]
+    assert on["album"]["tracks"] == 3
+    assert [t["path"] for t in on["tracks"]] == ["Radiohead/The Best Of/01.mp3"]
 
 
 def test_an_untitled_track_is_not_offered_for_download(db, identity, monkeypatch):
