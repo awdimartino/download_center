@@ -77,7 +77,7 @@ def audio_codec(info: dict | None) -> str | None:
 
 
 # Where the duplicates panel sets copies aside, inside each library.
-QUARANTINE_NAME = "duplicates-removed"
+QUARANTINE_NAME = "quarantine"
 
 
 def free_name(original: Path, wanted: Path) -> Path:

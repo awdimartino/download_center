@@ -749,7 +749,7 @@ ReplayGain, quarantine, combine — act on the folder. Editable albums are
 `artist/album` folders inside the library, counted after resolving, so
 `Artist/.` is the artist directory and refused; anything shallower or deeper
 is read-only, except that ReplayGain measures a folder at any depth. Nothing
-under `duplicates-removed/` can be edited. Every request names a library id and a folder, never a path;
+under `quarantine/` can be edited. Every request names a library id and a folder, never a path;
 the server checks the library is yours, resolves the path, and refuses
 anything that lands outside the library root (resolving, not filtering
 `..`, so a symlink cannot walk out either).
@@ -931,7 +931,7 @@ Four ways to take music out of the library, all confirming first:
 **Quarantine album** (the album's More menu), **Quarantine this track**
 (a track's More…), **Quarantine…** on the select-mode bar (every selected
 album and loose track), and **Remove** on a song in the Library's search
-results. Each moves the files into `duplicates-removed/` (section 9),
+results. Each moves the files into `quarantine/` (section 9),
 recorded in the same ledger, where the **Quarantine page** (section 9a)
 can put them back or delete them for good. The files to move are taken
 from Navidrome's index for that folder, never from the request. Stars are
@@ -1000,7 +1000,7 @@ goes. Then:
    the highest rating is carried over. If that fails, nothing is removed.
    (Migrating as an administrator would create an invisible admin star and
    quarantine the real one.)
-3. Each other copy is **moved** to `<library>/duplicates-removed/<its
+3. Each other copy is **moved** to `<library>/quarantine/<its
    original path>`, on the same filesystem, numbered on collision.
 4. Each move is recorded in `duplicate_quarantined`: from, to, the copy
    kept, who decided, when.
@@ -1021,8 +1021,11 @@ groups are a single beside its own album rather than true duplicates.
 
 ### The quarantine folder
 
-`duplicates-removed/` sits inside each library root so moving into it is a
-rename on one filesystem. (It once sat outside every volume, so a
+`quarantine/` sits inside each library root so moving into it is a
+rename on one filesystem. It was called `duplicates-removed/` until
+2026-10-09, when it stopped being only for duplicates; on start-up the app
+renames an old one (merging into `quarantine/` if both exist) and points
+the ledger's paths at the new place. (It once sat outside every volume, so a
 "quarantined" file was copied into the container's writable layer, the
 original deleted, and the copy destroyed by the next update.) It holds an
 **empty** `.ndignore`, which keeps Navidrome from scanning it — a non-empty
@@ -1040,8 +1043,8 @@ or the losing copy of a duplicate - an album to a card, newest first
 (`quarantine.py`, `quarantine.js`). The disk is read and the ledger joined
 on, so a file an older version set aside, with no record, is listed too,
 named from its own tags; one buried under
-`duplicates-removed/duplicates-removed/…` by the old .ndignore bug is
-listed under the folder it really came from.
+`quarantine/duplicates-removed/…` by the old .ndignore bug is listed under
+the folder it really came from.
 
 - **Filters and search:** All, Removed by hand, Duplicates, No record; and
   a search over artist, album, title and path.

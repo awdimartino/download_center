@@ -70,7 +70,7 @@ AUDIO_SUFFIXES = {".mp3"}
 # The quarantine inside each library root, and the marker that keeps
 # Navidrome out of a directory. The same rule as app/walk.py, copied because
 # this runs on the host without the app: set-aside copies are not the library.
-QUARANTINE_NAME = "duplicates-removed"
+QUARANTINE_NAME = "quarantine"
 NDIGNORE = ".ndignore"
 
 ACOUSTID_URL = "https://api.acoustid.org/v2/lookup"

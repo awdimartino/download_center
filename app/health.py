@@ -326,8 +326,8 @@ def _duplicates_check(connection: sqlite3.Connection, identity) -> Check | None:
         OK if not groups else WARN,
         f"{confident} share a MusicBrainz id and can be resolved in one go"
         if confident else "grouped by recording id, or by title and length",
-        "The Duplicates tab. Nothing is deleted - the copy you drop moves to "
-        "duplicates-removed/ inside its own library.",
+        "The Duplicates tab. Nothing is deleted - the copy you drop goes to "
+        "the Quarantine page, where it can be restored.",
     )
 
 

@@ -33,7 +33,7 @@ from typing import Any
 
 from . import filer, folderlock, inbox, navidrome, store
 from .matcher import FEATURING
-from .walk import NDIGNORE, QUARANTINE_NAME
+from .walk import NDIGNORE, QUARANTINE_NAME, QUARANTINE_NAMES
 from .config import settings
 
 log = logging.getLogger("navidrome_companion.duplicates")
@@ -339,6 +339,20 @@ def find(connection: sqlite3.Connection,
 # library grew paths like duplicates-removed/duplicates-removed. The
 # explanation now lives in README.txt beside it, where nothing parses it.
 QUARANTINE_README = "README.txt"
+README_TEXT = (
+    "Tracks set aside by Navidrome Companion: removed by hand from the\n"
+    "Library, or the losing copy of a duplicate.\n"
+    "\n"
+    "Nothing here has been deleted. Each file kept the path it had\n"
+    "inside the library, and the quarantine ledger in state.db\n"
+    "records where every one came from. The Quarantine page puts them\n"
+    "back, or deletes them for good.\n"
+    "\n"
+    "The empty .ndignore beside this file is what keeps Navidrome\n"
+    "out, and it has to stay empty: a non-empty one is read as a\n"
+    "list of glob patterns and skips only what matches, so writing\n"
+    "this explanation into it would let the whole directory be\n"
+    "scanned back into the library.\n")
 
 
 def _quarantine_root(root: Path) -> Path:
@@ -368,20 +382,15 @@ def _quarantine_root(root: Path) -> Path:
         marker.write_text("", encoding="utf-8")
 
     readme = path / QUARANTINE_README
-    if not readme.exists():
-        readme.write_text(
-            "Copies set aside by Navidrome Companion as duplicates.\n"
-            "\n"
-            "Nothing here has been deleted. Each file kept the path it had\n"
-            "inside the library, and the quarantine ledger in state.db\n"
-            "records where every one came from, so it can be put back.\n"
-            "\n"
-            "The empty .ndignore beside this file is what keeps Navidrome\n"
-            "out, and it has to stay empty: a non-empty one is read as a\n"
-            "list of glob patterns and skips only what matches, so writing\n"
-            "this explanation into it would let the whole directory be\n"
-            "scanned back into the library.\n",
-            encoding="utf-8")
+    # Rewritten when it says something else: the folder renamed from
+    # duplicates-removed/ carries the README that called everything in it
+    # a duplicate.
+    try:
+        current = readme.read_text(encoding="utf-8")
+    except OSError:
+        current = None
+    if current != README_TEXT:
+        readme.write_text(README_TEXT, encoding="utf-8")
     return path
 
 
@@ -402,7 +411,7 @@ def already_quarantined(copy: Copy, root: Path) -> bool:
         inside = _relative(copy, root)
     except Exception:
         return False
-    return QUARANTINE_NAME in inside.parts
+    return any(name in inside.parts for name in QUARANTINE_NAMES)
 
 
 def _relative(copy: Copy, root: Path) -> Path:
@@ -493,7 +502,9 @@ def _leave(folder: Path, root: Path) -> None:
     root = root.resolve()
     here = folder.resolve()
     aside = root / QUARANTINE_NAME
-    while here != root and root in here.parents and aside not in (here, *here.parents):
+    asides = {root / name for name in QUARANTINE_NAMES}
+    while (here != root and root in here.parents
+           and not asides & {here, *here.parents}):
         if not here.is_dir():
             here = here.parent
             continue

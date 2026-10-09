@@ -372,8 +372,8 @@ def test_music_already_in_an_album_folder_is_not_touched(space):
 
 
 def test_a_directory_at_the_library_root_is_not_a_loose_file(space):
-    """`duplicates-removed/` lives there, and it is not music to file."""
-    (space.library_path / "duplicates-removed").mkdir()
+    """`quarantine/` lives there, and it is not music to file."""
+    (space.library_path / "quarantine").mkdir()
     assert inbox.loose_in_library(space) == []
 
 

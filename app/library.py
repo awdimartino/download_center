@@ -756,7 +756,7 @@ def track_path(identity: navidrome.Identity, library_id: int,
     here = root.joinpath(*parts).resolve()
     if root.resolve() not in here.parents:
         raise ValueError("That is not a track in your library.")
-    if here.relative_to(root.resolve()).parts[0] == walk.QUARANTINE_NAME:
+    if here.relative_to(root.resolve()).parts[0] in walk.QUARANTINE_NAMES:
         raise ValueError("That track has been set aside; it is not part of "
                          "the library.")
     if not here.is_file():
@@ -815,7 +815,7 @@ def album_dir(identity: navidrome.Identity, library_id: int,
     # resolved to the artist directory, and a retag applies to everything
     # underneath - that artist's whole discography, merged.
     inside = path.relative_to(base).parts
-    if inside[0] == walk.QUARANTINE_NAME:
+    if inside[0] in walk.QUARANTINE_NAMES:
         raise ValueError("That folder has been set aside; it is not part "
                          "of the library.")
     # Exactly `$albumartist/$album`, which is what the filer writes and

@@ -90,7 +90,7 @@ function renderGroup(group) {
         `    ${describeCopy(keeper)}`,
         `    ${keeper.path}`,
         "",
-        "Moving to duplicates-removed/ inside the library:",
+        "Moving to the Quarantine page (it can be restored from there):",
         ...losers.map((c) => `    ${c.artist} — ${c.title}  (${describeCopy(c)})\n    ${c.path}`),
       ];
       if (mixed) lines.push("", "These copies are NOT titled the same.");
@@ -128,8 +128,8 @@ function reportResolution(payload) {
   const migrated = payload.migrated || [];
   const parts = [];
   if (moved.length) {
-    parts.push(`Set aside ${moved.length} file${moved.length === 1 ? "" : "s"} ` +
-               `to duplicates-removed/.`);
+    parts.push(`Moved ${moved.length} cop${moved.length === 1 ? "y" : "ies"} ` +
+               `to the Quarantine page.`);
   }
   if (migrated.length) {
     parts.push(`Moved ${migrated.join(" and ")} onto the copy you kept.`);
@@ -205,7 +205,7 @@ document.getElementById("dupe-auto").addEventListener("click", async (event) => 
     button.disabled = false;
     return;
   }
-  if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to duplicates-removed/ inside its own library. This cannot be undone from here.`)) {
+  if (!confirm(`Resolve ${preview.eligible} group(s) that share a MusicBrainz recording id?\n\nThe lower-quality copy of each moves to the Quarantine page, where it can be restored.`)) {
     button.disabled = false;
     return;
   }

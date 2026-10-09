@@ -135,7 +135,7 @@ def test_names_that_make_one_folder_are_reported_not_moved(space):
 def test_the_quarantine_is_not_part_of_the_library(space):
     believe = album_on_disk(space, "Aiden Williams", "Believe", ["One"])
     other = album_on_disk(space, "Aiden Williams", "Breakup", ["Two"])
-    set_aside = space.library_path / "duplicates-removed" / "Aiden Williams" / "Believe"
+    set_aside = space.library_path / "quarantine" / "Aiden Williams" / "Believe"
     set_aside.mkdir(parents=True)
     shutil.copy(believe[0].path, set_aside / "a.mp3")
     shutil.copy(other[0].path, set_aside / "b.mp3")

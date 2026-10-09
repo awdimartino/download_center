@@ -3,8 +3,8 @@ letting it go for good.
 
 Setting a file aside has two roads - losing a duplicate pair
 (`duplicates.resolve`) and being removed by hand from the Library
-(`duplicates.quarantine_one`) - and one destination: `duplicates-removed/`
-inside the library it came from, at the same path it had there, with a row
+(`duplicates.quarantine_one`) - and one destination: `quarantine/` (called
+`duplicates-removed/` until 2026-10-09) inside the library it came from, at the same path it had there, with a row
 in `duplicate_quarantined` saying where it came from and who moved it.
 
 **Reading.** The disk, with the ledger joined on, as the old read-only list
@@ -21,7 +21,7 @@ a duplicate pair is a duplicate again; the page says so before it is done.
 row stays, stamped, as the record that the file existed.
 
 Every path arrives from the browser as a key, `<library id>:<path inside
-the quarantine>`, and is only acted on once it resolves to a file inside the
+the library>`, and is only acted on once it resolves to a file inside the
 quarantine of a library this person can see.
 """
 
@@ -34,8 +34,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from . import filer, navidrome, store, uuidtags, workspace
-from .walk import QUARANTINE_NAME
+from . import duplicates, filer, navidrome, store, uuidtags, workspace
+from .walk import NDIGNORE, OLD_QUARANTINE_NAMES, QUARANTINE_NAME, QUARANTINE_NAMES
 
 log = logging.getLogger("navidrome_companion.quarantine")
 
@@ -44,11 +44,73 @@ REASONS = {"duplicate": "Lost to a duplicate", "removed": "Removed by hand",
 
 
 def _libraries(identity: navidrome.Identity) -> list[tuple[dict[str, Any], Path, Path]]:
+    """(library, its root, a quarantine folder) for each quarantine folder of
+    each library this person can see: the current one, and an old-named one
+    while it is still there (a library not mounted when it was renamed)."""
     found = []
     for library in identity.libraries:
         root = Path(library["path"])
-        found.append((library, root, root / QUARANTINE_NAME))
+        for name in QUARANTINE_NAMES:
+            if name == QUARANTINE_NAME or (root / name).is_dir():
+                found.append((library, root, root / name))
     return found
+
+
+def rename_old_folders(roots: list[Path]) -> int:
+    """Rename each library's `duplicates-removed/` to `quarantine/`, once.
+
+    One rename on one filesystem, so it is all or nothing, and the empty
+    .ndignore inside travels with it: Navidrome never sees the music in
+    between. The ledger's paths follow, or a restore would look for the
+    files where they were. When both folders exist - a library that already
+    gained a new one - the old one's contents are moved across one entry at
+    a time, and anything whose name is taken stays where it is.
+    """
+    moved = 0
+    for root in roots:
+        new = root / QUARANTINE_NAME
+        for name in OLD_QUARANTINE_NAMES:
+            old = root / name
+            if not old.is_dir():
+                continue
+            try:
+                if not new.exists():
+                    old.rename(new)
+                else:
+                    for entry in list(old.iterdir()):
+                        if entry.name in (NDIGNORE, duplicates.QUARANTINE_README):
+                            continue
+                        if not (new / entry.name).exists():
+                            entry.rename(new / entry.name)
+                    if not any(e for e in old.iterdir()
+                               if e.name not in (NDIGNORE, duplicates.QUARANTINE_README)):
+                        shutil.rmtree(old)
+            except OSError as exc:
+                log.warning("could not rename %s to %s: %s", old, new, exc)
+                continue
+            duplicates._quarantine_root(root)   # the marker, and the new README
+            moved += _repoint_ledger(old, new)
+            log.info("renamed %s to %s", old, new)
+    return moved
+
+
+def _repoint_ledger(old: Path, new: Path) -> int:
+    """Rewrite recorded paths under `old` to the same place under `new` -
+    only where the file is now there, so a row is never pointed at nothing."""
+    changed = []
+    for row in store.quarantined(limit=None, include_restored=True):
+        try:
+            inside = Path(row["target_path"] or "").relative_to(old)
+        except ValueError:
+            continue
+        moved = new / inside
+        if moved.exists():
+            changed.append((str(moved), row["id"]))
+    if changed:
+        with store.transaction() as tx:
+            tx.executemany(
+                "UPDATE duplicate_quarantined SET target_path = ? WHERE id = ?", changed)
+    return len(changed)
 
 
 def original_path(rel: Path) -> Path:
@@ -56,11 +118,11 @@ def original_path(rel: Path) -> Path:
 
     The quarantine keeps each file's library path. Before the .ndignore
     marker worked, files were set aside again from inside it, so some sit
-    under duplicates-removed/duplicates-removed/...; those leading levels
-    are not part of where they came from.
+    under duplicates-removed/duplicates-removed/...; those leading levels,
+    under either name, are not part of where they came from.
     """
     parts = list(rel.parts)
-    while parts and parts[0] == QUARANTINE_NAME:
+    while parts and parts[0] in QUARANTINE_NAMES:
         parts.pop(0)
     return Path(*parts) if parts else rel
 
@@ -90,7 +152,7 @@ def listing(identity: navidrome.Identity) -> dict[str, Any]:
     albums: dict[tuple[int, str], dict[str, Any]] = {}
     counts: collections.Counter = collections.Counter()
     total_bytes = 0
-    for library, _root, qroot in _libraries(identity):
+    for library, root, qroot in _libraries(identity):
         if not qroot.is_dir():
             continue
         for path in sorted(qroot.rglob("*")):
@@ -115,7 +177,7 @@ def listing(identity: navidrome.Identity) -> dict[str, Any]:
             counts[reason] += 1
             total_bytes += size
             entry = {
-                "key": f"{library['id']}:{rel.as_posix()}",
+                "key": f"{library['id']}:{path.relative_to(root).as_posix()}",
                 "name": path.name, "was": was.as_posix(),
                 "title": title or path.stem, "artist": artist or "",
                 "album": album or "", "reason": reason,
@@ -154,18 +216,20 @@ def _resolve(identity: navidrome.Identity,
     library_id, sep, rel = (key or "").partition(":")
     if not sep or not rel:
         raise ValueError(f"{key}: not a quarantined track")
+    seen_library = False
     for library, root, qroot in _libraries(identity):
         if str(library["id"]) != library_id:
             continue
-        path = qroot / rel
+        seen_library = True
+        path = root / rel
         try:
-            resolved = path.resolve()
-            inside = qroot.resolve() in resolved.parents
+            inside = qroot.resolve() in path.resolve().parents
         except OSError:
             inside = False
-        if not inside or not path.is_file() or not uuidtags.is_audio(path):
-            raise ValueError(f"{rel}: not a quarantined track")
-        return library, root, qroot, path
+        if inside and path.is_file() and uuidtags.is_audio(path):
+            return library, root, qroot, path
+    if seen_library:
+        raise ValueError(f"{rel}: not a quarantined track")
     raise ValueError(f"{rel}: not in one of your libraries")
 
 

@@ -18,7 +18,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-QUARANTINE_NAME = "duplicates-removed"
+QUARANTINE_NAME = "quarantine"
+# What the quarantine was called until 2026-10-09. Renamed on start-up
+# (quarantine.rename_old_folders); still skipped and refused wherever the
+# quarantine is, for a library that was not mounted when that ran.
+OLD_QUARANTINE_NAMES = ("duplicates-removed",)
+QUARANTINE_NAMES = (QUARANTINE_NAME, *OLD_QUARANTINE_NAMES)
 NDIGNORE = ".ndignore"
 
 
@@ -37,7 +42,7 @@ def library_files(root: Path) -> list[Path]:
         here = Path(directory)
         subdirectories[:] = [
             name for name in subdirectories
-            if not (here == root and name == QUARANTINE_NAME)
+            if not (here == root and name in QUARANTINE_NAMES)
             and not _ignored(here / name)]
         found.extend(here / name for name in files)
     return sorted(found)

@@ -50,9 +50,10 @@ def test_a_track_removed_by_hand_is_listed_under_its_album(space, identity):
 
 def test_a_file_with_no_record_is_listed_from_its_tags(space, identity):
     """Set aside by an older version, buried under the doubled folder the
-    broken .ndignore marker produced."""
+    broken .ndignore marker produced - which, renamed, sits inside
+    quarantine/ still carrying the old name."""
     filed = album_on_disk(space, "Mk.gee", "A Museum of Contradiction", ["goodbye"])
-    buried = (space.library_path / "duplicates-removed" / "duplicates-removed"
+    buried = (space.library_path / "quarantine" / "duplicates-removed"
               / "Mk.gee" / "A Museum of Contradiction" / filed[0].path.name)
     buried.parent.mkdir(parents=True)
     shutil.move(str(filed[0].path), str(buried))
@@ -65,7 +66,7 @@ def test_a_file_with_no_record_is_listed_from_its_tags(space, identity):
 
 
 def test_only_this_persons_libraries_are_listed(space, identity, tmp_path):
-    hers = tmp_path / "kelly" / "duplicates-removed" / "x" / "song.mp3"
+    hers = tmp_path / "kelly" / "quarantine" / "x" / "song.mp3"
     hers.parent.mkdir(parents=True)
     hers.write_bytes(b"audio")
     duplicates._quarantine_root(space.library_path)   # marker and README only
@@ -94,7 +95,7 @@ def test_restore_puts_a_track_back_where_it_was_with_its_identity(space, identit
     assert quarantine.listing(identity)["tracks"] == 0
     assert store.quarantined() == []
     assert store.quarantined(include_restored=True)[0]["restored_at"]
-    assert not (space.library_path / "duplicates-removed" / "Aiden Williams").exists()
+    assert not (space.library_path / "quarantine" / "Aiden Williams").exists()
 
 
 def test_restore_when_the_place_is_taken_files_it_by_its_tags(space, identity):
@@ -136,7 +137,7 @@ def test_delete_removes_the_file_and_keeps_the_record(space, identity):
     row = store.quarantined(include_restored=True)[0]
     assert row["deleted_at"] and not row["restored_at"]
     # Its folder, cover and all, is gone from the quarantine.
-    assert not (space.library_path / "duplicates-removed" / "Aiden Williams").exists()
+    assert not (space.library_path / "quarantine" / "Aiden Williams").exists()
 
 
 def test_empty_deletes_only_what_is_older_than_asked(space, identity):
@@ -153,3 +154,54 @@ def test_empty_deletes_only_what_is_older_than_asked(space, identity):
     assert len(outcome["deleted"]) == 1
     left = quarantine.listing(identity)["albums"][0]["tracks"]
     assert [t["was"] for t in left] == ["Aiden Williams/Believe/02 - New.mp3"]
+
+
+# --- duplicates-removed/ becomes quarantine/ -----------------------------------------
+
+def _old_quarantine(space, identity, title="One"):
+    """A track set aside before the rename, recorded where it then was."""
+    filed = album_on_disk(space, "Aiden Williams", "Believe", [title])[0]
+    rel = filed.path.relative_to(space.library_path)
+    old = space.library_path / "duplicates-removed" / rel
+    old.parent.mkdir(parents=True, exist_ok=True)
+    (space.library_path / "duplicates-removed" / ".ndignore").write_text("")
+    shutil.move(str(filed.path), str(old))
+    store.record_quarantine("manual:x", copy_of(filed, space.library_path), None,
+                            str(filed.path), str(old), "alex")
+    return filed.path, old
+
+
+def test_the_old_folder_is_renamed_and_the_record_follows(space, identity):
+    original, old = _old_quarantine(space, identity)
+
+    quarantine.rename_old_folders([space.library_path])
+
+    new = space.library_path / "quarantine"
+    assert not (space.library_path / "duplicates-removed").exists()
+    assert (new / old.relative_to(space.library_path / "duplicates-removed")).is_file()
+    assert (new / ".ndignore").read_bytes() == b""
+    assert "Quarantine page" in (new / "README.txt").read_text(encoding="utf-8")
+    assert store.quarantined()[0]["target_path"].startswith(str(new))
+    # And it is still the track it was: listed with its record, restorable.
+    track = quarantine.listing(identity)["albums"][0]["tracks"][0]
+    assert track["reason"] == "removed"
+    quarantine.restore(identity, [track["key"]])
+    assert original.is_file()
+
+
+def test_both_folders_are_merged_when_the_new_one_already_exists(space, identity):
+    _original, old = _old_quarantine(space, identity)
+    (space.library_path / "quarantine" / "Other").mkdir(parents=True)
+
+    quarantine.rename_old_folders([space.library_path])
+
+    assert not (space.library_path / "duplicates-removed").exists()
+    assert (space.library_path / "quarantine" / "Other").is_dir()
+    assert quarantine.listing(identity)["tracks"] == 1
+
+
+def test_renaming_twice_does_nothing_the_second_time(space, identity):
+    _old_quarantine(space, identity)
+    quarantine.rename_old_folders([space.library_path])
+
+    assert quarantine.rename_old_folders([space.library_path]) == 0
