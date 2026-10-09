@@ -153,11 +153,76 @@ function moreMenu(album) {
   return wrap;
 }
 
-export function openDrawer(album) {
+/* --- the album's own address --------------------------------------------
+   An open album is a page of the Library rather than a panel floating over
+   it: /library/album/<Navidrome album id>. The list stays in the document,
+   hidden, so going back returns to it as it was - scrolled where it was,
+   with its search and filters. */
+
+const ALBUM_PATH = /^\/library\/album\/([^/]+)\/?$/;
+// Where the list was scrolled when the album opened over it.
+let listScroll = 0;
+
+function albumIdInPath() {
+  const found = location.pathname.match(ALBUM_PATH);
+  return found ? decodeURIComponent(found[1]) : null;
+}
+
+function recordAlbum(album) {
+  // An album opened from a song in the search results knows no album id;
+  // it still gets a history entry, so Back closes it, at the list's address.
+  const path = album.album_id
+    ? `/library/album/${encodeURIComponent(album.album_id)}` : location.pathname;
+  // One album to another (a merge lands on its target) swaps the entry
+  // rather than stacking one, so Back still goes to the list.
+  if (albumIdInPath()) history.replaceState({ view: "library", album: true }, "", path);
+  else history.pushState({ view: "library", album: true }, "", path);
+}
+
+// The page's Back button and Escape: the browser's own Back when this page
+// put the album's entry there, so the two cannot disagree about where Back
+// goes. An album reached by its address directly has no list behind it in
+// the history, and just closes.
+export function leaveAlbum() {
+  if (history.state && history.state.album) history.back();
+  else closeDrawer();
+}
+
+// What the address says against what is open, after Back or Forward or a
+// load: "opened", "closed", "same" or "none". The caller reloads the list
+// unless it was only an album closing over it, which is what keeps the list
+// where it was.
+export function syncAlbumToPath() {
+  const id = albumIdInPath();
+  if (!id) {
+    if (!openAlbum) return "none";
+    closeDrawer({ record: false });
+    return "closed";
+  }
+  if (openAlbum && openAlbum.album_id === id) return "same";
+  openAlbumById(id);
+  return "opened";
+}
+
+async function openAlbumById(id) {
+  try {
+    const album = await getJSON(`/api/library/album/by-id?album_id=${encodeURIComponent(id)}`);
+    if (albumIdInPath() !== id) return;   // somewhere else by the time it came
+    openDrawer(album, { record: false });
+  } catch (err) {
+    if (albumIdInPath() !== id) return;
+    history.replaceState({ view: "library" }, "", "/library");
+    setNote("library-op", `Could not open that album: ${err.message}`, "warn");
+  }
+}
+
+export function openDrawer(album, { record = true } = {}) {
+  if (!openAlbum) listScroll = window.scrollY;
+  if (record) recordAlbum(album);
   openAlbum = album;
   closeCandidates();
   const top = el("div", "lib-drawer-top");
-  const close = actionButton("✕ Close", "ghost", () => closeDrawer());
+  const close = actionButton("← Back", "ghost", () => leaveAlbum());
   const pick = actionButton(selection.on ? "Done selecting" : "Select tracks", "ghost", () => {
     setSelecting(!selection.on);
     pick.textContent = selection.on ? "Done selecting" : "Select tracks";
@@ -215,7 +280,7 @@ export function openDrawer(album) {
   libraryDrawer.replaceChildren(top, body);
   libraryDrawer.hidden = false;
   libraryView.classList.add("drawer-open");
-  libraryDrawer.scrollTop = 0;
+  window.scrollTo(0, 0);
   close.focus({ preventScroll: true });
   loadTracks(album);
 }
@@ -379,7 +444,10 @@ async function queueMissing(album, data, tracks, buttons) {
     + "finishes; the Download tab's Queue shows how they are getting on.", "notice");
 }
 
-export function closeDrawer() {
+// `record: false` when the address has already moved on (Back, Forward).
+// Otherwise - closed by something done on the page, like starting a combine
+// - the address goes back to the list's without adding an entry.
+export function closeDrawer({ record = true } = {}) {
   if (!openAlbum) return;
   openAlbum = null;
   statusHome.after(libraryStatus);
@@ -387,6 +455,8 @@ export function closeDrawer() {
   libraryDrawer.hidden = true;
   libraryDrawer.replaceChildren();
   libraryView.classList.remove("drawer-open");
+  if (record && albumIdInPath()) history.replaceState({ view: "library" }, "", "/library");
+  window.scrollTo(0, listScroll);
 }
 
 async function loadTracks(album) {

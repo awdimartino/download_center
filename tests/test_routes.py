@@ -23,10 +23,13 @@ ROUTES = {
     # Each view's own address: the same page, which shows the sign-in form
     # until there is a session.
     ('GET', '/download', 'open'),
+    ('GET', '/download/album/{album_id}', 'open'),
     ('GET', '/drop', 'open'),
     ('GET', '/duplicates', 'open'),
     ('GET', '/health', 'open'),
     ('GET', '/library', 'open'),
+    ('GET', '/library/album/{album_id}', 'open'),
+    ('GET', '/api/library/album/by-id', 'session'),
     ('GET', '/playlists', 'open'),
     ('GET', '/quarantine', 'open'),
     ('GET', '/settings', 'open'),

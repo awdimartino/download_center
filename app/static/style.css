@@ -2256,22 +2256,19 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 .lib-mini .lib-card-title { font-size: var(--t-sm); }
 .lib-mini .lib-card-sub { font-size: var(--t-xs); }
 
-/* --- library: one album, in a panel beside the list ------------------------
-   Over the list rather than in it. Fixed, with its own scroll, so a long
-   track list scrolls inside the panel and the page behind stays put. */
+/* --- one album, as a page of its own ---------------------------------------
+   /library/album/<Navidrome id> and /download/album/<Spotify id>. It used to
+   be a panel floating over the list; now, while one is open, the list and
+   its controls step aside and the album takes their place in the flow,
+   scrolling with the window. The list is only hidden, so Back finds it as
+   it was. In the Library the selection bar and the combine dialog stay,
+   being about the album too; in Download the Queue stays beside it. */
 
-.lib-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 45;
-  width: min(560px, 100%);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--panel);
-  box-shadow: var(--float-shadow);
+#view-library.drawer-open > :not(#library-drawer, #library-bar, #library-dialog),
+#view-browse.drawer-open .br-main {
+  display: none;
 }
+.lib-drawer { min-width: 0; }
 .lib-drawer-top {
   position: sticky;
   top: 0;
@@ -2279,11 +2276,11 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
   display: flex;
   justify-content: space-between;
   gap: var(--s-2);
-  padding: var(--s-3);
-  padding-top: calc(var(--s-3) + env(safe-area-inset-top, 0px));
-  background: var(--panel);
+  padding: var(--s-2) 0;
+  padding-top: calc(var(--s-2) + env(safe-area-inset-top, 0px));
+  background: var(--bg);
 }
-.lib-drawer-body { padding: 0 var(--s-5) var(--s-6); }
+.lib-drawer-body { padding: var(--s-3) 0 var(--s-6); }
 .lib-drawer .library-status { position: static; background: transparent; margin-top: var(--s-3); }
 
 .lib-hero { display: flex; align-items: flex-end; gap: var(--s-4); }
@@ -2793,9 +2790,7 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
   .lib-row { grid-template-columns: auto 48px 1fr auto; }
   .lib-row-library { display: none; }
 
-  /* The album panel and the combine dialog take the whole screen. */
-  .lib-drawer { width: 100%; }
-  .lib-drawer-body { padding: 0 var(--s-4) var(--s-6); }
+  /* The combine dialog takes the whole screen. */
   .lib-hero { flex-direction: column; align-items: flex-start; }
   .lib-hero .art { width: 100%; }
   .lib-dialog { padding: 0; align-items: stretch; }

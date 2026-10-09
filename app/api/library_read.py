@@ -102,6 +102,21 @@ async def library_album(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/api/library/album/by-id")
+async def library_album_by_id(
+    album_id: str,
+    session: auth.Session = Depends(current_session),
+) -> dict[str, Any]:
+    """The album row for a Navidrome album id, for /library/album/<id>."""
+    try:
+        found = await asyncio.to_thread(library.find_album, session.identity, album_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if found is None:
+        raise HTTPException(status_code=404, detail="There is no such album in your library.")
+    return found
+
+
 @router.get("/api/library/album/missing")
 async def library_album_missing(
     library_id: int,

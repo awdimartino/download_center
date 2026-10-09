@@ -239,6 +239,9 @@
        began with scrolling past what had already worked. -->
   <section id="view-browse" hidden>
     <div class="br-layout">
+      <!-- One album as a page of its own (/download/album/<Spotify id>), in
+           place of the search and shelves while it is open, beside the Queue. -->
+      <aside id="browse-drawer" class="lib-drawer" hidden aria-label="Album"></aside>
       <div class="br-main">
         <!-- Pinned, so it is never scrolled away from the results. -->
         <div class="br-searchbar">
@@ -296,8 +299,6 @@
     <button id="downloads-pill" class="dl-pill" type="button"
             aria-label="Show the queue" aria-expanded="false" hidden></button>
     <div id="downloads-scrim" class="dl-scrim" hidden></div>
-    <!-- One album, opened beside the results - the Library's drawer. -->
-    <aside id="browse-drawer" class="lib-drawer" hidden aria-label="Album"></aside>
   </section>
 
   <!-- Everything you own, three ways in: the albums themselves, who made

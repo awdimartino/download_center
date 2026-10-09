@@ -888,3 +888,45 @@ def test_an_albums_art_carries_the_version_navidrome_last_read(db, identity):
 
     assert album["art_id"] == "t1"
     assert album["art_version"] == "2026-10-08T10:00:00Z"
+
+
+# --- an album's own address -------------------------------------------------
+
+def test_each_listed_album_carries_its_navidrome_id(db, identity):
+    """What /library/album/<id> is built from, so it is Navidrome's own id."""
+    make_album(db, "The Beatles/Abbey Road", 2, album="Abbey Road")
+
+    assert library.listing(identity)["albums"][0]["album_id"] == "al-The Beatles/Abbey Road"
+
+
+def test_an_album_id_finds_its_folder(db, identity):
+    make_album(db, "The Beatles/Abbey Road", 2, album="Abbey Road")
+    make_album(db, "Charli xcx/BRAT", 2, album="BRAT")
+
+    found = library.find_album(identity, "al-Charli xcx/BRAT")
+
+    assert (found["folder"], found["album"], found["tracks"]) == ("Charli xcx/BRAT", "BRAT", 2)
+
+
+def test_an_album_across_two_folders_opens_its_first(db, identity):
+    """A disc per folder is one Navidrome album; the address opens disc one."""
+    make_album(db, "Artist/Album/CD2", 2, album="Album", album_id="al-x")
+    make_album(db, "Artist/Album/CD1", 2, album="Album", album_id="al-x")
+
+    assert library.find_album(identity, "al-x")["folder"] == "Artist/Album/CD1"
+
+
+def test_an_album_id_finds_nothing_outside_this_persons_libraries(db, identity, kelly):
+    make_album(db, "Charli xcx/BRAT", 2, album="BRAT", library_id=2)
+
+    assert library.find_album(identity, "al-Charli xcx/BRAT") is None
+    assert library.find_album(kelly, "al-Charli xcx/BRAT")["album"] == "BRAT"
+
+
+def test_an_album_found_by_id_says_whether_it_was_reviewed(db, identity):
+    from app import store
+
+    make_album(db, "Vulpey/Dormant", 2, album="Dormant", album_id="al-d")
+    store.mark_reviewed(1, {"al-d"}, "marked", "alex")
+
+    assert library.find_album(identity, "al-d")["reviewed"] is True

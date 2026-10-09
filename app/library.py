@@ -130,9 +130,19 @@ class Album:
     def sort_name(self) -> str:
         return f"{self.artist} - {self.album}".casefold()
 
+    @property
+    def album_id(self) -> str:
+        """The Navidrome album this folder is, for its address in the page
+        (/library/album/<id>) - the same id Navidrome's own album links use.
+        A folder is normally one album; when it holds more, the named one,
+        and the least of those so the address does not change between loads.
+        """
+        return min(self.named_album_ids or self.album_ids, default="")
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "library_id": self.library_id, "library": self.library,
+            "album_id": self.album_id,
             "artist": self.artist, "album": self.album,
             "folder": self.folder, "added": self.added,
             "tracks": self.tracks, "untagged": self.untagged,
@@ -468,6 +478,22 @@ def _albums_or_raise(identity: navidrome.Identity) -> list[Album]:
             return list(_cached_load(connection, identity).values())
     except (navidrome.Unavailable, sqlite3.Error) as exc:
         raise ValueError(f"Navidrome's database is unreadable: {exc}") from exc
+
+
+def find_album(identity: navidrome.Identity, album_id: str) -> dict[str, Any] | None:
+    """The listing's row for the folder holding Navidrome album `album_id`,
+    or None when this person has no such album - what an album's own address
+    opens. An album split across folders (a disc per folder) opens its first.
+    """
+    found = sorted((a for a in _albums_or_raise(identity) if album_id in a.album_ids),
+                   key=lambda a: (a.library_id, a.folder))
+    if not found:
+        return None
+    album = found[0]
+    reviewed = store.reviewed_albums([album.library_id])
+    album.reviewed = all((album.library_id, one) in reviewed for one in album.album_ids)
+    _mark_barred(identity, [album])
+    return album.as_dict()
 
 
 def albums_at(identity: navidrome.Identity, library_id: int,

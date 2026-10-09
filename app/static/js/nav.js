@@ -93,16 +93,19 @@ document.addEventListener("keydown", (event) => {
 // Each view has an address of its own (data-path on its menu button), so
 // companion.pi/library can be typed, bookmarked, and gone back from. The
 // server answers every one of them with this same page; app/main.py keeps
-// the list it serves.
+// the list it serves. A deeper address belongs to the view it starts with:
+// /library/album/<id> is the Library, which reads the rest itself.
 export function viewFromPath(path = location.pathname) {
   const trimmed = path.replace(/\/+$/, "") || "/";
-  const item = [...navItems()].find((i) => i.dataset.path === trimmed);
+  const item = [...navItems()].find((i) => i.dataset.path !== "/"
+    && (trimmed === i.dataset.path || trimmed.startsWith(`${i.dataset.path}/`)));
   return item ? item.dataset.view : "home";
 }
 
 function recordView(view) {
   const item = document.querySelector(`.nav-item[data-view="${view}"]`);
   const path = item && item.dataset.path;
+  // Clicking Library while an album's page is open goes back to the list.
   if (path && path !== location.pathname) history.pushState({ view }, "", path);
 }
 

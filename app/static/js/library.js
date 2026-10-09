@@ -70,6 +70,7 @@ import {
 } from "./library-attention.js";
 import {
   closeDrawer,
+  leaveAlbum,
   openAlbum,
   openDrawer,
   renderTracks
@@ -717,7 +718,7 @@ librarySearch.addEventListener("input", () => {
 document.addEventListener("keydown", (event) => {
   if (!pageEscape(event) || libraryView.hidden) return;
   if (!libraryDialog.hidden) closeCombine();
-  else if (openAlbum) closeDrawer();
+  else if (openAlbum) leaveAlbum();
   else if (selection.on) setSelecting(false);
 });
 

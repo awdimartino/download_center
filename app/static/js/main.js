@@ -11,11 +11,12 @@ import { catchUpOperations } from "./operations.js";
 import { loadHome } from "./home.js";
 import { loadListening } from "./listening.js";
 import { loadLibrary } from "./library.js";
+import { syncAlbumToPath } from "./library-drawer.js";
 import { loadHealth } from "./health.js";
 import { loadDupes } from "./duplicates.js";
 import { loadPlaylists } from "./playlists.js";
 import { loadSettings, checkSpotify } from "./settings.js";
-import { focusSearchIfPointer } from "./browse.js";
+import { focusSearchIfPointer, syncDownloadAlbum } from "./browse.js";
 import { loadForYou } from "./foryou.js";
 import { loadQuarantine, loadQuarantineCount } from "./quarantine.js";
 // No bindings needed from this one - it wires its own DOM listeners as a
@@ -123,8 +124,15 @@ document.getElementById("signout").addEventListener("click", async () => {
 
 Object.assign(viewHandlers, {
   home: () => Promise.allSettled([loadHome(), loadListening()]),
-  browse: () => { focusSearchIfPointer(); loadForYou(); },
-  library: loadLibrary,
+  browse: () => {
+    const album = syncDownloadAlbum();
+    if (album === "closed") return;
+    if (album === "none") focusSearchIfPointer();
+    loadForYou();
+  },
+  // Only an album closing over the list leaves it alone, so Back from an
+  // album returns to the list exactly as it was.
+  library: () => { if (syncAlbumToPath() !== "closed") loadLibrary(); },
   health: loadHealth,
   dupes: loadDupes,
   playlists: loadPlaylists,

@@ -494,18 +494,54 @@ function backToResults() {
   }
 }
 
-/* --- one album, in a panel beside the results ------------------------------
-   The Library's drawer, so an album opens the same way in both places. It
-   used to replace the results, and Back ran the search again from scratch. */
+/* --- one album, as a page of its own ---------------------------------------
+   /download/album/<Spotify id>, laid out like the Library's album. The
+   search, results and shelves stay in the document, hidden, so Back returns
+   to them as they were - the search is not run again from scratch, which is
+   what once made replacing the results with the album a bad idea. */
 
 let openAlbumId = null;
+const viewEl = document.getElementById("view-browse");
+const ALBUM_PATH = /^\/download\/album\/([^/]+)\/?$/;
+// Where the results were scrolled when the album opened over them.
+let resultsScroll = 0;
 
-function closeAlbum() {
+function albumIdInPath() {
+  const found = location.pathname.match(ALBUM_PATH);
+  return found ? decodeURIComponent(found[1]) : null;
+}
+
+// `record: false` when the address has already moved on (Back, Forward).
+function closeAlbum({ record = true } = {}) {
   if (!openAlbumId) return;
   openAlbumId = null;
   drawerPainters = [];
   drawerEl.hidden = true;
   drawerEl.replaceChildren();
+  viewEl.classList.remove("drawer-open");
+  if (record && albumIdInPath()) history.replaceState({ view: "browse" }, "", "/download");
+  window.scrollTo(0, resultsScroll);
+}
+
+// The page's Back button and Escape: the browser's own Back when this page
+// put the album's entry there, so the two agree on where Back goes.
+function leaveAlbum() {
+  if (history.state && history.state.album) history.back();
+  else closeAlbum();
+}
+
+// What the address says against what is open, after Back or Forward or a
+// load: "opened", "closed", "same" or "none".
+export function syncDownloadAlbum() {
+  const id = albumIdInPath();
+  if (!id) {
+    if (!openAlbumId) return "none";
+    closeAlbum({ record: false });
+    return "closed";
+  }
+  if (openAlbumId === id) return "same";
+  openAlbum(id, { record: false });
+  return "opened";
 }
 
 function albumActions(album, box) {
@@ -553,20 +589,28 @@ function albumTrackRow(album, track) {
   });
 }
 
-async function openAlbum(id) {
+async function openAlbum(id, { record = true } = {}) {
   if (!id) return;
+  if (!openAlbumId) resultsScroll = window.scrollY;
+  if (record) {
+    // One album to another swaps the entry, so Back still goes to the results.
+    const path = `/download/album/${encodeURIComponent(id)}`;
+    if (albumIdInPath()) history.replaceState({ view: "browse", album: true }, "", path);
+    else history.pushState({ view: "browse", album: true }, "", path);
+  }
   openAlbumId = id;
   drawerPainters = [];
   const top = el("div", "lib-drawer-top");
-  const close = el("button", "ghost", "✕ Close");
+  const close = el("button", "ghost", "← Back");
   close.type = "button";
-  close.addEventListener("click", closeAlbum);
+  close.addEventListener("click", leaveAlbum);
   top.append(close);
   const body = el("div", "lib-drawer-body");
   body.append(el("p", "empty", "Loading…"));
   drawerEl.replaceChildren(top, body);
   drawerEl.hidden = false;
-  drawerEl.scrollTop = 0;
+  viewEl.classList.add("drawer-open");
+  window.scrollTo(0, 0);
   close.focus({ preventScroll: true });
 
   let album;
@@ -608,7 +652,7 @@ async function openAlbum(id) {
 }
 
 document.addEventListener("keydown", (event) => {
-  if (pageEscape(event) && openAlbumId && !drawerEl.hidden) closeAlbum();
+  if (pageEscape(event) && openAlbumId && !viewEl.hidden) leaveAlbum();
 });
 
 /* --- the box ---------------------------------------------------------------- */
