@@ -47,6 +47,9 @@ log = logging.getLogger("navidrome_companion.library")
 PAGE = 50
 MAX_PAGE = 200
 
+# What Navidrome calls the album of a file whose album tag is empty.
+NAVIDROME_NO_ALBUM = "[Unknown Album]"
+
 
 @dataclass(frozen=True)
 class Track:
@@ -100,6 +103,12 @@ class Album:
     # Derived from the album UUID through PID.Album, so it survives a rename
     # and is what "somebody has reviewed this" is keyed on.
     album_ids: set[str] = field(default_factory=set)
+    # The same, for files that name an album. What the "N albums in this
+    # folder" flag counts: a file with no album tag is its own record in
+    # Navidrome, so a folder of three loose files is three albums there,
+    # but album actions do not refuse it (`filer.require_one_album` counts
+    # only named albums), and naming them is the fix.
+    named_album_ids: set[str] = field(default_factory=set)
     reviewed: bool = False
     # The newest year any track carries, this person's plays of the whole
     # folder, and its running time - what the grid sorts and labels by.
@@ -140,9 +149,9 @@ class Album:
             "duration": round(self.duration),
             "kind": self.kind,
             "barred": self.barred,
-            # More than one Navidrome album in one folder. Folder-wide
-            # actions refuse it, so the page says why before they are tried.
-            "albums_here": len(self.album_ids),
+            # More than one named album in one folder. Folder-wide actions
+            # refuse it, so the page says why before they are tried.
+            "albums_here": len(self.named_album_ids),
         }
 
     @property
@@ -229,6 +238,9 @@ def _load(connection: sqlite3.Connection,
             found.no_gain += 1
         if navidrome_album:
             found.album_ids.add(navidrome_album)
+            # Navidrome stores "[Unknown Album]" for a file with no album tag.
+            if album and album != NAVIDROME_NO_ALBUM:
+                found.named_album_ids.add(navidrome_album)
         found.year = max(found.year, int(track_year or 0))
         found.duration += float(length or 0)
         found.plays += int(track_plays or 0)

@@ -46,6 +46,29 @@ def make_album(db, folder, count, tagged=0, library_id=1, **fields):
 
 # --- what is listed ---------------------------------------------------------
 
+def test_two_named_albums_in_one_folder_are_flagged(db, identity):
+    add_track(db, "a", path="Vulpey/Dormant/01.mp3", album="Dormant", album_id="al-d")
+    add_track(db, "b", path="Vulpey/Dormant/02.mp3", album="Squirm", album_id="al-s")
+
+    assert library.listing(identity)["albums"][0]["albums_here"] == 2
+
+
+def test_files_with_no_album_tag_are_not_counted_as_albums_here(db, identity):
+    """Each is its own record in Navidrome, so a folder of loose files was
+    flagged "3 albums - edit track by track", but album actions do not
+    refuse it, and naming them as one album is how it gets fixed."""
+    for n in range(3):
+        add_track(db, f"l{n}", path=f"JKuch/Unknown Album/{n}.mp3",
+                  album="[Unknown Album]", album_id=f"al-loose-{n}")
+    add_track(db, "v1", path="Valzugg/Afternoon/01.mp3", album="Afternoon",
+              album_id="al-a")
+    add_track(db, "v2", path="Valzugg/Afternoon/stray.mp3",
+              album="[Unknown Album]", album_id="al-loose-v")
+
+    flags = {a["folder"]: a["albums_here"] for a in library.listing(identity)["albums"]}
+
+    assert flags == {"JKuch/Unknown Album": 0, "Valzugg/Afternoon": 1}
+
 def test_an_album_with_no_musicbrainz_ids_is_listed(db, identity):
     make_album(db, "The Beatles/Abbey Road", 3, album="Abbey Road",
           album_artist="The Beatles")

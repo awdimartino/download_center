@@ -103,18 +103,20 @@ finished; what is left here is checking the deploy on the Pi.
       routes are in `app/api/`, one router per panel; job state in
       `app/jobs.py`, the socket broker in `app/events.py`, the loops in
       `app/background.py`.
-- [ ] **Folders holding more than one album.** Found 2026-09-28: 57 of
-      Alex's folders carry more than one album UUID (e.g. `Aiden
-      Williams/Believe` holds *Believe*, *Breakup* and *Continuum EP*;
-      several `Artist/Unknown Album` folders hold two). Kelly's library was
-      not checked. The Library treats a folder as one album, so **Save
-      album**, **Find matches → Use this**, **Combine** and ReplayGain treat
-      such a row as one record and merge or mis-measure it. Likely cause,
-      unverified: `unfuse.py` split fused albums by tag without moving
-      files. Plan: (1) a guard - flag those rows and refuse folder-wide
-      actions on them (**done**, CODE_REVIEW H9); (2) a throwaway script re-filing those tracks by
-      their own tags, with the move list reviewed before it runs. UUIDs do
-      not change, so stars and plays are unaffected.
+- [x] **Folders holding more than one album.** Done 2026-10-09 with
+      `python -m app.separate`: in each folder the album it is named for
+      stays and every other album's tracks are filed where their tags say,
+      through `filer.file_track`, so they join any copy already there and
+      keep their track and album UUIDs. 66 files from 38 of Alex's folders
+      moved (32 folders mixing named albums, 6 `Artist/Unknown Album`
+      folders holding a named album beside loose files); four folders named
+      by an older sanitiser (`Kosu_/Daft_`) were emptied and pruned.
+      Kelly's library had none. The Library's "N albums" flag now counts
+      only files that name an album, as the guard does, so the 21 folders
+      of untagged files are no longer flagged. **Left:** those untagged
+      files, and one stray in `Valzugg/Afternoon`, need tagging, not
+      moving. Plans are in the Pi's config folder as
+      `separate-applied-1.json` and `separate-applied-2-1.json`.
 - [ ] **Genre merge and rename.** Split out of Session 8, which shipped the
       tally alone. Reuse the album editor's merge-search pattern: a debounced
       search across the genre tally, picking a target folds the source

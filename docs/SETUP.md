@@ -373,6 +373,7 @@ docker exec -u companion navidrome-companion python -m app.survey
 | `python -m app.survey [--json]` | read-only report of every library's album identity: ready, partial, unstamped, split, fused |
 | `python -m app.backfill [--apply]` | records album UUIDs for albums whose files already agree. Writes only `state.db` |
 | `python -m app.unfuse [--apply] [--plan FILE]` | repairs albums sharing one UUID or split across several, writing only the album UUID tag. `--plan FILE` saves a reversible plan per library, as `FILE-<library id>` |
+| `python -m app.separate [--user NAME] [--apply] [--plan FILE]` | moves the tracks of a second album out of a folder that holds two, to the folder their tags name. The album the folder is named for stays; files with no album tag never move. `--plan FILE` records where each file went, per library |
 | `python -m app.reindex <user> [--library ID] [--apply]` | rebuilds a person's beets index from the files in place |
 | `python -m app.lastfm <user> [--apply] [--times]` | one-off import of Last.fm scrobbles into the listening history; `--times` recovers exact play times for rows already imported |
 
