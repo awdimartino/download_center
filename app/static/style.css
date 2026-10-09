@@ -856,16 +856,39 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 }
 .br-main { min-width: 0; }
 
-/* Pinned under where the header was. The shadow paints the strip above it
-   in the page colour, so results scrolling up vanish behind the floating
-   burger rather than showing through the gap. */
+/* Pinned under where the header was. Its backdrop (::before) runs up to the
+   top of the screen and out over the page's side margins, so results
+   scrolling up vanish behind the floating burger rather than showing round
+   the bar. It used to be the bar's own background plus a shadow the same
+   width, which left the margins open: a phone saw the page through 12px
+   either side and through the strip beside the burger. */
 .br-searchbar {
   position: sticky;
   top: var(--header-h, 56px);
   z-index: 10;
   padding: var(--s-2) 0 var(--s-3);
+}
+.br-searchbar::before,
+.br-searchbar::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  /* Out to main's padding, and no further: the Queue rail is beside it. */
+  left: calc(var(--s-5) * -1);
+  right: calc(var(--s-5) * -1);
+  pointer-events: none;
+}
+.br-searchbar::before {
+  top: calc(var(--header-h, 56px) * -1);
+  bottom: 0;
   background: var(--bg);
-  box-shadow: 0 calc(var(--header-h, 56px) * -1) 0 var(--bg);
+}
+/* A short fade under the bar, so what scrolls beneath it goes rather than
+   being cut off at a hard line. */
+.br-searchbar::after {
+  top: 100%;
+  height: var(--s-3);
+  background: linear-gradient(var(--bg), transparent);
 }
 .br-search { display: flex; gap: var(--s-2); }
 .br-field { position: relative; flex: 1; min-width: 0; }
@@ -1154,6 +1177,9 @@ main:has(#view-browse:not([hidden])) { max-width: 1400px; }
 
 @media (max-width: 980px) {
   .br-layout { grid-template-columns: minmax(0, 1fr); }
+  /* No rail beside it here, so edge to edge of the screen. */
+  .br-searchbar::before,
+  .br-searchbar::after { left: 50%; right: auto; width: 100vw; transform: translateX(-50%); }
   .dl-rail { display: none; }
   .dl-pill { display: flex; }
   /* Room under the last result, so the pill never sits on it. */
